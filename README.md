@@ -21,6 +21,13 @@ Implemented:
   - distance-based zone disadvantage on actions starting far from defender,
   - disadvantage reduced by `burst`, `lateralQuickness`, `perimeterDefense`, `offballDefense`.
 - Dynamic interaction model where every interaction re-rolls rating influence and slightly biases toward each player’s strongest relevant ratings.
+- Beginner offensive actions:
+  - `dribble_drive`: decisive/normal/tie/defensive-win branches, help-defense reactions, drive kick-outs, jump/paint finish options, and steal windows.
+  - `post_up`: spot-gated post initiation, positioning battle tiers, shoot/pass/give-up branches, and dominant-loss steal chance.
+- Contested shot foul model:
+  - foul chance based on offensive `drawFoul` vs defensive `defensiveControl`,
+  - makes on fouls are reduced but still possible,
+  - free throws resolved from shooter FT rating.
 
 ## Quick run
 
