@@ -671,6 +671,57 @@ function getOnBallDefender({
   };
 }
 
+function getDefenderCourtPositions({ defenseScheme, defenseLineup, offensiveAssignments }) {
+  if (defenseScheme === DefenseScheme.MAN_TO_MAN) {
+    const fallbackAnchors = zoneAnchors[DefenseScheme.ZONE_2_3] || [];
+    return defenseLineup.map((player, index) => ({
+      player,
+      coord:
+        spotCoords[offensiveAssignments?.[index]?.spot] ||
+        fallbackAnchors[index] ||
+        fallbackAnchors[fallbackAnchors.length - 1] || { x: 0, y: 2 },
+    }));
+  }
+
+  const anchors = zoneAnchors[defenseScheme] || zoneAnchors[DefenseScheme.ZONE_2_3] || [];
+  return defenseLineup.map((player, index) => ({
+    player,
+    coord: anchors[index] || anchors[anchors.length - 1] || { x: 0, y: 2 },
+  }));
+}
+
+function pickNearestDefenderTeammate({
+  blocker,
+  defenseLineup,
+  defenseScheme,
+  offensiveAssignments,
+}) {
+  if (!Array.isArray(defenseLineup) || !defenseLineup.length) return blocker || null;
+  if (defenseLineup.length === 1) return defenseLineup[0];
+
+  const positions = getDefenderCourtPositions({
+    defenseScheme,
+    defenseLineup,
+    offensiveAssignments,
+  });
+  const blockerPos = positions.find((entry) => entry.player === blocker)?.coord;
+  const fallback = defenseLineup.find((player) => player !== blocker) || defenseLineup[0];
+  if (!blockerPos) return fallback;
+
+  let nearest = null;
+  let nearestDistance = Infinity;
+  positions.forEach((entry) => {
+    if (!entry?.player || entry.player === blocker || !entry.coord) return;
+    const teammateDistance = dist(blockerPos, entry.coord);
+    if (teammateDistance < nearestDistance) {
+      nearestDistance = teammateDistance;
+      nearest = entry.player;
+    }
+  });
+
+  return nearest || fallback;
+}
+
 function zoneDistanceAdvantage(defender, startDistance) {
   if (startDistance <= 1.5) return 0;
   const recoveryRatingPaths = [
@@ -1231,6 +1282,7 @@ function resolvePossessionEndAfterShot({
   offenseLineup,
   defenseLineup,
   defenseScheme,
+  offensiveAssignments,
   playType,
   shotType,
   shot,
@@ -1307,6 +1359,13 @@ function resolvePossessionEndAfterShot({
 
   if (shot.blockedByDefense) {
     addPlayerStat(state, defenseTeamId, primaryDefender, "blocks", 1);
+    const rebounder = pickNearestDefenderTeammate({
+      blocker: primaryDefender,
+      defenseLineup,
+      defenseScheme,
+      offensiveAssignments,
+    });
+    recordRebound(state, defenseTeamId, rebounder, false);
     pushEvent(state, {
       type: "blocked_shot",
       offenseTeam: offense.name,
@@ -1315,6 +1374,7 @@ function resolvePossessionEndAfterShot({
       shotType,
       shooter: shooter?.bio?.name,
       blocker: primaryDefender?.bio?.name,
+      rebounder: rebounder?.bio?.name,
     });
     beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
     return { possessionChanged: true, shotClockMode: "hold" };
@@ -1805,6 +1865,7 @@ function resolveActionChunk(state, random = Math.random) {
                 offenseLineup,
                 defenseLineup,
                 defenseScheme,
+                offensiveAssignments,
                 playType,
                 shotType,
                 shot,
@@ -1873,6 +1934,7 @@ function resolveActionChunk(state, random = Math.random) {
             offenseLineup,
             defenseLineup,
             defenseScheme,
+            offensiveAssignments,
             playType,
             shotType,
             shot,
@@ -2084,6 +2146,7 @@ function resolveActionChunk(state, random = Math.random) {
                   offenseLineup,
                   defenseLineup,
                   defenseScheme,
+                  offensiveAssignments,
                   playType,
                   shotType,
                   shot,
@@ -2166,6 +2229,7 @@ function resolveActionChunk(state, random = Math.random) {
               offenseLineup,
               defenseLineup,
               defenseScheme,
+              offensiveAssignments,
               playType,
               shotType,
               shot,
