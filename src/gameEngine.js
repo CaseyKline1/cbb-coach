@@ -85,12 +85,41 @@ const zoneAnchors = {
 
 const allSpots = Object.values(OffensiveSpot);
 const THREE_POINT_SHOT_TYPES = new Set(["three"]);
+const BASE_CHUNK_ENERGY_DRAIN = 1.2;
+const BASE_CHUNK_BENCH_RECOVERY = 1.65;
+const FREE_THROW_BREAK_RECOVERY = 5.5;
+const TIMEOUT_RECOVERY = 7.5;
+const HALFTIME_RECOVERY = 18;
+
+function ensurePlayerCondition(player) {
+  if (!player.condition) player.condition = {};
+  if (!Number.isFinite(Number(player.condition.energy))) {
+    player.condition.energy = 100;
+  }
+  player.condition.energy = clamp(Number(player.condition.energy), 0, 100);
+}
+
+function getTeamRoster(team) {
+  const byRef = new Set();
+  const roster = [];
+  const candidates = [];
+  if (Array.isArray(team?.players)) candidates.push(...team.players);
+  if (Array.isArray(team?.lineup)) candidates.push(...team.lineup);
+
+  candidates.forEach((player) => {
+    if (player && !byRef.has(player)) {
+      byRef.add(player);
+      roster.push(player);
+    }
+  });
+  return roster;
+}
 
 function createEmptyPlayerBoxScore(player) {
   return {
     playerName: player?.bio?.name || "Unknown",
     position: player?.bio?.position || "",
-    minutes: 40,
+    minutes: 0,
     points: 0,
     fgMade: 0,
     fgAttempts: 0,
@@ -113,11 +142,11 @@ function initializeBoxScoreTracker(teams) {
   return {
     teams: teams.map((team) => ({
       name: team.name,
-      players: team.lineup.map((player) => ({
+      players: getTeamRoster(team).map((player) => ({
         player,
         stats: createEmptyPlayerBoxScore(player),
       })),
-      playerIndexByRef: new Map(team.lineup.map((player, index) => [player, index])),
+      playerIndexByRef: new Map(getTeamRoster(team).map((player, index) => [player, index])),
       teamExtras: {
         turnovers: 0,
       },
@@ -172,6 +201,256 @@ function recordRebound(state, teamId, rebounder, isOffensive) {
   else addPlayerStat(state, teamId, rebounder, "defensiveRebounds", 1);
 }
 
+function getPlayerEnergy(player) {
+  ensurePlayerCondition(player);
+  return player.condition.energy;
+}
+
+function setPlayerEnergy(player, value) {
+  ensurePlayerCondition(player);
+  player.condition.energy = clamp(value, 0, 100);
+}
+
+function getStaminaFactor(player) {
+  const stamina = getRating(player, "athleticism.stamina");
+  return clamp(1.15 - (stamina - 50) / 130, 0.72, 1.45);
+}
+
+function applyEnergyDelta(player, delta) {
+  setPlayerEnergy(player, getPlayerEnergy(player) + delta);
+}
+
+function recoverAllPlayers(state, amount) {
+  state.teams.forEach((team) => {
+    getTeamRoster(team).forEach((player) => {
+      const staminaBonus = clamp((getRating(player, "athleticism.stamina") - 50) / 160, -0.2, 0.35);
+      applyEnergyDelta(player, amount * (1 + staminaBonus));
+    });
+  });
+}
+
+function getBaseRating(player, path, fallback = 50) {
+  const [group, key] = path.split(".");
+  const raw = player?.[group]?.[key];
+  if (raw === undefined || raw === null) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  if (value <= 1) return fallback;
+  if (value <= 10) return value * 10;
+  return value;
+}
+
+function getPlayerOverallSkill(player) {
+  return average([
+    getBaseRating(player, "skills.shotIQ"),
+    getBaseRating(player, "skills.ballHandling"),
+    getBaseRating(player, "skills.passingIQ"),
+    getBaseRating(player, "shooting.threePointShooting"),
+    getBaseRating(player, "shooting.midrangeShot"),
+    getBaseRating(player, "shooting.closeShot"),
+    getBaseRating(player, "defense.perimeterDefense"),
+    getBaseRating(player, "defense.postDefense"),
+    getBaseRating(player, "rebounding.defensiveRebound"),
+    getBaseRating(player, "athleticism.speed"),
+    getBaseRating(player, "athleticism.agility"),
+  ]);
+}
+
+function getPlayerMinutesPlayed(state, teamId, player) {
+  const line = getPlayerStatsLine(state, teamId, player);
+  return line?.minutes || 0;
+}
+
+function getTargetMinutesMap(state, teamId) {
+  const team = state.teams[teamId];
+  const roster = getTeamRoster(team);
+  const totalTeamMinutes = 200;
+  const namedTargets = team.rotation?.minuteTargets;
+
+  if (namedTargets && typeof namedTargets === "object") {
+    const map = new Map();
+    roster.forEach((player) => {
+      const name = player?.bio?.name || "";
+      const raw = Number(namedTargets[name]);
+      if (Number.isFinite(raw) && raw >= 0) map.set(player, raw);
+    });
+    if (map.size) {
+      const sum = [...map.values()].reduce((a, b) => a + b, 0);
+      if (sum > 0) {
+        const scale = totalTeamMinutes / sum;
+        [...map.keys()].forEach((p) => map.set(p, clamp(map.get(p) * scale, 0, 40)));
+      }
+      roster.forEach((player) => {
+        if (!map.has(player)) map.set(player, 0);
+      });
+      return map;
+    }
+  }
+
+  const floor = roster.length > 5 ? 4 : 0;
+  const remaining = Math.max(0, totalTeamMinutes - floor * roster.length);
+  const weights = roster.map((player) => ({
+    player,
+    weight: Math.max(1, getPlayerOverallSkill(player)),
+  }));
+  const totalWeight = weights.reduce((sum, item) => sum + item.weight, 0);
+  const map = new Map();
+  weights.forEach((item) => {
+    const share = totalWeight > 0 ? remaining * (item.weight / totalWeight) : remaining / weights.length;
+    map.set(item.player, clamp(floor + share, 0, 40));
+  });
+  return map;
+}
+
+function rankLineupCandidates(state, teamId) {
+  const team = state.teams[teamId];
+  const roster = getTeamRoster(team);
+  const targetMinutes = getTargetMinutesMap(state, teamId);
+  return roster
+    .map((player) => {
+      const energy = getPlayerEnergy(player);
+      const skill = getPlayerOverallSkill(player);
+      const minutesPlayed = getPlayerMinutesPlayed(state, teamId, player);
+      const target = targetMinutes.get(player) ?? 0;
+      const rotationNeed = clamp(target - minutesPlayed, -12, 20);
+      const score = skill * 0.62 + energy * 0.3 + rotationNeed * 1.9;
+      return {
+        player,
+        score,
+        energy,
+        skill,
+        minutesPlayed,
+        target,
+        rotationNeed,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+function runDeadBallSubstitutions(state, reason = "dead_ball") {
+  const elapsedGameSeconds =
+    HALF_SECONDS * (state.currentHalf - 1) + (HALF_SECONDS - state.gameClockRemaining);
+
+  state.teams.forEach((team, teamId) => {
+    const roster = getTeamRoster(team);
+    if (roster.length <= 5 || !Array.isArray(team.lineup) || team.lineup.length !== 5) return;
+    if (reason !== "halftime" && reason !== "timeout") {
+      const last = Number(team.lastSubElapsedGameSeconds);
+      if (Number.isFinite(last) && elapsedGameSeconds - last < 25) {
+        return;
+      }
+    }
+
+    const ranked = rankLineupCandidates(state, teamId);
+    const scoreByPlayer = new Map(ranked.map((entry) => [entry.player, entry]));
+    const current = [...team.lineup];
+    const currentSet = new Set(current);
+
+    if (reason === "halftime") {
+      const next = ranked.slice(0, 5).map((entry) => entry.player);
+      const changed = next.filter((player) => !currentSet.has(player)).length;
+      if (changed > 0) {
+        team.lineup = next;
+        team.lastSubElapsedGameSeconds = elapsedGameSeconds;
+        pushEvent(state, {
+          type: "substitution",
+          team: team.name,
+          reason,
+          swaps: changed,
+        });
+      }
+      return;
+    }
+
+    const maxSwaps = 2;
+    let swaps = 0;
+    const next = [...current];
+
+    while (swaps < maxSwaps) {
+      const onCourt = next
+        .map((player, idx) => ({ idx, player, ...(scoreByPlayer.get(player) || {}) }))
+        .sort((a, b) => (a.score ?? -9999) - (b.score ?? -9999));
+      const bench = ranked.filter((entry) => !next.includes(entry.player));
+      if (!bench.length || !onCourt.length) break;
+
+      const outCandidate = onCourt[0];
+      const inCandidate = bench[0];
+      if (!outCandidate || !inCandidate) break;
+
+      const betterBy = (inCandidate.score ?? 0) - (outCandidate.score ?? 0);
+      const fatigueUpgrade =
+        (outCandidate.energy ?? getPlayerEnergy(outCandidate.player)) < 42 &&
+        inCandidate.energy > (outCandidate.energy ?? getPlayerEnergy(outCandidate.player)) + 8;
+      const rotationUpgrade =
+        (inCandidate.rotationNeed ?? 0) > 2.5 &&
+        ((outCandidate.minutesPlayed ?? 0) - (outCandidate.target ?? 0) > 1.5);
+
+      if (!(betterBy > 6 || fatigueUpgrade || rotationUpgrade)) break;
+
+      next[outCandidate.idx] = inCandidate.player;
+      swaps += 1;
+    }
+
+    if (swaps > 0) {
+      team.lineup = next;
+      team.lastSubElapsedGameSeconds = elapsedGameSeconds;
+      pushEvent(state, {
+        type: "substitution",
+        team: team.name,
+        reason,
+        swaps,
+      });
+    }
+  });
+}
+
+function maybeTakeTimeout(state, random = Math.random) {
+  const teams = [0, 1];
+  for (const teamId of teams) {
+    const team = state.teams[teamId];
+    team.timeoutsRemaining = Number.isFinite(team.timeoutsRemaining) ? team.timeoutsRemaining : 4;
+    if (team.timeoutsRemaining <= 0) continue;
+
+    const avgLineupEnergy = average(team.lineup.map((player) => getPlayerEnergy(player)));
+    const urgency = state.shotClockRemaining <= 10 ? 0.03 : 0;
+    const fatigueNeed = avgLineupEnergy < 48 ? 0.08 : avgLineupEnergy < 58 ? 0.035 : 0;
+    if (random() < urgency + fatigueNeed) {
+      team.timeoutsRemaining -= 1;
+      recoverAllPlayers(state, TIMEOUT_RECOVERY);
+      pushEvent(state, {
+        type: "timeout",
+        offenseTeam: state.teams[state.possessionTeamId].name,
+        calledBy: team.name,
+      });
+      runDeadBallSubstitutions(state, "timeout");
+      return true;
+    }
+  }
+  return false;
+}
+
+function applyChunkMinutesAndEnergy(state, involvementByTeam = [new Map(), new Map()]) {
+  state.teams.forEach((team, teamId) => {
+    const onCourtSet = new Set(team.lineup);
+    const involvementMap = involvementByTeam[teamId] || new Map();
+
+    team.lineup.forEach((player) => {
+      addPlayerStat(state, teamId, player, "minutes", CHUNK_SECONDS / 60);
+      const involvement = involvementMap.get(player) || 0;
+      const staminaFactor = getStaminaFactor(player);
+      const drain = (BASE_CHUNK_ENERGY_DRAIN + involvement * 0.95) * staminaFactor;
+      applyEnergyDelta(player, -drain);
+    });
+
+    getTeamRoster(team)
+      .filter((player) => !onCourtSet.has(player))
+      .forEach((player) => {
+        const staminaRecovery = clamp((getRating(player, "athleticism.stamina") - 50) / 120, -0.25, 0.45);
+        applyEnergyDelta(player, BASE_CHUNK_BENCH_RECOVERY * (1 + staminaRecovery));
+      });
+  });
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -210,7 +489,20 @@ function getRating(player, path, fallback = 50) {
   // Supports both placeholder defaults (~1) and mature 1-100 ratings.
   if (value <= 1) return fallback;
   if (value <= 10) return value * 10;
-  return value;
+  if (group === "athleticism" && (key === "stamina" || key === "durability")) return value;
+
+  const energy = Number(player?.condition?.energy);
+  if (!Number.isFinite(energy)) return value;
+
+  const fatigue = clamp((100 - energy) / 100, 0, 0.85);
+  let impact = 0.2;
+  if (group === "athleticism") impact = 0.3;
+  else if (group === "shooting") impact = 0.18;
+  else if (group === "skills") impact = 0.24;
+  else if (group === "defense") impact = 0.22;
+  else if (group === "rebounding" || group === "postGame") impact = 0.2;
+
+  return value * (1 - fatigue * impact);
 }
 
 function makeStrengthBiasedWeights(ratings, random = Math.random) {
@@ -967,6 +1259,7 @@ function resolvePossessionEndAfterShot({
       recordFreeThrows(state, offenseTeamId, shooter, attempts, bonus);
       addPlayerStat(state, offenseTeamId, shooter, "points", bonus);
       offense.score += bonus;
+      recoverAllPlayers(state, FREE_THROW_BREAK_RECOVERY);
       foulDetail = ` + ${bonus} FT`;
     }
 
@@ -980,7 +1273,7 @@ function resolvePossessionEndAfterShot({
       assister: shot.assister?.bio?.name,
       detail: foulDetail || undefined,
     });
-    beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
+    beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId), "made_basket");
     return { possessionChanged: true, shotClockMode: "hold" };
   }
 
@@ -990,6 +1283,7 @@ function resolvePossessionEndAfterShot({
     recordFreeThrows(state, offenseTeamId, shooter, shot.foulShotsAwarded, ftMade);
     addPlayerStat(state, offenseTeamId, shooter, "points", ftMade);
     offense.score += ftMade;
+    recoverAllPlayers(state, FREE_THROW_BREAK_RECOVERY);
     pushEvent(state, {
       type: "shooting_foul",
       offenseTeam: offense.name,
@@ -998,7 +1292,7 @@ function resolvePossessionEndAfterShot({
       points: ftMade,
       shooter: shooter?.bio?.name,
     });
-    beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
+    beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId), "free_throws");
     return { possessionChanged: true, shotClockMode: "hold" };
   }
 
@@ -1124,15 +1418,23 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
   const teams = [
     {
       ...homeTeam,
+      players: homeTeam.players?.length ? homeTeam.players : homeLineup,
       lineup: homeLineup,
       score: 0,
+      timeoutsRemaining: Number.isFinite(homeTeam.timeouts) ? homeTeam.timeouts : 4,
     },
     {
       ...awayTeam,
+      players: awayTeam.players?.length ? awayTeam.players : awayLineup,
       lineup: awayLineup,
       score: 0,
+      timeoutsRemaining: Number.isFinite(awayTeam.timeouts) ? awayTeam.timeouts : 4,
     },
   ];
+
+  teams.forEach((team) => {
+    getTeamRoster(team).forEach((player) => ensurePlayerCondition(player));
+  });
 
   return {
     teams,
@@ -1146,10 +1448,13 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
   };
 }
 
-function beginNewPossession(state, offenseTeamId) {
+function beginNewPossession(state, offenseTeamId, deadBallReason = null) {
   state.possessionTeamId = offenseTeamId;
   state.shotClockRemaining = SHOT_CLOCK_SECONDS;
   state.possessionNeedsSetup = true;
+  if (deadBallReason) {
+    runDeadBallSubstitutions(state, deadBallReason);
+  }
 }
 
 function pushEvent(state, event) {
@@ -1175,6 +1480,16 @@ function resolveActionChunk(state, random = Math.random) {
   const defenseTeamId = nextDefenseTeamId(state.possessionTeamId);
   const offense = state.teams[offenseTeamId];
   const defense = state.teams[defenseTeamId];
+  const involvementByTeam = [new Map(), new Map()];
+  const markInvolvement = (teamId, player, amount = 1) => {
+    if (!player) return;
+    const map = involvementByTeam[teamId];
+    map.set(player, (map.get(player) || 0) + amount);
+  };
+
+  if (maybeTakeTimeout(state, random)) {
+    return;
+  }
 
   const offenseLineup = offense.lineup;
   const defenseLineup = defense.lineup;
@@ -1183,6 +1498,9 @@ function resolveActionChunk(state, random = Math.random) {
   if (state.possessionNeedsSetup && !(defense?.tendencies?.press > 1)) {
     state.possessionNeedsSetup = false;
     applyChunkClock(state, "tick");
+    offenseLineup.forEach((player) => markInvolvement(offenseTeamId, player, 0.15));
+    defenseLineup.forEach((player) => markInvolvement(defenseTeamId, player, 0.15));
+    applyChunkMinutesAndEnergy(state, involvementByTeam);
     pushEvent(state, {
       type: "setup",
       offenseTeam: offense.name,
@@ -1196,7 +1514,7 @@ function resolveActionChunk(state, random = Math.random) {
         offenseTeam: offense.name,
       });
       addTeamExtra(state, offenseTeamId, "turnovers", 1);
-      beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
+      beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId), "out_of_bounds");
     }
 
     return;
@@ -1217,6 +1535,8 @@ function resolveActionChunk(state, random = Math.random) {
   const zonePenalty = onBall.isZone
     ? -0.08 + zoneDistanceAdvantage(onBall.defender, onBall.startDistance)
     : 0;
+  markInvolvement(offenseTeamId, ballHandler, 1);
+  markInvolvement(defenseTeamId, onBall.defender, 0.9);
 
   offense.context = { ballHandlerSpot };
   const playType = choosePlayType({ offenseTeam: offense, ballHandler, random });
@@ -1355,6 +1675,10 @@ function resolveActionChunk(state, random = Math.random) {
             zonePenalty,
             random,
           });
+          markInvolvement(offenseTeamId, ballHandler, 0.55);
+          markInvolvement(offenseTeamId, best.player, 0.7);
+          markInvolvement(defenseTeamId, onBall.defender, 0.35);
+          markInvolvement(defenseTeamId, best.cover.defender, 0.45);
 
           if (passDelivery.turnover) {
             recordTurnover(
@@ -1388,6 +1712,9 @@ function resolveActionChunk(state, random = Math.random) {
             });
             shot.shooter = best.player;
             shot.assister = ballHandler;
+            markInvolvement(offenseTeamId, best.player, 0.9);
+            markInvolvement(offenseTeamId, ballHandler, 0.35);
+            markInvolvement(defenseTeamId, best.cover.defender, 0.75);
 
             const endState = resolvePossessionEndAfterShot({
               state,
@@ -1421,6 +1748,8 @@ function resolveActionChunk(state, random = Math.random) {
           random,
         });
         shot.shooter = ballHandler;
+        markInvolvement(offenseTeamId, ballHandler, 1);
+        markInvolvement(defenseTeamId, onBall.defender, 0.85);
 
         if (!shot.made && (shotType === "layup" || shotType === "dunk")) {
           const oLength =
@@ -1596,6 +1925,10 @@ function resolveActionChunk(state, random = Math.random) {
               zonePenalty,
               random,
             });
+            markInvolvement(offenseTeamId, ballHandler, 0.55);
+            markInvolvement(offenseTeamId, best.player, 0.7);
+            markInvolvement(defenseTeamId, onBall.defender, 0.35);
+            markInvolvement(defenseTeamId, best.cover.defender, 0.45);
 
             if (passDelivery.turnover) {
               recordTurnover(
@@ -1629,6 +1962,9 @@ function resolveActionChunk(state, random = Math.random) {
               });
               shot.shooter = best.player;
               shot.assister = ballHandler;
+              markInvolvement(offenseTeamId, best.player, 0.9);
+              markInvolvement(offenseTeamId, ballHandler, 0.35);
+              markInvolvement(defenseTeamId, best.cover.defender, 0.75);
 
               const endState = resolvePossessionEndAfterShot({
                 state,
@@ -1681,6 +2017,8 @@ function resolveActionChunk(state, random = Math.random) {
             random,
           });
           shot.shooter = ballHandler;
+          markInvolvement(offenseTeamId, ballHandler, 1);
+          markInvolvement(defenseTeamId, onBall.defender, 0.85);
 
           if (!shot.made && (shotType === "hook" || shotType === "layup" || shotType === "dunk")) {
             const blockChance = clamp(
@@ -1718,6 +2056,7 @@ function resolveActionChunk(state, random = Math.random) {
   }
 
   applyChunkClock(state, shotClockMode);
+  applyChunkMinutesAndEnergy(state, involvementByTeam);
 
   if (!possessionChanged && state.shotClockRemaining <= 0) {
     pushEvent(state, {
@@ -1726,7 +2065,7 @@ function resolveActionChunk(state, random = Math.random) {
       playType,
     });
     addTeamExtra(state, offenseTeamId, "turnovers", 1);
-    beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
+    beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId), "out_of_bounds");
   }
 }
 
@@ -1742,6 +2081,8 @@ function simulateGame(homeTeam, awayTeam, options = {}) {
 
   simulateHalf(state, random);
 
+  recoverAllPlayers(state, HALFTIME_RECOVERY);
+  runDeadBallSubstitutions(state, "halftime");
   state.currentHalf = 2;
   state.gameClockRemaining = HALF_SECONDS;
   state.shotClockRemaining = SHOT_CLOCK_SECONDS;
@@ -1753,6 +2094,7 @@ function simulateGame(homeTeam, awayTeam, options = {}) {
     name: teamTracker.name,
     players: teamTracker.players.map((entry) => ({
       ...entry.stats,
+      energy: Number(getPlayerEnergy(entry.player).toFixed(1)),
     })),
     teamExtras: { ...teamTracker.teamExtras },
   }));
@@ -1786,6 +2128,8 @@ function createTeam({
   formation = OffensiveFormation.MOTION,
   defenseScheme = DefenseScheme.MAN_TO_MAN,
   tendencies = {},
+  timeouts = 4,
+  rotation = null,
 }) {
   return {
     name,
@@ -1794,6 +2138,8 @@ function createTeam({
     formation,
     defenseScheme,
     tendencies,
+    timeouts,
+    rotation,
   };
 }
 

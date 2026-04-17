@@ -84,6 +84,10 @@ const createPlayer = () => ({
     weight: "",
     wingspan: "",
   },
+
+  condition: {
+    energy: 100,
+  },
 });
 
 module.exports = {

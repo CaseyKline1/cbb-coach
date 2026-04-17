@@ -28,6 +28,17 @@ Implemented:
   - foul chance based on offensive `drawFoul` vs defensive `defensiveControl`,
   - makes on fouls are reduced but still possible,
   - free throws resolved from shooter FT rating.
+- Energy/fatigue model:
+  - every on-court 5-second action drains player energy,
+  - higher involvement in an action drains additional energy,
+  - lower stamina players drain faster,
+  - bench players recover energy each chunk,
+  - halftime, timeouts, and free-throw dead-ball stretches restore energy.
+- Substitutions and rotations:
+  - lineup changes only occur at dead balls (`made basket`, `out of bounds`, `halftime`, `timeout`),
+  - substitution decisions consider energy, relative player skill, and minute targets,
+  - optional preset rotation support via `team.rotation.minuteTargets` keyed by player name,
+  - if no rotation is provided and a roster has more than 5 players, default minute targets ensure everyone plays at least a little in an average game.
 
 ## Quick run
 
