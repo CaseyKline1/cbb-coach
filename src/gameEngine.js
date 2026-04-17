@@ -1475,6 +1475,34 @@ function applyChunkClock(state, shotClockMode = "tick") {
   }
 }
 
+function shouldTakeShotThisAction({
+  state,
+  shooter,
+  shotQuality = 0,
+  random = Math.random,
+  endClockWindowSeconds = 10,
+}) {
+  if (state.shotClockRemaining <= endClockWindowSeconds) return true;
+
+  const shotIQ = getRating(shooter, "skills.shotIQ");
+  const shootVsPass = getRating(shooter, "tendencies.shootVsPass");
+  const maxEarlyClock = SHOT_CLOCK_SECONDS - endClockWindowSeconds;
+  const elapsedEarlyClock = clamp(maxEarlyClock - (state.shotClockRemaining - endClockWindowSeconds), 0, maxEarlyClock);
+  const clockPressure = maxEarlyClock <= 0 ? 1 : elapsedEarlyClock / maxEarlyClock;
+  const qualityBoost = clamp(shotQuality, 0, 1.2) * 0.32;
+  const earlyClockShotChance = clamp(
+    0.14 +
+      clockPressure * 0.45 +
+      (shotIQ - 60) / 240 +
+      (shootVsPass - 55) / 240 +
+      qualityBoost,
+    0.12,
+    0.9,
+  );
+
+  return random() < earlyClockShotChance;
+}
+
 function resolveActionChunk(state, random = Math.random) {
   const offenseTeamId = state.possessionTeamId;
   const defenseTeamId = nextDefenseTeamId(state.possessionTeamId);
@@ -1559,13 +1587,13 @@ function resolveActionChunk(state, random = Math.random) {
         "defense.perimeterDefense",
         "athleticism.agility",
       ],
-      contextEdge: zonePenalty,
+      contextEdge: zonePenalty - 0.04,
       random,
     });
 
-    const decisiveOWin = drive.edge >= 0.58;
-    const oWin = drive.edge >= 0.1;
-    const decisiveDWin = drive.edge <= -0.62;
+    const decisiveOWin = drive.edge >= 0.64;
+    const oWin = drive.edge >= 0.14;
+    const decisiveDWin = drive.edge <= -0.6;
     const dTieOrSmallWin = !oWin && !decisiveDWin;
 
     if (decisiveDWin) {
@@ -1699,93 +1727,121 @@ function resolveActionChunk(state, random = Math.random) {
             possessionChanged = true;
             shotClockMode = "hold";
           } else {
-            const shotType = chooseShotFromTendencies(best.player, random);
-            const contested = best.evalResult.openLevel < 0.56;
-            const shot = resolveShot({
-              shooter: best.player,
-              defender: best.cover.defender,
-              shotType,
-              zonePenalty,
-              shotQualityEdge: best.evalResult.openLevel * 0.32,
-              contested,
-              random,
-            });
-            shot.shooter = best.player;
-            shot.assister = ballHandler;
-            markInvolvement(offenseTeamId, best.player, 0.9);
-            markInvolvement(offenseTeamId, ballHandler, 0.35);
-            markInvolvement(defenseTeamId, best.cover.defender, 0.75);
-
-            const endState = resolvePossessionEndAfterShot({
+            if (!shouldTakeShotThisAction({
               state,
-              offenseTeamId,
-              defenseTeamId,
-              offense,
-              defense,
-              offenseLineup,
-              defenseLineup,
-              defenseScheme,
-              playType,
-              shotType,
-              shot,
+              shooter: best.player,
+              shotQuality: best.evalResult.openLevel,
               random,
-            });
-            possessionChanged = endState.possessionChanged;
-            shotClockMode = endState.shotClockMode;
+            })) {
+              pushEvent(state, {
+                type: "reset",
+                offenseTeam: offense.name,
+                playType,
+                detail: "Kick-out caught, offense reset for a later shot.",
+              });
+            } else {
+              const shotType = chooseShotFromTendencies(best.player, random);
+              const contested = best.evalResult.openLevel < 0.56;
+              const shot = resolveShot({
+                shooter: best.player,
+                defender: best.cover.defender,
+                shotType,
+                zonePenalty,
+                shotQualityEdge: best.evalResult.openLevel * 0.32,
+                contested,
+                random,
+              });
+              shot.shooter = best.player;
+              shot.assister = ballHandler;
+              markInvolvement(offenseTeamId, best.player, 0.9);
+              markInvolvement(offenseTeamId, ballHandler, 0.35);
+              markInvolvement(defenseTeamId, best.cover.defender, 0.75);
+
+              const endState = resolvePossessionEndAfterShot({
+                state,
+                offenseTeamId,
+                defenseTeamId,
+                offense,
+                defense,
+                offenseLineup,
+                defenseLineup,
+                defenseScheme,
+                playType,
+                shotType,
+                shot,
+                random,
+              });
+              possessionChanged = endState.possessionChanged;
+              shotClockMode = endState.shotClockMode;
+            }
           }
         }
       } else {
-        const shotType = jumpDecision ? chooseShotFromTendencies(ballHandler, random) : chooseDriveFinishType(ballHandler, random);
-        const contestWeight = decisiveOWin ? 0.08 : 0.2;
-        const shotQualityEdge = decisiveOWin ? 0.32 : 0.1;
-        const shot = resolveShot({
-          shooter: ballHandler,
-          defender: onBall.defender,
-          shotType,
-          zonePenalty,
-          shotQualityEdge: shotQualityEdge - (helpArrives ? contestWeight : 0),
-          contested: true,
-          random,
-        });
-        shot.shooter = ballHandler;
-        markInvolvement(offenseTeamId, ballHandler, 1);
-        markInvolvement(defenseTeamId, onBall.defender, 0.85);
-
-        if (!shot.made && (shotType === "layup" || shotType === "dunk")) {
-          const oLength =
-            (getHeightInches(ballHandler) + getWingspanInches(ballHandler)) / 2;
-          const dLength =
-            (getHeightInches(onBall.defender) + getWingspanInches(onBall.defender)) / 2;
-          const blockRating = getRating(onBall.defender, "defense.shotBlocking");
-          const blockChance = clamp(
-            0.02 +
-              (dLength - oLength) / 180 +
-              (blockRating - 50) / 220 +
-              (decisiveOWin ? -0.02 : 0.04),
-            0.01,
-            0.26,
-          );
-          if (random() < blockChance) {
-            shot.blockedByDefense = true;
-          }
-        }
-
-        const endState = resolvePossessionEndAfterShot({
+        if (!shouldTakeShotThisAction({
           state,
-          offenseTeamId,
-          defenseTeamId,
-          offense,
-          defense,
-          offenseLineup,
-          defenseLineup,
-          defenseScheme,
-          playType,
-          shotType,
-          shot,
+          shooter: ballHandler,
+          shotQuality: decisiveOWin ? 0.8 : (helpArrives ? 0.35 : 0.55),
           random,
-        });
-        possessionChanged = endState.possessionChanged;
-        shotClockMode = endState.shotClockMode;
+        })) {
+          pushEvent(state, {
+            type: "reset",
+            offenseTeam: offense.name,
+            playType,
+            detail: "Drive advantage wasn't enough, offense reset.",
+          });
+        } else {
+          const shotType = jumpDecision ? chooseShotFromTendencies(ballHandler, random) : chooseDriveFinishType(ballHandler, random);
+          const contestWeight = decisiveOWin ? 0.08 : 0.2;
+          const shotQualityEdge = decisiveOWin ? 0.32 : 0.1;
+          const shot = resolveShot({
+            shooter: ballHandler,
+            defender: onBall.defender,
+            shotType,
+            zonePenalty,
+            shotQualityEdge: shotQualityEdge - (helpArrives ? contestWeight : 0),
+            contested: true,
+            random,
+          });
+          shot.shooter = ballHandler;
+          markInvolvement(offenseTeamId, ballHandler, 1);
+          markInvolvement(defenseTeamId, onBall.defender, 0.85);
+
+          if (!shot.made && (shotType === "layup" || shotType === "dunk")) {
+            const oLength =
+              (getHeightInches(ballHandler) + getWingspanInches(ballHandler)) / 2;
+            const dLength =
+              (getHeightInches(onBall.defender) + getWingspanInches(onBall.defender)) / 2;
+            const blockRating = getRating(onBall.defender, "defense.shotBlocking");
+            const blockChance = clamp(
+              0.02 +
+                (dLength - oLength) / 180 +
+                (blockRating - 50) / 220 +
+                (decisiveOWin ? -0.02 : 0.04),
+              0.01,
+              0.26,
+            );
+            if (random() < blockChance) {
+              shot.blockedByDefense = true;
+            }
+          }
+
+          const endState = resolvePossessionEndAfterShot({
+            state,
+            offenseTeamId,
+            defenseTeamId,
+            offense,
+            defense,
+            offenseLineup,
+            defenseLineup,
+            defenseScheme,
+            playType,
+            shotType,
+            shot,
+            random,
+          });
+          possessionChanged = endState.possessionChanged;
+          shotClockMode = endState.shotClockMode;
+        }
       }
     }
   } else if (playType === "post_up") {
@@ -1949,39 +2005,53 @@ function resolveActionChunk(state, random = Math.random) {
               possessionChanged = true;
               shotClockMode = "hold";
             } else {
-              const shotType = chooseShotFromTendencies(best.player, random);
-              const contested = best.evalResult.openLevel < 0.56;
-              const shot = resolveShot({
-                shooter: best.player,
-                defender: best.cover.defender,
-                shotType,
-                zonePenalty,
-                shotQualityEdge: best.evalResult.openLevel * 0.25,
-                contested,
-                random,
-              });
-              shot.shooter = best.player;
-              shot.assister = ballHandler;
-              markInvolvement(offenseTeamId, best.player, 0.9);
-              markInvolvement(offenseTeamId, ballHandler, 0.35);
-              markInvolvement(defenseTeamId, best.cover.defender, 0.75);
-
-              const endState = resolvePossessionEndAfterShot({
+              if (!shouldTakeShotThisAction({
                 state,
-                offenseTeamId,
-                defenseTeamId,
-                offense,
-                defense,
-                offenseLineup,
-                defenseLineup,
-                defenseScheme,
-                playType,
-                shotType,
-                shot,
+                shooter: best.player,
+                shotQuality: best.evalResult.openLevel,
                 random,
-              });
-              possessionChanged = endState.possessionChanged;
-              shotClockMode = endState.shotClockMode;
+              })) {
+                pushEvent(state, {
+                  type: "reset",
+                  offenseTeam: offense.name,
+                  playType,
+                  detail: "Kick-out was there, but offense waited for late clock.",
+                });
+              } else {
+                const shotType = chooseShotFromTendencies(best.player, random);
+                const contested = best.evalResult.openLevel < 0.56;
+                const shot = resolveShot({
+                  shooter: best.player,
+                  defender: best.cover.defender,
+                  shotType,
+                  zonePenalty,
+                  shotQualityEdge: best.evalResult.openLevel * 0.25,
+                  contested,
+                  random,
+                });
+                shot.shooter = best.player;
+                shot.assister = ballHandler;
+                markInvolvement(offenseTeamId, best.player, 0.9);
+                markInvolvement(offenseTeamId, ballHandler, 0.35);
+                markInvolvement(defenseTeamId, best.cover.defender, 0.75);
+
+                const endState = resolvePossessionEndAfterShot({
+                  state,
+                  offenseTeamId,
+                  defenseTeamId,
+                  offense,
+                  defense,
+                  offenseLineup,
+                  defenseLineup,
+                  defenseScheme,
+                  playType,
+                  shotType,
+                  shot,
+                  random,
+                });
+                possessionChanged = endState.possessionChanged;
+                shotClockMode = endState.shotClockMode;
+              }
             }
           }
         } else {
@@ -2007,49 +2077,63 @@ function resolveActionChunk(state, random = Math.random) {
             random,
           );
 
-          const shot = resolveShot({
-            shooter: ballHandler,
-            defender: onBall.defender,
-            shotType,
-            zonePenalty,
-            shotQualityEdge: tierShotEdge,
-            contested: shotType !== "fadeaway",
-            random,
-          });
-          shot.shooter = ballHandler;
-          markInvolvement(offenseTeamId, ballHandler, 1);
-          markInvolvement(defenseTeamId, onBall.defender, 0.85);
-
-          if (!shot.made && (shotType === "hook" || shotType === "layup" || shotType === "dunk")) {
-            const blockChance = clamp(
-              0.015 +
-                (getRating(onBall.defender, "defense.shotBlocking") - 50) / 250 +
-                (postTier === "loss" ? 0.06 : 0) +
-                (postTier === "tie" ? 0.02 : 0),
-              0.01,
-              0.28,
-            );
-            if (random() < blockChance) {
-              shot.blockedByDefense = true;
-            }
-          }
-
-          const endState = resolvePossessionEndAfterShot({
+          if (!shouldTakeShotThisAction({
             state,
-            offenseTeamId,
-            defenseTeamId,
-            offense,
-            defense,
-            offenseLineup,
-            defenseLineup,
-            defenseScheme,
-            playType,
-            shotType,
-            shot,
+            shooter: ballHandler,
+            shotQuality: postTier === "dom_win" ? 0.9 : postTier === "win" ? 0.65 : 0.35,
             random,
-          });
-          possessionChanged = endState.possessionChanged;
-          shotClockMode = endState.shotClockMode;
+          })) {
+            pushEvent(state, {
+              type: "reset",
+              offenseTeam: offense.name,
+              playType,
+              detail: "Post touch didn't force a shot; offense reset.",
+            });
+          } else {
+            const shot = resolveShot({
+              shooter: ballHandler,
+              defender: onBall.defender,
+              shotType,
+              zonePenalty,
+              shotQualityEdge: tierShotEdge,
+              contested: shotType !== "fadeaway",
+              random,
+            });
+            shot.shooter = ballHandler;
+            markInvolvement(offenseTeamId, ballHandler, 1);
+            markInvolvement(defenseTeamId, onBall.defender, 0.85);
+
+            if (!shot.made && (shotType === "hook" || shotType === "layup" || shotType === "dunk")) {
+              const blockChance = clamp(
+                0.015 +
+                  (getRating(onBall.defender, "defense.shotBlocking") - 50) / 250 +
+                  (postTier === "loss" ? 0.06 : 0) +
+                  (postTier === "tie" ? 0.02 : 0),
+                0.01,
+                0.28,
+              );
+              if (random() < blockChance) {
+                shot.blockedByDefense = true;
+              }
+            }
+
+            const endState = resolvePossessionEndAfterShot({
+              state,
+              offenseTeamId,
+              defenseTeamId,
+              offense,
+              defense,
+              offenseLineup,
+              defenseLineup,
+              defenseScheme,
+              playType,
+              shotType,
+              shot,
+              random,
+            });
+            possessionChanged = endState.possessionChanged;
+            shotClockMode = endState.shotClockMode;
+          }
         }
       }
     }
