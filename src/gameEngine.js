@@ -1238,6 +1238,8 @@ function resolvePossessionEndAfterShot({
 }) {
   const shooter = shot.shooter || offenseLineup[0];
   const primaryDefender = shot.defender || defenseLineup[0];
+  applyPendingAssistIfEligible(state, offenseTeamId, shooter, shot);
+  clearPendingAssist(state);
 
   recordFieldGoalAttempt(state, offenseTeamId, shooter, shotType, shot.made);
 
@@ -1412,6 +1414,28 @@ function nextDefenseTeamId(currentOffenseTeamId) {
   return currentOffenseTeamId === 0 ? 1 : 0;
 }
 
+function clearPendingAssist(state) {
+  state.pendingAssist = null;
+}
+
+function setPendingAssist(state, teamId, passer, receiver) {
+  if (!passer || !receiver || passer === receiver) {
+    clearPendingAssist(state);
+    return;
+  }
+
+  state.pendingAssist = { teamId, passer, receiver, validForNextAction: true };
+}
+
+function applyPendingAssistIfEligible(state, offenseTeamId, shooter, shot) {
+  if (shot.assister || !shooter) return;
+  const pending = state.pendingAssist;
+  if (!pending || pending.teamId !== offenseTeamId) return;
+  if (pending.receiver !== shooter) return;
+  if (pending.passer === shooter) return;
+  shot.assister = pending.passer;
+}
+
 function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
   const homeLineup = getDefaultLineup(homeTeam);
   const awayLineup = getDefaultLineup(awayTeam);
@@ -1444,11 +1468,13 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
     currentHalf: 1,
     shotClockRemaining: SHOT_CLOCK_SECONDS,
     possessionNeedsSetup: true,
+    pendingAssist: null,
     playByPlay: [],
   };
 }
 
 function beginNewPossession(state, offenseTeamId, deadBallReason = null) {
+  clearPendingAssist(state);
   state.possessionTeamId = offenseTeamId;
   state.shotClockRemaining = SHOT_CLOCK_SECONDS;
   state.possessionNeedsSetup = true;
@@ -1563,6 +1589,18 @@ function resolveActionChunk(state, random = Math.random) {
   const zonePenalty = onBall.isZone
     ? -0.08 + zoneDistanceAdvantage(onBall.defender, onBall.startDistance)
     : 0;
+  if (state.pendingAssist) {
+    const pending = state.pendingAssist;
+    if (
+      pending.teamId !== offenseTeamId ||
+      pending.receiver !== ballHandler ||
+      !pending.validForNextAction
+    ) {
+      clearPendingAssist(state);
+    } else {
+      pending.validForNextAction = false;
+    }
+  }
   markInvolvement(offenseTeamId, ballHandler, 1);
   markInvolvement(defenseTeamId, onBall.defender, 0.9);
 
@@ -1645,11 +1683,11 @@ function resolveActionChunk(state, random = Math.random) {
 
       const shootVsPass = getRating(ballHandler, "tendencies.shootVsPass");
       const passChance = clamp(
-        (55 - shootVsPass) / 100 + (helpArrives ? 0.22 : 0.06),
-        0.05,
-        decisiveOWin ? 0.84 : 0.74,
+        (59 - shootVsPass) / 100 + (helpArrives ? 0.28 : 0.12),
+        0.1,
+        decisiveOWin ? 0.9 : 0.8,
       );
-      const jumpChance = decisiveOWin ? 0 : clamp((shootVsPass - 55) / 180, 0, 0.25);
+      const jumpChance = decisiveOWin ? 0 : clamp((shootVsPass - 58) / 220, 0, 0.16);
       const passDecision = random() < passChance;
       const jumpDecision = !passDecision && random() < jumpChance;
 
@@ -1727,6 +1765,7 @@ function resolveActionChunk(state, random = Math.random) {
             possessionChanged = true;
             shotClockMode = "hold";
           } else {
+            setPendingAssist(state, offenseTeamId, ballHandler, best.player);
             if (!shouldTakeShotThisAction({
               state,
               shooter: best.player,
@@ -2005,6 +2044,7 @@ function resolveActionChunk(state, random = Math.random) {
               possessionChanged = true;
               shotClockMode = "hold";
             } else {
+              setPendingAssist(state, offenseTeamId, ballHandler, best.player);
               if (!shouldTakeShotThisAction({
                 state,
                 shooter: best.player,
