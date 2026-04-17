@@ -912,7 +912,7 @@ function resolveShot({
   const drawFoul = getRating(shooter, profile.foulDraw);
   const defensiveControl = getRating(defender, "defense.defensiveControl");
   const foulPressure = (drawFoul - defensiveControl) / 140;
-  const baseFoulChance = clamp(0.06 + foulPressure, 0.01, 0.3);
+  const baseFoulChance = clamp(0.075 + foulPressure, 0.015, 0.34);
   const isShootingFoul = contested && random() < baseFoulChance;
 
   let made = shotResult.success;
