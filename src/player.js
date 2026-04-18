@@ -76,6 +76,8 @@ const createPlayer = () => ({
     midrange: 1,
     threePoint: 1,
     drive: 1,
+    pickAndRoll: 1,
+    pickAndPop: 1,
     shootVsPass: 1,
   },
 

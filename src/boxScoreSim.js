@@ -89,6 +89,8 @@ const BASE_RATINGS = {
     midrange: 50,
     threePoint: 50,
     drive: 52,
+    pickAndRoll: 50,
+    pickAndPop: 50,
     shootVsPass: 50,
   },
 };
@@ -111,6 +113,8 @@ const POSITION_ADJUSTMENTS = {
     "rebounding.offensiveRebounding": -8,
     "rebounding.defensiveRebound": -8,
     "tendencies.drive": 8,
+    "tendencies.pickAndRoll": 10,
+    "tendencies.pickAndPop": 4,
     "tendencies.post": -12,
   },
   SG: {
@@ -124,6 +128,7 @@ const POSITION_ADJUSTMENTS = {
     "postGame.postControl": -6,
     "postGame.postHooks": -6,
     "tendencies.threePoint": 10,
+    "tendencies.pickAndPop": 8,
     "tendencies.post": -10,
   },
   SF: {
@@ -136,6 +141,8 @@ const POSITION_ADJUSTMENTS = {
     "rebounding.defensiveRebound": 4,
     "tendencies.inside": 4,
     "tendencies.drive": 4,
+    "tendencies.pickAndRoll": 3,
+    "tendencies.pickAndPop": 4,
   },
   PF: {
     "athleticism.strength": 8,
@@ -149,6 +156,8 @@ const POSITION_ADJUSTMENTS = {
     "rebounding.defensiveRebound": 9,
     "rebounding.boxouts": 9,
     "tendencies.post": 14,
+    "tendencies.pickAndRoll": 6,
+    "tendencies.pickAndPop": 2,
     "tendencies.threePoint": -8,
   },
   C: {
@@ -166,6 +175,8 @@ const POSITION_ADJUSTMENTS = {
     "rebounding.defensiveRebound": 13,
     "rebounding.boxouts": 12,
     "tendencies.post": 16,
+    "tendencies.pickAndRoll": 8,
+    "tendencies.pickAndPop": -6,
     "tendencies.threePoint": -12,
     "tendencies.drive": -10,
   },
@@ -181,6 +192,8 @@ const POSITION_ADJUSTMENTS = {
     "defense.lateralQuickness": 5,
     "postGame.postControl": -7,
     "tendencies.drive": 6,
+    "tendencies.pickAndRoll": 8,
+    "tendencies.pickAndPop": 5,
     "tendencies.post": -10,
   },
   Wing: {
@@ -193,6 +206,7 @@ const POSITION_ADJUSTMENTS = {
     "defense.offballDefense": 7,
     "rebounding.defensiveRebound": 4,
     "tendencies.threePoint": 8,
+    "tendencies.pickAndPop": 7,
     "tendencies.post": -8,
   },
   F: {
@@ -206,6 +220,8 @@ const POSITION_ADJUSTMENTS = {
     "rebounding.offensiveRebounding": 7,
     "rebounding.defensiveRebound": 8,
     "rebounding.boxouts": 8,
+    "tendencies.pickAndRoll": 5,
+    "tendencies.pickAndPop": 2,
     "tendencies.post": 8,
   },
   Big: {
@@ -218,6 +234,8 @@ const POSITION_ADJUSTMENTS = {
     "rebounding.offensiveRebounding": 11,
     "rebounding.defensiveRebound": 11,
     "rebounding.boxouts": 10,
+    "tendencies.pickAndRoll": 7,
+    "tendencies.pickAndPop": -6,
     "tendencies.post": 14,
     "tendencies.threePoint": -10,
   },
