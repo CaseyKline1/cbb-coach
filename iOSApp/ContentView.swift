@@ -69,9 +69,9 @@ struct ContentView: View {
     private func runLeague() {
         do {
             var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "ios-league"))
-            autoFillUserNonConferenceOpponents(&league, seed: "ios-autofill")
-            generateSeasonSchedule(&league, seed: "ios-schedule")
-            _ = advanceToNextUserGame(&league, seed: "ios-advance")
+            autoFillUserNonConferenceOpponents(&league)
+            generateSeasonSchedule(&league)
+            _ = advanceToNextUserGame(&league)
             let summary = getLeagueSummary(league)
             leagueSummary = "\(summary.userTeamName): \(summary.totalScheduledGames) games scheduled"
         } catch {

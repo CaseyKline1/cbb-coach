@@ -86,7 +86,7 @@ public struct Team: Codable, Equatable, Sendable {
         coachingStaff.coaches
     }
 
-    public var score: Int = 0
+    public var score: Int?
 
     public init(
         name: String,
@@ -115,7 +115,7 @@ public struct Team: Codable, Equatable, Sendable {
     }
 }
 
-public struct CreateTeamOptions: Sendable {
+public struct CreateTeamOptions: Codable, Equatable, Sendable {
     public var name: String
     public var players: [Player]
     public var lineup: [Player]?
@@ -138,60 +138,11 @@ public struct CreateTeamOptions: Sendable {
 }
 
 public func createTeam(options: CreateTeamOptions, random: inout SeededRandom) -> Team {
-    let normalizedStaff: CoachingStaff
-    if let coachingStaff = options.coachingStaff {
-        normalizedStaff = coachingStaff
-    } else {
-        var staffOptions = CreateCoachingStaffOptions()
-        if let coaches = options.coaches, let first = coaches.first {
-            var head = CreateCoachOptions()
-            head.role = .headCoach
-            head.age = first.age
-            head.pressAggressiveness = first.pressAggressiveness
-            head.pace = first.pace
-            head.defaultOffensiveSet = first.defaultOffensiveSet
-            head.defaultDefensiveSet = first.defaultDefensiveSet
-            head.almaMater = first.almaMater
-            head.pipelineState = first.pipelineState
-            head.skills = first.skills
-            staffOptions.headCoach = head
-
-            let assistants = coaches.dropFirst().map { coach in
-                var opt = CreateCoachOptions()
-                opt.age = coach.age
-                opt.pressAggressiveness = coach.pressAggressiveness
-                opt.pace = coach.pace
-                opt.defaultOffensiveSet = coach.defaultOffensiveSet
-                opt.defaultDefensiveSet = coach.defaultDefensiveSet
-                opt.almaMater = coach.almaMater
-                opt.pipelineState = coach.pipelineState
-                opt.skills = coach.skills
-                return opt
-            }
-            staffOptions.assistants = assistants
-        }
-        staffOptions.schoolPool = options.schoolPool ?? (options.name.isEmpty ? [] : [options.name])
-        staffOptions.teamName = options.name
-        staffOptions.defaultPace = options.pace
-        staffOptions.defaultOffensiveSet = options.formation
-        staffOptions.defaultDefensiveSet = options.defenseScheme
-        if let weights = options.pipelineStateWeights {
-            staffOptions.pipelineStateWeights = weights
-        }
-        normalizedStaff = createCoachingStaff(options: staffOptions, random: &random)
+    do {
+        let args = [try toJSONValue(options)]
+        let response = try JSRuntime.shared.invokeWithRandom(moduleId: "./gameEngine", fn: "createTeam", args: args, random: &random)
+        return try fromJSONValue(response.result, as: Team.self)
+    } catch {
+        fatalError("createTeam failed: \(error)")
     }
-
-    return Team(
-        name: options.name,
-        players: options.players,
-        lineup: options.lineup,
-        formation: options.formation,
-        formations: options.formations,
-        defenseScheme: options.defenseScheme,
-        tendencies: options.tendencies,
-        timeouts: options.timeouts,
-        rotation: options.rotation,
-        pace: options.pace,
-        coachingStaff: normalizedStaff
-    )
 }

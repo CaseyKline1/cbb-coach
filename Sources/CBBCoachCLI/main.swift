@@ -29,16 +29,18 @@ print("\(result.away.name) \(result.away.score) - \(result.home.name) \(result.h
 print("Winner: \(result.winner ?? "Tie")")
 print("Recent events:")
 for event in result.playByPlay.suffix(10) {
-    print("[H\(event.half) \(event.clockRemaining)s] \(event.type)")
+    let half = event.half ?? -1
+    let mark = event.clockRemaining ?? event.elapsedSecondsInHalf ?? -1
+    print("[H\(half) \(mark)s] \(event.type)")
 }
 
 print("")
 var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "cli-demo"))
-autoFillUserNonConferenceOpponents(&league, seed: "cli-demo-autofill")
-generateSeasonSchedule(&league, seed: "cli-demo-schedule")
+autoFillUserNonConferenceOpponents(&league)
+generateSeasonSchedule(&league)
 
-if let nextGame = advanceToNextUserGame(&league, seed: "cli-demo-advance") {
-    print("Next completed user game: Day \(nextGame.day) vs \(nextGame.opponent)")
+if let nextGame = advanceToNextUserGame(&league) {
+    print("Next completed user game: Day \(nextGame.day ?? 0) vs \(nextGame.opponentName ?? "Unknown")")
 }
 
 let summary = getLeagueSummary(league)

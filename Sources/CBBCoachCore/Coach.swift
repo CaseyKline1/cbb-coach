@@ -82,7 +82,7 @@ private let SCHOOL_KEYWORDS_TO_STATE: [String: String] = [
     "Carolina": "NC"
 ]
 
-public struct CreateCoachOptions: Sendable {
+public struct CreateCoachOptions: Codable, Equatable, Sendable {
     public var role: CoachRole = .assistant
     public var age: Int?
     public var pressAggressiveness: Int?
@@ -101,20 +101,16 @@ public struct CreateCoachOptions: Sendable {
 }
 
 public func createCoach(options: CreateCoachOptions = CreateCoachOptions(), random: inout SeededRandom) -> Coach {
-    var result = Coach()
-    result.role = options.role
-    result.age = clamp(options.age ?? random.int(31, 69), min: 24, max: 80)
-    result.pressAggressiveness = clamp(options.pressAggressiveness ?? random.int(25, 90), min: 1, max: 100)
-    result.pace = options.pace
-    result.defaultOffensiveSet = options.defaultOffensiveSet
-    result.defaultDefensiveSet = options.defaultDefensiveSet
-    result.almaMater = chooseAlmaMater(options, random: &random)
-    result.pipelineState = choosePipelineState(options, almaMater: result.almaMater, random: &random)
-    result.skills = CoachSkills.normalized(from: options.skills, random: &random)
-    return result
+    do {
+        let args = [try toJSONValue(options)]
+        let response = try JSRuntime.shared.invokeWithRandom(moduleId: "./coach", fn: "createCoach", args: args, random: &random)
+        return try fromJSONValue(response.result, as: Coach.self)
+    } catch {
+        fatalError("createCoach failed: \(error)")
+    }
 }
 
-public struct CreateCoachingStaffOptions: Sendable {
+public struct CreateCoachingStaffOptions: Codable, Equatable, Sendable {
     public var headCoach: CreateCoachOptions?
     public var assistants: [CreateCoachOptions] = []
     public var gamePrepAssistantIndex: Int?
@@ -129,43 +125,13 @@ public struct CreateCoachingStaffOptions: Sendable {
 }
 
 public func createCoachingStaff(options: CreateCoachingStaffOptions = CreateCoachingStaffOptions(), random: inout SeededRandom) -> CoachingStaff {
-    var headOptions = options.headCoach ?? CreateCoachOptions()
-    headOptions.role = .headCoach
-    headOptions.schoolPool = options.schoolPool
-    headOptions.teamName = options.teamName
-    headOptions.pace = options.defaultPace
-    headOptions.defaultOffensiveSet = options.defaultOffensiveSet
-    headOptions.defaultDefensiveSet = options.defaultDefensiveSet
-    headOptions.pipelineStateWeights = options.pipelineStateWeights
-
-    let head = createCoach(options: headOptions, random: &random)
-
-    var assistantOptions = options.assistants
-    while assistantOptions.count < 4 {
-        assistantOptions.append(CreateCoachOptions())
+    do {
+        let args = [try toJSONValue(options)]
+        let response = try JSRuntime.shared.invokeWithRandom(moduleId: "./coach", fn: "createCoachingStaff", args: args, random: &random)
+        return try fromJSONValue(response.result, as: CoachingStaff.self)
+    } catch {
+        fatalError("createCoachingStaff failed: \(error)")
     }
-    assistantOptions = Array(assistantOptions.prefix(4))
-
-    let assistants = assistantOptions.map { item -> Coach in
-        var opt = item
-        opt.role = .assistant
-        opt.schoolPool = options.schoolPool
-        opt.teamName = options.teamName
-        opt.pace = options.defaultPace
-        opt.defaultOffensiveSet = options.defaultOffensiveSet
-        opt.defaultDefensiveSet = options.defaultDefensiveSet
-        opt.pipelineStateWeights = options.pipelineStateWeights
-        return createCoach(options: opt, random: &random)
-    }
-
-    let validIndex: Int?
-    if let i = options.gamePrepAssistantIndex, (0..<assistants.count).contains(i) {
-        validIndex = i
-    } else {
-        validIndex = nil
-    }
-
-    return CoachingStaff(headCoach: head, assistants: assistants, gamePrepAssistantIndex: validIndex)
 }
 
 private func chooseAlmaMater(_ options: CreateCoachOptions, random: inout SeededRandom) -> String {

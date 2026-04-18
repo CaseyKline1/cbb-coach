@@ -15,7 +15,7 @@ let package = Package(
         .target(
             name: "CBBCoachCore",
             resources: [
-                .copy("Resources/d1-conferences.2026.json")
+                .process("Resources/js")
             ]
         ),
         .executableTarget(name: "CBBCoachCLI", dependencies: ["CBBCoachCore"]),
