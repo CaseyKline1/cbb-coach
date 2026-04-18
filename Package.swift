@@ -12,7 +12,12 @@ let package = Package(
         .executable(name: "CBBCoachCLI", targets: ["CBBCoachCLI"])
     ],
     targets: [
-        .target(name: "CBBCoachCore"),
+        .target(
+            name: "CBBCoachCore",
+            resources: [
+                .copy("Resources/d1-conferences.2026.json")
+            ]
+        ),
         .executableTarget(name: "CBBCoachCLI", dependencies: ["CBBCoachCore"]),
         .testTarget(name: "CBBCoachCoreTests", dependencies: ["CBBCoachCore"])
     ]

@@ -27,3 +27,16 @@ func simulateGameSmoke() {
     #expect(result.away.score >= 0)
     #expect(!result.playByPlay.isEmpty)
 }
+
+@Test("Can create, schedule, and advance league state")
+func leagueFlowSmoke() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "tests"))
+    autoFillUserNonConferenceOpponents(&league, seed: "tests-autofill")
+    generateSeasonSchedule(&league, seed: "tests-schedule")
+    let before = getLeagueSummary(league)
+    #expect(before.scheduleGenerated)
+    #expect(before.totalScheduledGames > 0)
+
+    let maybeGame = advanceToNextUserGame(&league, seed: "tests-advance")
+    #expect(maybeGame != nil)
+}

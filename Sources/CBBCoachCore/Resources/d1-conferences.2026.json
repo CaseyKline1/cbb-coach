@@ -1,0 +1,1813 @@
+{
+  "source": {
+    "name": "NCAA DI Men's Basketball Standings",
+    "url": "https://www.ncaa.com/standings/basketball-men/d1/all-conferences",
+    "scrapedAt": "2026-04-18T19:16:08.882Z",
+    "standingsLastUpdated": null
+  },
+  "conferenceCount": 31,
+  "teamCount": 365,
+  "conferences": [
+    {
+      "id": "acc",
+      "name": "ACC",
+      "teams": [
+        {
+          "id": "acc-duke",
+          "name": "Duke"
+        },
+        {
+          "id": "acc-virginia",
+          "name": "Virginia"
+        },
+        {
+          "id": "acc-miami-fl",
+          "name": "Miami (FL)"
+        },
+        {
+          "id": "acc-north-carolina",
+          "name": "North Carolina"
+        },
+        {
+          "id": "acc-clemson",
+          "name": "Clemson"
+        },
+        {
+          "id": "acc-louisville",
+          "name": "Louisville"
+        },
+        {
+          "id": "acc-nc-state",
+          "name": "NC State"
+        },
+        {
+          "id": "acc-florida-st",
+          "name": "Florida St."
+        },
+        {
+          "id": "acc-california",
+          "name": "California"
+        },
+        {
+          "id": "acc-stanford",
+          "name": "Stanford"
+        },
+        {
+          "id": "acc-virginia-tech",
+          "name": "Virginia Tech"
+        },
+        {
+          "id": "acc-smu",
+          "name": "SMU"
+        },
+        {
+          "id": "acc-wake-forest",
+          "name": "Wake Forest"
+        },
+        {
+          "id": "acc-syracuse",
+          "name": "Syracuse"
+        },
+        {
+          "id": "acc-pittsburgh",
+          "name": "Pittsburgh"
+        },
+        {
+          "id": "acc-notre-dame",
+          "name": "Notre Dame"
+        },
+        {
+          "id": "acc-boston-college",
+          "name": "Boston College"
+        },
+        {
+          "id": "acc-georgia-tech",
+          "name": "Georgia Tech"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "america-east",
+      "name": "America East",
+      "teams": [
+        {
+          "id": "america-east-umbc",
+          "name": "UMBC"
+        },
+        {
+          "id": "america-east-vermont",
+          "name": "Vermont"
+        },
+        {
+          "id": "america-east-njit",
+          "name": "NJIT"
+        },
+        {
+          "id": "america-east-umass-lowell",
+          "name": "UMass Lowell"
+        },
+        {
+          "id": "america-east-ualbany",
+          "name": "UAlbany"
+        },
+        {
+          "id": "america-east-maine",
+          "name": "Maine"
+        },
+        {
+          "id": "america-east-new-hampshire",
+          "name": "New Hampshire"
+        },
+        {
+          "id": "america-east-bryant",
+          "name": "Bryant"
+        },
+        {
+          "id": "america-east-binghamton",
+          "name": "Binghamton"
+        }
+      ],
+      "inferredConferenceGames": 16,
+      "metadata": {
+        "minConferenceGames": 16,
+        "maxConferenceGames": 16
+      }
+    },
+    {
+      "id": "american",
+      "name": "American",
+      "teams": [
+        {
+          "id": "american-south-fla",
+          "name": "South Fla."
+        },
+        {
+          "id": "american-tulsa",
+          "name": "Tulsa"
+        },
+        {
+          "id": "american-wichita-st",
+          "name": "Wichita St."
+        },
+        {
+          "id": "american-uab",
+          "name": "UAB"
+        },
+        {
+          "id": "american-north-texas",
+          "name": "North Texas"
+        },
+        {
+          "id": "american-fla-atlantic",
+          "name": "Fla. Atlantic"
+        },
+        {
+          "id": "american-charlotte",
+          "name": "Charlotte"
+        },
+        {
+          "id": "american-tulane",
+          "name": "Tulane"
+        },
+        {
+          "id": "american-temple",
+          "name": "Temple"
+        },
+        {
+          "id": "american-memphis",
+          "name": "Memphis"
+        },
+        {
+          "id": "american-rice",
+          "name": "Rice"
+        },
+        {
+          "id": "american-east-carolina",
+          "name": "East Carolina"
+        },
+        {
+          "id": "american-utsa",
+          "name": "UTSA"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "asun",
+      "name": "ASUN",
+      "teams": [
+        {
+          "id": "asun-austin-peay",
+          "name": "Austin Peay"
+        },
+        {
+          "id": "asun-central-ark",
+          "name": "Central Ark."
+        },
+        {
+          "id": "asun-queens-nc",
+          "name": "Queens (NC)"
+        },
+        {
+          "id": "asun-lipscomb",
+          "name": "Lipscomb"
+        },
+        {
+          "id": "asun-fgcu",
+          "name": "FGCU"
+        },
+        {
+          "id": "asun-west-ga",
+          "name": "West Ga."
+        },
+        {
+          "id": "asun-bellarmine",
+          "name": "Bellarmine"
+        },
+        {
+          "id": "asun-jacksonville",
+          "name": "Jacksonville"
+        },
+        {
+          "id": "asun-stetson",
+          "name": "Stetson"
+        },
+        {
+          "id": "asun-eastern-ky",
+          "name": "Eastern Ky."
+        },
+        {
+          "id": "asun-north-florida",
+          "name": "North Florida"
+        },
+        {
+          "id": "asun-north-ala",
+          "name": "North Ala."
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "atlantic-10",
+      "name": "Atlantic 10",
+      "teams": [
+        {
+          "id": "atlantic-10-saint-louis",
+          "name": "Saint Louis"
+        },
+        {
+          "id": "atlantic-10-vcu",
+          "name": "VCU"
+        },
+        {
+          "id": "atlantic-10-saint-joseph-and-039-s",
+          "name": "Saint Joseph&#039;s"
+        },
+        {
+          "id": "atlantic-10-dayton",
+          "name": "Dayton"
+        },
+        {
+          "id": "atlantic-10-george-mason",
+          "name": "George Mason"
+        },
+        {
+          "id": "atlantic-10-davidson",
+          "name": "Davidson"
+        },
+        {
+          "id": "atlantic-10-duquesne",
+          "name": "Duquesne"
+        },
+        {
+          "id": "atlantic-10-george-washington",
+          "name": "George Washington"
+        },
+        {
+          "id": "atlantic-10-fordham",
+          "name": "Fordham"
+        },
+        {
+          "id": "atlantic-10-rhode-island",
+          "name": "Rhode Island"
+        },
+        {
+          "id": "atlantic-10-richmond",
+          "name": "Richmond"
+        },
+        {
+          "id": "atlantic-10-la-salle",
+          "name": "La Salle"
+        },
+        {
+          "id": "atlantic-10-st-bonaventure",
+          "name": "St. Bonaventure"
+        },
+        {
+          "id": "atlantic-10-loyola-chicago",
+          "name": "Loyola Chicago"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "big-12",
+      "name": "Big 12",
+      "teams": [
+        {
+          "id": "big-12-arizona",
+          "name": "Arizona"
+        },
+        {
+          "id": "big-12-houston",
+          "name": "Houston"
+        },
+        {
+          "id": "big-12-iowa-st",
+          "name": "Iowa St."
+        },
+        {
+          "id": "big-12-kansas",
+          "name": "Kansas"
+        },
+        {
+          "id": "big-12-texas-tech",
+          "name": "Texas Tech"
+        },
+        {
+          "id": "big-12-tcu",
+          "name": "TCU"
+        },
+        {
+          "id": "big-12-byu",
+          "name": "BYU"
+        },
+        {
+          "id": "big-12-ucf",
+          "name": "UCF"
+        },
+        {
+          "id": "big-12-west-virginia",
+          "name": "West Virginia"
+        },
+        {
+          "id": "big-12-cincinnati",
+          "name": "Cincinnati"
+        },
+        {
+          "id": "big-12-colorado",
+          "name": "Colorado"
+        },
+        {
+          "id": "big-12-arizona-st",
+          "name": "Arizona St."
+        },
+        {
+          "id": "big-12-oklahoma-st",
+          "name": "Oklahoma St."
+        },
+        {
+          "id": "big-12-baylor",
+          "name": "Baylor"
+        },
+        {
+          "id": "big-12-kansas-st",
+          "name": "Kansas St."
+        },
+        {
+          "id": "big-12-utah",
+          "name": "Utah"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "big-east",
+      "name": "Big East",
+      "teams": [
+        {
+          "id": "big-east-st-john-and-039-s-ny",
+          "name": "St. John&#039;s (NY)"
+        },
+        {
+          "id": "big-east-uconn",
+          "name": "UConn"
+        },
+        {
+          "id": "big-east-villanova",
+          "name": "Villanova"
+        },
+        {
+          "id": "big-east-seton-hall",
+          "name": "Seton Hall"
+        },
+        {
+          "id": "big-east-creighton",
+          "name": "Creighton"
+        },
+        {
+          "id": "big-east-depaul",
+          "name": "DePaul"
+        },
+        {
+          "id": "big-east-butler",
+          "name": "Butler"
+        },
+        {
+          "id": "big-east-providence",
+          "name": "Providence"
+        },
+        {
+          "id": "big-east-marquette",
+          "name": "Marquette"
+        },
+        {
+          "id": "big-east-georgetown",
+          "name": "Georgetown"
+        },
+        {
+          "id": "big-east-xavier",
+          "name": "Xavier"
+        }
+      ],
+      "inferredConferenceGames": 20,
+      "metadata": {
+        "minConferenceGames": 20,
+        "maxConferenceGames": 20
+      }
+    },
+    {
+      "id": "big-sky",
+      "name": "Big Sky",
+      "teams": [
+        {
+          "id": "big-sky-portland-st",
+          "name": "Portland St."
+        },
+        {
+          "id": "big-sky-montana-st",
+          "name": "Montana St."
+        },
+        {
+          "id": "big-sky-eastern-wash",
+          "name": "Eastern Wash."
+        },
+        {
+          "id": "big-sky-northern-colo",
+          "name": "Northern Colo."
+        },
+        {
+          "id": "big-sky-montana",
+          "name": "Montana"
+        },
+        {
+          "id": "big-sky-weber-st",
+          "name": "Weber St."
+        },
+        {
+          "id": "big-sky-idaho",
+          "name": "Idaho"
+        },
+        {
+          "id": "big-sky-sacramento-st",
+          "name": "Sacramento St."
+        },
+        {
+          "id": "big-sky-idaho-st",
+          "name": "Idaho St."
+        },
+        {
+          "id": "big-sky-northern-ariz",
+          "name": "Northern Ariz."
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "big-south",
+      "name": "Big South",
+      "teams": [
+        {
+          "id": "big-south-high-point",
+          "name": "High Point"
+        },
+        {
+          "id": "big-south-winthrop",
+          "name": "Winthrop"
+        },
+        {
+          "id": "big-south-radford",
+          "name": "Radford"
+        },
+        {
+          "id": "big-south-longwood",
+          "name": "Longwood"
+        },
+        {
+          "id": "big-south-unc-asheville",
+          "name": "UNC Asheville"
+        },
+        {
+          "id": "big-south-presbyterian",
+          "name": "Presbyterian"
+        },
+        {
+          "id": "big-south-charleston-so",
+          "name": "Charleston So."
+        },
+        {
+          "id": "big-south-usc-upstate",
+          "name": "USC Upstate"
+        },
+        {
+          "id": "big-south-gardner-webb",
+          "name": "Gardner-Webb"
+        }
+      ],
+      "inferredConferenceGames": 16,
+      "metadata": {
+        "minConferenceGames": 16,
+        "maxConferenceGames": 16
+      }
+    },
+    {
+      "id": "big-ten",
+      "name": "Big Ten",
+      "teams": [
+        {
+          "id": "big-ten-michigan",
+          "name": "Michigan"
+        },
+        {
+          "id": "big-ten-nebraska",
+          "name": "Nebraska"
+        },
+        {
+          "id": "big-ten-michigan-st",
+          "name": "Michigan St."
+        },
+        {
+          "id": "big-ten-illinois",
+          "name": "Illinois"
+        },
+        {
+          "id": "big-ten-wisconsin",
+          "name": "Wisconsin"
+        },
+        {
+          "id": "big-ten-purdue",
+          "name": "Purdue"
+        },
+        {
+          "id": "big-ten-ucla",
+          "name": "UCLA"
+        },
+        {
+          "id": "big-ten-ohio-st",
+          "name": "Ohio St."
+        },
+        {
+          "id": "big-ten-iowa",
+          "name": "Iowa"
+        },
+        {
+          "id": "big-ten-indiana",
+          "name": "Indiana"
+        },
+        {
+          "id": "big-ten-minnesota",
+          "name": "Minnesota"
+        },
+        {
+          "id": "big-ten-southern-california",
+          "name": "Southern California"
+        },
+        {
+          "id": "big-ten-washington",
+          "name": "Washington"
+        },
+        {
+          "id": "big-ten-rutgers",
+          "name": "Rutgers"
+        },
+        {
+          "id": "big-ten-northwestern",
+          "name": "Northwestern"
+        },
+        {
+          "id": "big-ten-oregon",
+          "name": "Oregon"
+        },
+        {
+          "id": "big-ten-maryland",
+          "name": "Maryland"
+        },
+        {
+          "id": "big-ten-penn-st",
+          "name": "Penn St."
+        }
+      ],
+      "inferredConferenceGames": 20,
+      "metadata": {
+        "minConferenceGames": 20,
+        "maxConferenceGames": 20
+      }
+    },
+    {
+      "id": "big-west",
+      "name": "Big West",
+      "teams": [
+        {
+          "id": "big-west-uc-irvine",
+          "name": "UC Irvine"
+        },
+        {
+          "id": "big-west-hawaii",
+          "name": "Hawaii"
+        },
+        {
+          "id": "big-west-uc-san-diego",
+          "name": "UC San Diego"
+        },
+        {
+          "id": "big-west-csun",
+          "name": "CSUN"
+        },
+        {
+          "id": "big-west-cal-st-fullerton",
+          "name": "Cal St. Fullerton"
+        },
+        {
+          "id": "big-west-uc-davis",
+          "name": "UC Davis"
+        },
+        {
+          "id": "big-west-uc-santa-barbara",
+          "name": "UC Santa Barbara"
+        },
+        {
+          "id": "big-west-cal-poly",
+          "name": "Cal Poly"
+        },
+        {
+          "id": "big-west-long-beach-st",
+          "name": "Long Beach St."
+        },
+        {
+          "id": "big-west-uc-riverside",
+          "name": "UC Riverside"
+        },
+        {
+          "id": "big-west-csu-bakersfield",
+          "name": "CSU Bakersfield"
+        }
+      ],
+      "inferredConferenceGames": 20,
+      "metadata": {
+        "minConferenceGames": 20,
+        "maxConferenceGames": 20
+      }
+    },
+    {
+      "id": "caa",
+      "name": "CAA",
+      "teams": [
+        {
+          "id": "caa-uncw",
+          "name": "UNCW"
+        },
+        {
+          "id": "caa-col-of-charleston",
+          "name": "Col. of Charleston"
+        },
+        {
+          "id": "caa-hofstra",
+          "name": "Hofstra"
+        },
+        {
+          "id": "caa-monmouth",
+          "name": "Monmouth"
+        },
+        {
+          "id": "caa-william-and-amp-mary",
+          "name": "William &amp; Mary"
+        },
+        {
+          "id": "caa-drexel",
+          "name": "Drexel"
+        },
+        {
+          "id": "caa-towson",
+          "name": "Towson"
+        },
+        {
+          "id": "caa-stony-brook",
+          "name": "Stony Brook"
+        },
+        {
+          "id": "caa-campbell",
+          "name": "Campbell"
+        },
+        {
+          "id": "caa-hampton",
+          "name": "Hampton"
+        },
+        {
+          "id": "caa-elon",
+          "name": "Elon"
+        },
+        {
+          "id": "caa-n-c-a-and-amp-t",
+          "name": "N.C. A&amp;T"
+        },
+        {
+          "id": "caa-northeastern",
+          "name": "Northeastern"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "cusa",
+      "name": "CUSA",
+      "teams": [
+        {
+          "id": "cusa-liberty",
+          "name": "Liberty"
+        },
+        {
+          "id": "cusa-sam-houston",
+          "name": "Sam Houston"
+        },
+        {
+          "id": "cusa-louisiana-tech",
+          "name": "Louisiana Tech"
+        },
+        {
+          "id": "cusa-western-ky",
+          "name": "Western Ky."
+        },
+        {
+          "id": "cusa-middle-tenn",
+          "name": "Middle Tenn."
+        },
+        {
+          "id": "cusa-kennesaw-st",
+          "name": "Kennesaw St."
+        },
+        {
+          "id": "cusa-jacksonville-st",
+          "name": "Jacksonville St."
+        },
+        {
+          "id": "cusa-new-mexico-st",
+          "name": "New Mexico St."
+        },
+        {
+          "id": "cusa-missouri-st",
+          "name": "Missouri St."
+        },
+        {
+          "id": "cusa-fiu",
+          "name": "FIU"
+        },
+        {
+          "id": "cusa-utep",
+          "name": "UTEP"
+        },
+        {
+          "id": "cusa-delaware",
+          "name": "Delaware"
+        }
+      ],
+      "inferredConferenceGames": 20,
+      "metadata": {
+        "minConferenceGames": 20,
+        "maxConferenceGames": 20
+      }
+    },
+    {
+      "id": "horizon",
+      "name": "Horizon",
+      "teams": [
+        {
+          "id": "horizon-wright-st",
+          "name": "Wright St."
+        },
+        {
+          "id": "horizon-robert-morris",
+          "name": "Robert Morris"
+        },
+        {
+          "id": "horizon-green-bay",
+          "name": "Green Bay"
+        },
+        {
+          "id": "horizon-detroit-mercy",
+          "name": "Detroit Mercy"
+        },
+        {
+          "id": "horizon-oakland",
+          "name": "Oakland"
+        },
+        {
+          "id": "horizon-purdue-fort-wayne",
+          "name": "Purdue Fort Wayne"
+        },
+        {
+          "id": "horizon-northern-ky",
+          "name": "Northern Ky."
+        },
+        {
+          "id": "horizon-youngstown-st",
+          "name": "Youngstown St."
+        },
+        {
+          "id": "horizon-milwaukee",
+          "name": "Milwaukee"
+        },
+        {
+          "id": "horizon-cleveland-st",
+          "name": "Cleveland St."
+        },
+        {
+          "id": "horizon-iu-indy",
+          "name": "IU Indy"
+        }
+      ],
+      "inferredConferenceGames": 20,
+      "metadata": {
+        "minConferenceGames": 20,
+        "maxConferenceGames": 20
+      }
+    },
+    {
+      "id": "ivy-league",
+      "name": "Ivy League",
+      "teams": [
+        {
+          "id": "ivy-league-yale",
+          "name": "Yale"
+        },
+        {
+          "id": "ivy-league-harvard",
+          "name": "Harvard"
+        },
+        {
+          "id": "ivy-league-penn",
+          "name": "Penn"
+        },
+        {
+          "id": "ivy-league-cornell",
+          "name": "Cornell"
+        },
+        {
+          "id": "ivy-league-columbia",
+          "name": "Columbia"
+        },
+        {
+          "id": "ivy-league-dartmouth",
+          "name": "Dartmouth"
+        },
+        {
+          "id": "ivy-league-princeton",
+          "name": "Princeton"
+        },
+        {
+          "id": "ivy-league-brown",
+          "name": "Brown"
+        }
+      ],
+      "inferredConferenceGames": 14,
+      "metadata": {
+        "minConferenceGames": 14,
+        "maxConferenceGames": 14
+      }
+    },
+    {
+      "id": "maac",
+      "name": "MAAC",
+      "teams": [
+        {
+          "id": "maac-merrimack",
+          "name": "Merrimack"
+        },
+        {
+          "id": "maac-saint-peter-and-039-s",
+          "name": "Saint Peter&#039;s"
+        },
+        {
+          "id": "maac-siena",
+          "name": "Siena"
+        },
+        {
+          "id": "maac-marist",
+          "name": "Marist"
+        },
+        {
+          "id": "maac-quinnipiac",
+          "name": "Quinnipiac"
+        },
+        {
+          "id": "maac-fairfield",
+          "name": "Fairfield"
+        },
+        {
+          "id": "maac-mount-st-mary-and-039-s",
+          "name": "Mount St. Mary&#039;s"
+        },
+        {
+          "id": "maac-iona",
+          "name": "Iona"
+        },
+        {
+          "id": "maac-sacred-heart",
+          "name": "Sacred Heart"
+        },
+        {
+          "id": "maac-manhattan",
+          "name": "Manhattan"
+        },
+        {
+          "id": "maac-canisius",
+          "name": "Canisius"
+        },
+        {
+          "id": "maac-niagara",
+          "name": "Niagara"
+        },
+        {
+          "id": "maac-rider",
+          "name": "Rider"
+        }
+      ],
+      "inferredConferenceGames": 20,
+      "metadata": {
+        "minConferenceGames": 20,
+        "maxConferenceGames": 20
+      }
+    },
+    {
+      "id": "mac",
+      "name": "MAC",
+      "teams": [
+        {
+          "id": "mac-miami-oh",
+          "name": "Miami (OH)"
+        },
+        {
+          "id": "mac-akron",
+          "name": "Akron"
+        },
+        {
+          "id": "mac-kent-st",
+          "name": "Kent St."
+        },
+        {
+          "id": "mac-toledo",
+          "name": "Toledo"
+        },
+        {
+          "id": "mac-bowling-green",
+          "name": "Bowling Green"
+        },
+        {
+          "id": "mac-ohio",
+          "name": "Ohio"
+        },
+        {
+          "id": "mac-buffalo",
+          "name": "Buffalo"
+        },
+        {
+          "id": "mac-massachusetts",
+          "name": "Massachusetts"
+        },
+        {
+          "id": "mac-ball-st",
+          "name": "Ball St."
+        },
+        {
+          "id": "mac-central-mich",
+          "name": "Central Mich."
+        },
+        {
+          "id": "mac-western-mich",
+          "name": "Western Mich."
+        },
+        {
+          "id": "mac-eastern-mich",
+          "name": "Eastern Mich."
+        },
+        {
+          "id": "mac-niu",
+          "name": "NIU"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "meac",
+      "name": "MEAC",
+      "teams": [
+        {
+          "id": "meac-howard",
+          "name": "Howard"
+        },
+        {
+          "id": "meac-morgan-st",
+          "name": "Morgan St."
+        },
+        {
+          "id": "meac-norfolk-st",
+          "name": "Norfolk St."
+        },
+        {
+          "id": "meac-n-c-central",
+          "name": "N.C. Central"
+        },
+        {
+          "id": "meac-south-carolina-st",
+          "name": "South Carolina St."
+        },
+        {
+          "id": "meac-umes",
+          "name": "UMES"
+        },
+        {
+          "id": "meac-coppin-st",
+          "name": "Coppin St."
+        },
+        {
+          "id": "meac-delaware-st",
+          "name": "Delaware St."
+        }
+      ],
+      "inferredConferenceGames": 14,
+      "metadata": {
+        "minConferenceGames": 14,
+        "maxConferenceGames": 14
+      }
+    },
+    {
+      "id": "mountain-west",
+      "name": "Mountain West",
+      "teams": [
+        {
+          "id": "mountain-west-utah-st",
+          "name": "Utah St."
+        },
+        {
+          "id": "mountain-west-san-diego-st",
+          "name": "San Diego St."
+        },
+        {
+          "id": "mountain-west-new-mexico",
+          "name": "New Mexico"
+        },
+        {
+          "id": "mountain-west-grand-canyon",
+          "name": "Grand Canyon"
+        },
+        {
+          "id": "mountain-west-nevada",
+          "name": "Nevada"
+        },
+        {
+          "id": "mountain-west-boise-st",
+          "name": "Boise St."
+        },
+        {
+          "id": "mountain-west-colorado-st",
+          "name": "Colorado St."
+        },
+        {
+          "id": "mountain-west-unlv",
+          "name": "UNLV"
+        },
+        {
+          "id": "mountain-west-wyoming",
+          "name": "Wyoming"
+        },
+        {
+          "id": "mountain-west-fresno-st",
+          "name": "Fresno St."
+        },
+        {
+          "id": "mountain-west-san-jose-st",
+          "name": "San Jose St."
+        },
+        {
+          "id": "mountain-west-air-force",
+          "name": "Air Force"
+        }
+      ],
+      "inferredConferenceGames": 20,
+      "metadata": {
+        "minConferenceGames": 20,
+        "maxConferenceGames": 20
+      }
+    },
+    {
+      "id": "mvc",
+      "name": "MVC",
+      "teams": [
+        {
+          "id": "mvc-belmont",
+          "name": "Belmont"
+        },
+        {
+          "id": "mvc-bradley",
+          "name": "Bradley"
+        },
+        {
+          "id": "mvc-illinois-st",
+          "name": "Illinois St."
+        },
+        {
+          "id": "mvc-murray-st",
+          "name": "Murray St."
+        },
+        {
+          "id": "mvc-uic",
+          "name": "UIC"
+        },
+        {
+          "id": "mvc-uni",
+          "name": "UNI"
+        },
+        {
+          "id": "mvc-valparaiso",
+          "name": "Valparaiso"
+        },
+        {
+          "id": "mvc-southern-ill",
+          "name": "Southern Ill."
+        },
+        {
+          "id": "mvc-drake",
+          "name": "Drake"
+        },
+        {
+          "id": "mvc-indiana-st",
+          "name": "Indiana St."
+        },
+        {
+          "id": "mvc-evansville",
+          "name": "Evansville"
+        }
+      ],
+      "inferredConferenceGames": 20,
+      "metadata": {
+        "minConferenceGames": 20,
+        "maxConferenceGames": 20
+      }
+    },
+    {
+      "id": "nec",
+      "name": "NEC",
+      "teams": [
+        {
+          "id": "nec-liu",
+          "name": "LIU"
+        },
+        {
+          "id": "nec-central-conn-st",
+          "name": "Central Conn. St."
+        },
+        {
+          "id": "nec-mercyhurst",
+          "name": "Mercyhurst"
+        },
+        {
+          "id": "nec-le-moyne",
+          "name": "Le Moyne"
+        },
+        {
+          "id": "nec-new-haven",
+          "name": "New Haven"
+        },
+        {
+          "id": "nec-wagner",
+          "name": "Wagner"
+        },
+        {
+          "id": "nec-stonehill",
+          "name": "Stonehill"
+        },
+        {
+          "id": "nec-fdu",
+          "name": "FDU"
+        },
+        {
+          "id": "nec-saint-francis",
+          "name": "Saint Francis"
+        },
+        {
+          "id": "nec-chicago-st",
+          "name": "Chicago St."
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "ovc",
+      "name": "OVC",
+      "teams": [
+        {
+          "id": "ovc-tennessee-st",
+          "name": "Tennessee St."
+        },
+        {
+          "id": "ovc-morehead-st",
+          "name": "Morehead St."
+        },
+        {
+          "id": "ovc-southeast-mo-st",
+          "name": "Southeast Mo. St."
+        },
+        {
+          "id": "ovc-ut-martin",
+          "name": "UT Martin"
+        },
+        {
+          "id": "ovc-siue",
+          "name": "SIUE"
+        },
+        {
+          "id": "ovc-lindenwood",
+          "name": "Lindenwood"
+        },
+        {
+          "id": "ovc-little-rock",
+          "name": "Little Rock"
+        },
+        {
+          "id": "ovc-tennessee-tech",
+          "name": "Tennessee Tech"
+        },
+        {
+          "id": "ovc-eastern-ill",
+          "name": "Eastern Ill."
+        },
+        {
+          "id": "ovc-southern-ind",
+          "name": "Southern Ind."
+        },
+        {
+          "id": "ovc-western-ill",
+          "name": "Western Ill."
+        }
+      ],
+      "inferredConferenceGames": 20,
+      "metadata": {
+        "minConferenceGames": 20,
+        "maxConferenceGames": 20
+      }
+    },
+    {
+      "id": "patriot",
+      "name": "Patriot",
+      "teams": [
+        {
+          "id": "patriot-navy",
+          "name": "Navy"
+        },
+        {
+          "id": "patriot-colgate",
+          "name": "Colgate"
+        },
+        {
+          "id": "patriot-lehigh",
+          "name": "Lehigh"
+        },
+        {
+          "id": "patriot-boston-u",
+          "name": "Boston U."
+        },
+        {
+          "id": "patriot-american",
+          "name": "American"
+        },
+        {
+          "id": "patriot-loyola-maryland",
+          "name": "Loyola Maryland"
+        },
+        {
+          "id": "patriot-lafayette",
+          "name": "Lafayette"
+        },
+        {
+          "id": "patriot-bucknell",
+          "name": "Bucknell"
+        },
+        {
+          "id": "patriot-army-west-point",
+          "name": "Army West Point"
+        },
+        {
+          "id": "patriot-holy-cross",
+          "name": "Holy Cross"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "sec",
+      "name": "SEC",
+      "teams": [
+        {
+          "id": "sec-florida",
+          "name": "Florida"
+        },
+        {
+          "id": "sec-arkansas",
+          "name": "Arkansas"
+        },
+        {
+          "id": "sec-alabama",
+          "name": "Alabama"
+        },
+        {
+          "id": "sec-vanderbilt",
+          "name": "Vanderbilt"
+        },
+        {
+          "id": "sec-tennessee",
+          "name": "Tennessee"
+        },
+        {
+          "id": "sec-texas-a-and-amp-m",
+          "name": "Texas A&amp;M"
+        },
+        {
+          "id": "sec-georgia",
+          "name": "Georgia"
+        },
+        {
+          "id": "sec-kentucky",
+          "name": "Kentucky"
+        },
+        {
+          "id": "sec-missouri",
+          "name": "Missouri"
+        },
+        {
+          "id": "sec-texas",
+          "name": "Texas"
+        },
+        {
+          "id": "sec-auburn",
+          "name": "Auburn"
+        },
+        {
+          "id": "sec-oklahoma",
+          "name": "Oklahoma"
+        },
+        {
+          "id": "sec-mississippi-st",
+          "name": "Mississippi St."
+        },
+        {
+          "id": "sec-ole-miss",
+          "name": "Ole Miss"
+        },
+        {
+          "id": "sec-south-carolina",
+          "name": "South Carolina"
+        },
+        {
+          "id": "sec-lsu",
+          "name": "LSU"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "socon",
+      "name": "SoCon",
+      "teams": [
+        {
+          "id": "socon-etsu",
+          "name": "ETSU"
+        },
+        {
+          "id": "socon-mercer",
+          "name": "Mercer"
+        },
+        {
+          "id": "socon-wofford",
+          "name": "Wofford"
+        },
+        {
+          "id": "socon-samford",
+          "name": "Samford"
+        },
+        {
+          "id": "socon-furman",
+          "name": "Furman"
+        },
+        {
+          "id": "socon-western-caro",
+          "name": "Western Caro."
+        },
+        {
+          "id": "socon-unc-greensboro",
+          "name": "UNC Greensboro"
+        },
+        {
+          "id": "socon-chattanooga",
+          "name": "Chattanooga"
+        },
+        {
+          "id": "socon-the-citadel",
+          "name": "The Citadel"
+        },
+        {
+          "id": "socon-vmi",
+          "name": "VMI"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "southland",
+      "name": "Southland",
+      "teams": [
+        {
+          "id": "southland-sfa",
+          "name": "SFA"
+        },
+        {
+          "id": "southland-mcneese",
+          "name": "McNeese"
+        },
+        {
+          "id": "southland-utrgv",
+          "name": "UTRGV"
+        },
+        {
+          "id": "southland-a-and-amp-m-corpus-christi",
+          "name": "A&amp;M-Corpus Christi"
+        },
+        {
+          "id": "southland-new-orleans",
+          "name": "New Orleans"
+        },
+        {
+          "id": "southland-nicholls",
+          "name": "Nicholls"
+        },
+        {
+          "id": "southland-houston-christian",
+          "name": "Houston Christian"
+        },
+        {
+          "id": "southland-northwestern-st",
+          "name": "Northwestern St."
+        },
+        {
+          "id": "southland-uiw",
+          "name": "UIW"
+        },
+        {
+          "id": "southland-lamar-university",
+          "name": "Lamar University"
+        },
+        {
+          "id": "southland-east-texas-a-and-amp-m",
+          "name": "East Texas A&amp;M"
+        },
+        {
+          "id": "southland-southeastern-la",
+          "name": "Southeastern La."
+        }
+      ],
+      "inferredConferenceGames": 22,
+      "metadata": {
+        "minConferenceGames": 22,
+        "maxConferenceGames": 22
+      }
+    },
+    {
+      "id": "summit-league",
+      "name": "Summit League",
+      "teams": [
+        {
+          "id": "summit-league-north-dakota-st",
+          "name": "North Dakota St."
+        },
+        {
+          "id": "summit-league-st-thomas-mn",
+          "name": "St. Thomas (MN)"
+        },
+        {
+          "id": "summit-league-north-dakota",
+          "name": "North Dakota"
+        },
+        {
+          "id": "summit-league-south-dakota",
+          "name": "South Dakota"
+        },
+        {
+          "id": "summit-league-omaha",
+          "name": "Omaha"
+        },
+        {
+          "id": "summit-league-denver",
+          "name": "Denver"
+        },
+        {
+          "id": "summit-league-south-dakota-st",
+          "name": "South Dakota St."
+        },
+        {
+          "id": "summit-league-oral-roberts",
+          "name": "Oral Roberts"
+        },
+        {
+          "id": "summit-league-kansas-city",
+          "name": "Kansas City"
+        }
+      ],
+      "inferredConferenceGames": 16,
+      "metadata": {
+        "minConferenceGames": 16,
+        "maxConferenceGames": 16
+      }
+    },
+    {
+      "id": "sun-belt",
+      "name": "Sun Belt",
+      "teams": [
+        {
+          "id": "sun-belt-troy",
+          "name": "Troy"
+        },
+        {
+          "id": "sun-belt-south-alabama",
+          "name": "South Alabama"
+        },
+        {
+          "id": "sun-belt-arkansas-st",
+          "name": "Arkansas St."
+        },
+        {
+          "id": "sun-belt-marshall",
+          "name": "Marshall"
+        },
+        {
+          "id": "sun-belt-texas-st",
+          "name": "Texas St."
+        },
+        {
+          "id": "sun-belt-coastal-carolina",
+          "name": "Coastal Carolina"
+        },
+        {
+          "id": "sun-belt-app-state",
+          "name": "App State"
+        },
+        {
+          "id": "sun-belt-james-madison",
+          "name": "James Madison"
+        },
+        {
+          "id": "sun-belt-southern-miss",
+          "name": "Southern Miss."
+        },
+        {
+          "id": "sun-belt-ga-southern",
+          "name": "Ga. Southern"
+        },
+        {
+          "id": "sun-belt-old-dominion",
+          "name": "Old Dominion"
+        },
+        {
+          "id": "sun-belt-louisiana",
+          "name": "Louisiana"
+        },
+        {
+          "id": "sun-belt-georgia-st",
+          "name": "Georgia St."
+        },
+        {
+          "id": "sun-belt-ulm",
+          "name": "ULM"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "swac",
+      "name": "SWAC",
+      "teams": [
+        {
+          "id": "swac-bethune-cookman",
+          "name": "Bethune-Cookman"
+        },
+        {
+          "id": "swac-southern-u",
+          "name": "Southern U."
+        },
+        {
+          "id": "swac-florida-a-and-amp-m",
+          "name": "Florida A&amp;M"
+        },
+        {
+          "id": "swac-alabama-a-and-amp-m",
+          "name": "Alabama A&amp;M"
+        },
+        {
+          "id": "swac-ark-pine-bluff",
+          "name": "Ark.-Pine Bluff"
+        },
+        {
+          "id": "swac-texas-southern",
+          "name": "Texas Southern"
+        },
+        {
+          "id": "swac-jackson-st",
+          "name": "Jackson St."
+        },
+        {
+          "id": "swac-prairie-view",
+          "name": "Prairie View"
+        },
+        {
+          "id": "swac-grambling",
+          "name": "Grambling"
+        },
+        {
+          "id": "swac-alabama-st",
+          "name": "Alabama St."
+        },
+        {
+          "id": "swac-alcorn",
+          "name": "Alcorn"
+        },
+        {
+          "id": "swac-mississippi-val",
+          "name": "Mississippi Val."
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "wac",
+      "name": "WAC",
+      "teams": [
+        {
+          "id": "wac-utah-valley",
+          "name": "Utah Valley"
+        },
+        {
+          "id": "wac-california-baptist",
+          "name": "California Baptist"
+        },
+        {
+          "id": "wac-utah-tech",
+          "name": "Utah Tech"
+        },
+        {
+          "id": "wac-ut-arlington",
+          "name": "UT Arlington"
+        },
+        {
+          "id": "wac-southern-utah",
+          "name": "Southern Utah"
+        },
+        {
+          "id": "wac-tarleton-st",
+          "name": "Tarleton St."
+        },
+        {
+          "id": "wac-abilene-christian",
+          "name": "Abilene Christian"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    },
+    {
+      "id": "wcc",
+      "name": "WCC",
+      "teams": [
+        {
+          "id": "wcc-gonzaga",
+          "name": "Gonzaga"
+        },
+        {
+          "id": "wcc-saint-mary-and-039-s-ca",
+          "name": "Saint Mary&#039;s (CA)"
+        },
+        {
+          "id": "wcc-santa-clara",
+          "name": "Santa Clara"
+        },
+        {
+          "id": "wcc-oregon-st",
+          "name": "Oregon St."
+        },
+        {
+          "id": "wcc-seattle-u",
+          "name": "Seattle U"
+        },
+        {
+          "id": "wcc-pacific",
+          "name": "Pacific"
+        },
+        {
+          "id": "wcc-san-francisco",
+          "name": "San Francisco"
+        },
+        {
+          "id": "wcc-washington-st",
+          "name": "Washington St."
+        },
+        {
+          "id": "wcc-lmu-ca",
+          "name": "LMU (CA)"
+        },
+        {
+          "id": "wcc-portland",
+          "name": "Portland"
+        },
+        {
+          "id": "wcc-san-diego",
+          "name": "San Diego"
+        },
+        {
+          "id": "wcc-pepperdine",
+          "name": "Pepperdine"
+        }
+      ],
+      "inferredConferenceGames": 18,
+      "metadata": {
+        "minConferenceGames": 18,
+        "maxConferenceGames": 18
+      }
+    }
+  ]
+}

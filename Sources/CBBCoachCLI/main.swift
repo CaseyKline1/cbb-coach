@@ -31,3 +31,15 @@ print("Recent events:")
 for event in result.playByPlay.suffix(10) {
     print("[H\(event.half) \(event.clockRemaining)s] \(event.type)")
 }
+
+print("")
+var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "cli-demo"))
+autoFillUserNonConferenceOpponents(&league, seed: "cli-demo-autofill")
+generateSeasonSchedule(&league, seed: "cli-demo-schedule")
+
+if let nextGame = advanceToNextUserGame(&league, seed: "cli-demo-advance") {
+    print("Next completed user game: Day \(nextGame.day) vs \(nextGame.opponent)")
+}
+
+let summary = getLeagueSummary(league)
+print("League: \(summary.userTeamName), schedule games: \(summary.totalScheduledGames)")
