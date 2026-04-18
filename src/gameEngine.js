@@ -1005,6 +1005,7 @@ function resolveShot({
   shooter,
   defender,
   shotType,
+  shooterSpot = null,
   zonePenalty = 0,
   shotQualityEdge = 0,
   contested = true,
@@ -1143,8 +1144,7 @@ function resolveShot({
     three: {
       offenseRatings: [
         "shooting.threePointShooting",
-        "shooting.upTopThrees",
-        "skills.shotIQ",
+        "shooting.threePointSpecialty",
       ],
       defenseRatings: [
         "defense.shotContest",
@@ -1157,11 +1157,20 @@ function resolveShot({
   };
 
   const profile = shotProfiles[shotType] || shotProfiles.jump;
+  const offensePlayer = isThreePointShot
+    ? {
+      ...shooter,
+      shooting: {
+        ...(shooter?.shooting || {}),
+        threePointSpecialty: getThreePointSpecialtyRating(shooter, shooterSpot),
+      },
+    }
+    : shooter;
   const shotTypeEdgePenalty = isThreePointShot
     ? THREE_POINT_MAKE_EDGE_PENALTY + (contested ? THREE_POINT_CONTESTED_EXTRA_PENALTY : 0)
     : 0;
   const shotResult = resolveInteraction({
-    offensePlayer: shooter,
+    offensePlayer,
     defensePlayer: defender,
     offenseRatings: profile.offenseRatings,
     defenseRatings: profile.defenseRatings,
@@ -1330,13 +1339,27 @@ function isThreePointSpot(spot) {
   );
 }
 
+function isCornerThreeSpot(spot) {
+  return spot === OffensiveSpot.RIGHT_CORNER || spot === OffensiveSpot.LEFT_CORNER;
+}
+
+function getThreePointSpecialtyRating(player, spot = null) {
+  if (isCornerThreeSpot(spot)) {
+    return getRating(player, "shooting.cornerThrees");
+  }
+  if (isThreePointSpot(spot)) {
+    return getRating(player, "shooting.upTopThrees");
+  }
+  return average([
+    getRating(player, "shooting.cornerThrees"),
+    getRating(player, "shooting.upTopThrees"),
+  ]);
+}
+
 function estimateOpenShotValue(receiver, spot) {
   if (isThreePointSpot(spot)) {
     const threeCore = getRating(receiver, "shooting.threePointShooting");
-    const threeSpecialty =
-      spot === OffensiveSpot.RIGHT_CORNER || spot === OffensiveSpot.LEFT_CORNER
-        ? getRating(receiver, "shooting.cornerThrees")
-        : getRating(receiver, "shooting.upTopThrees");
+    const threeSpecialty = getThreePointSpecialtyRating(receiver, spot);
     const threeMake = clamp((threeCore * 0.7 + threeSpecialty * 0.3) / 100, 0.2, 0.75);
     return threeMake * 1.5;
   }
@@ -2166,6 +2189,7 @@ function resolveActionChunk(state, random = Math.random) {
   const resolveLateClockBailout = ({
     shooter,
     defender,
+    shooterSpot = null,
     sourceDetail,
     shotQualityEdge = -0.2,
   }) => {
@@ -2176,6 +2200,7 @@ function resolveActionChunk(state, random = Math.random) {
       shooter,
       defender,
       shotType: forcedShotType,
+      shooterSpot,
       zonePenalty,
       shotQualityEdge,
       contested: true,
@@ -2267,6 +2292,7 @@ function resolveActionChunk(state, random = Math.random) {
         if (!resolveLateClockBailout({
           shooter: ballHandler,
           defender: onBall.defender,
+          shooterSpot: ballHandlerSpot,
           sourceDetail: "Defense cut off the drive; late-clock bailout shot.",
         })) {
           pushEvent(state, {
@@ -2281,6 +2307,7 @@ function resolveActionChunk(state, random = Math.random) {
       if (!resolveLateClockBailout({
         shooter: ballHandler,
         defender: onBall.defender,
+        shooterSpot: ballHandlerSpot,
         sourceDetail: "Drive stalled; late-clock bailout shot.",
       })) {
         pushEvent(state, {
@@ -2354,6 +2381,7 @@ function resolveActionChunk(state, random = Math.random) {
           if (!resolveLateClockBailout({
             shooter: ballHandler,
             defender: onBall.defender,
+            shooterSpot: ballHandlerSpot,
             sourceDetail: "Drive-and-kick read not found; late-clock bailout shot.",
           })) {
             pushEvent(state, {
@@ -2435,12 +2463,13 @@ function resolveActionChunk(state, random = Math.random) {
               shotQuality: best.evalResult.openLevel,
               random,
             })) {
-              if (!resolveLateClockBailout({
-                shooter: best.player,
-                defender: best.cover.defender,
-                sourceDetail: "Kick-out caught; late-clock catch-and-shoot bailout.",
-                shotQualityEdge: best.evalResult.openLevel * 0.15 - 0.08,
-              })) {
+                if (!resolveLateClockBailout({
+                  shooter: best.player,
+                  defender: best.cover.defender,
+                  shooterSpot: best.spot,
+                  sourceDetail: "Kick-out caught; late-clock catch-and-shoot bailout.",
+                  shotQualityEdge: best.evalResult.openLevel * 0.15 - 0.08,
+                })) {
                 pushEvent(state, {
                   type: "reset",
                   offenseTeam: offense.name,
@@ -2455,6 +2484,7 @@ function resolveActionChunk(state, random = Math.random) {
                 shooter: best.player,
                 defender: best.cover.defender,
                 shotType,
+                shooterSpot: best.spot,
                 zonePenalty,
                 shotQualityEdge: best.evalResult.openLevel * 0.32,
                 contested,
@@ -2496,6 +2526,7 @@ function resolveActionChunk(state, random = Math.random) {
           if (!resolveLateClockBailout({
             shooter: ballHandler,
             defender: onBall.defender,
+            shooterSpot: ballHandlerSpot,
             sourceDetail: "Drive advantage faded; late-clock bailout shot.",
           })) {
             pushEvent(state, {
@@ -2513,6 +2544,7 @@ function resolveActionChunk(state, random = Math.random) {
             shooter: ballHandler,
             defender: onBall.defender,
             shotType,
+            shooterSpot: ballHandlerSpot,
             zonePenalty,
             shotQualityEdge: shotQualityEdge - (helpArrives ? contestWeight : 0),
             contested: true,
@@ -2575,6 +2607,7 @@ function resolveActionChunk(state, random = Math.random) {
 
     let currentHandlerIndex = starterIndex;
     let currentHandler = offensiveAssignments[currentHandlerIndex].player;
+    let currentHandlerSpot = offensiveAssignments[currentHandlerIndex].spot;
     let currentDefender = starterOnBall.defender;
     let currentZonePenalty = starterOnBall.isZone
       ? -0.08 + zoneDistanceAdvantage(starterOnBall.defender, starterOnBall.startDistance)
@@ -2604,6 +2637,7 @@ function resolveActionChunk(state, random = Math.random) {
         if (!shouldShoot && !resolveLateClockBailout({
           shooter: currentHandler,
           defender: currentDefender,
+          shooterSpot: currentHandlerSpot,
           sourceDetail: "Pass limit reached; offense resets without a shot.",
           shotQualityEdge: openBeforeCatch * 0.12 - 0.06,
         })) {
@@ -2627,6 +2661,7 @@ function resolveActionChunk(state, random = Math.random) {
           shooter: currentHandler,
           defender: currentDefender,
           shotType,
+          shooterSpot: currentHandlerSpot,
           zonePenalty: currentZonePenalty,
           shotQualityEdge: openBeforeCatch * 0.28 + scrambleBonus * 0.1,
           contested,
@@ -2714,6 +2749,7 @@ function resolveActionChunk(state, random = Math.random) {
         const canLateClockBailout = hasCompletedRequiredPass && resolveLateClockBailout({
           shooter: currentHandler,
           defender: currentDefender,
+          shooterSpot: currentHandlerSpot,
           sourceDetail: "No passing window opened in action; neutral reset.",
           shotQualityEdge: openBeforeCatch * 0.11 - 0.07,
         });
@@ -2819,6 +2855,7 @@ function resolveActionChunk(state, random = Math.random) {
       scrambleFresh = true;
       currentHandlerIndex = best.idx;
       currentHandler = best.player;
+      currentHandlerSpot = best.spot;
       currentDefender = best.cover.defender;
       currentZonePenalty = defenseScheme === DefenseScheme.MAN_TO_MAN
         ? 0
@@ -2848,6 +2885,7 @@ function resolveActionChunk(state, random = Math.random) {
       if (!resolveLateClockBailout({
         shooter: ballHandler,
         defender: onBall.defender,
+        shooterSpot: ballHandlerSpot,
         sourceDetail: "No post angle; late-clock bailout shot.",
       })) {
         pushEvent(state, {
@@ -2904,6 +2942,7 @@ function resolveActionChunk(state, random = Math.random) {
           if (!resolveLateClockBailout({
             shooter: ballHandler,
             defender: onBall.defender,
+            shooterSpot: ballHandlerSpot,
             sourceDetail: "Post entry neutralized; late-clock bailout shot.",
           })) {
             pushEvent(state, {
@@ -2930,6 +2969,7 @@ function resolveActionChunk(state, random = Math.random) {
           if (!resolveLateClockBailout({
             shooter: ballHandler,
             defender: onBall.defender,
+            shooterSpot: ballHandlerSpot,
             sourceDetail: "Post touch kicked out; late-clock bailout shot.",
           })) {
             pushEvent(state, {
@@ -2978,6 +3018,7 @@ function resolveActionChunk(state, random = Math.random) {
             if (!resolveLateClockBailout({
               shooter: ballHandler,
               defender: onBall.defender,
+              shooterSpot: ballHandlerSpot,
               sourceDetail: "Post kick-out window closed; late-clock bailout shot.",
             })) {
               pushEvent(state, {
@@ -3062,6 +3103,7 @@ function resolveActionChunk(state, random = Math.random) {
                 if (!resolveLateClockBailout({
                   shooter: best.player,
                   defender: best.cover.defender,
+                  shooterSpot: best.spot,
                   sourceDetail: "Kick-out window there; late-clock catch-and-shoot bailout.",
                   shotQualityEdge: best.evalResult.openLevel * 0.14 - 0.08,
                 })) {
@@ -3079,6 +3121,7 @@ function resolveActionChunk(state, random = Math.random) {
                   shooter: best.player,
                   defender: best.cover.defender,
                   shotType,
+                  shooterSpot: best.spot,
                   zonePenalty,
                   shotQualityEdge: best.evalResult.openLevel * 0.25,
                   contested,
@@ -3142,6 +3185,7 @@ function resolveActionChunk(state, random = Math.random) {
             if (!resolveLateClockBailout({
               shooter: ballHandler,
               defender: onBall.defender,
+              shooterSpot: ballHandlerSpot,
               sourceDetail: "Post touch hesitated; late-clock bailout shot.",
             })) {
               pushEvent(state, {
@@ -3156,6 +3200,7 @@ function resolveActionChunk(state, random = Math.random) {
               shooter: ballHandler,
               defender: onBall.defender,
               shotType,
+              shooterSpot: ballHandlerSpot,
               zonePenalty,
               shotQualityEdge: tierShotEdge,
               contested: shotType !== "fadeaway",
