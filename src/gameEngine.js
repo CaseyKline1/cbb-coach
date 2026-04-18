@@ -6,6 +6,9 @@ const SHOT_CLOCK_SECONDS = 30;
 const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0.03;
 const CONTESTED_SHOOTING_FOUL_BASE_CHANCE = 0.15;
 const PASS_DELIVERY_COMPLETION_EDGE_BONUS = 0.4;
+const THREE_POINT_MAKE_EDGE_PENALTY = 0.34;
+const THREE_POINT_CONTESTED_EXTRA_PENALTY = 0.12;
+const THREE_POINT_SUCCESS_PROBABILITY_PENALTY = 0.1;
 
 const OffensiveSpot = Object.freeze({
   MIDDLE_PAINT: "middle_paint",
@@ -1007,6 +1010,7 @@ function resolveShot({
   contested = true,
   random = Math.random,
 }) {
+  const isThreePointShot = THREE_POINT_SHOT_TYPES.has(shotType);
   const shotProfiles = {
     rim: {
       offenseRatings: [
@@ -1153,12 +1157,15 @@ function resolveShot({
   };
 
   const profile = shotProfiles[shotType] || shotProfiles.jump;
+  const shotTypeEdgePenalty = isThreePointShot
+    ? THREE_POINT_MAKE_EDGE_PENALTY + (contested ? THREE_POINT_CONTESTED_EXTRA_PENALTY : 0)
+    : 0;
   const shotResult = resolveInteraction({
     offensePlayer: shooter,
     defensePlayer: defender,
     offenseRatings: profile.offenseRatings,
     defenseRatings: profile.defenseRatings,
-    contextEdge: zonePenalty + shotQualityEdge,
+    contextEdge: zonePenalty + shotQualityEdge - shotTypeEdgePenalty,
     random,
   });
 
@@ -1168,11 +1175,16 @@ function resolveShot({
   const baseFoulChance = clamp(CONTESTED_SHOOTING_FOUL_BASE_CHANCE + foulPressure, 0.08, 0.42);
   const isShootingFoul = contested && random() < baseFoulChance;
 
-  let made = shotResult.success;
+  let madeProbability = shotResult.successProbability;
+  if (isThreePointShot) {
+    madeProbability = clamp(madeProbability - THREE_POINT_SUCCESS_PROBABILITY_PENALTY, 0.02, 0.9);
+  }
+
+  let made = random() < madeProbability;
   if (isShootingFoul) {
     const makePenalty = 0.12 - clamp((drawFoul - 50) / 400, -0.04, 0.07);
     const adjustedProbability = clamp(
-      shotResult.successProbability - makePenalty,
+      madeProbability - makePenalty,
       0.02,
       0.9,
     );
