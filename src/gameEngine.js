@@ -1,4 +1,5 @@
 const { createPlayer } = require("./player");
+const { createCoachingStaff } = require("./coach");
 
 const CHUNK_SECONDS = 5;
 const HALF_SECONDS = 20 * 60;
@@ -25,6 +26,9 @@ const PRESS_HIGH_TENDENCY_TRIGGER_BONUS = 0.4;
 const PRESS_LATE_GAME_TRAIL_BONUS = 0.38;
 const PRESS_TRAP_BASE_CHANCE = 0.62;
 const PRESS_ATTACK_AFTER_BREAK_BASE_CHANCE = 0.48;
+const COACHING_EDGE_MAX_MULTIPLIER = 0.055;
+const HEAD_COACH_GAME_IMPACT_WEIGHT = 0.72;
+const GAME_PREP_ASSISTANT_GAME_IMPACT_WEIGHT = 0.28;
 
 const OffensiveSpot = Object.freeze({
   MIDDLE_PAINT: "middle_paint",
@@ -650,8 +654,14 @@ function getRating(player, path, fallback = 50) {
   else if (group === "skills") impact = 0.24;
   else if (group === "defense") impact = 0.22;
   else if (group === "rebounding" || group === "postGame") impact = 0.2;
-
-  return applyClutchModifier(player, value * (1 - fatigue * impact));
+  const fatigueAdjusted = applyClutchModifier(player, value * (1 - fatigue * impact));
+  const role = player?.condition?.possessionRole;
+  const offensiveModifier = Number(player?.condition?.offensiveCoachingModifier);
+  const defensiveModifier = Number(player?.condition?.defensiveCoachingModifier);
+  let coachingModifier = 1;
+  if (role === "offense" && Number.isFinite(offensiveModifier)) coachingModifier = offensiveModifier;
+  else if (role === "defense" && Number.isFinite(defensiveModifier)) coachingModifier = defensiveModifier;
+  return clamp(fatigueAdjusted * coachingModifier, 1, 100);
 }
 
 function makeStrengthBiasedWeights(ratings, random = Math.random) {
@@ -2539,6 +2549,8 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
     pendingPress: null,
     playByPlay: [],
   };
+  applyTeamCoachingModifiers(state);
+  syncPossessionTeamRoles(state);
   syncClutchTimeState(state);
   return state;
 }
@@ -2546,6 +2558,7 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
 function beginNewPossession(state, offenseTeamId, deadBallReason = null, options = null) {
   clearPendingAssist(state);
   state.possessionTeamId = offenseTeamId;
+  syncPossessionTeamRoles(state);
   advanceTeamOffensiveFormation(state.teams[offenseTeamId]);
   state.shotClockRemaining = SHOT_CLOCK_SECONDS;
   state.possessionNeedsSetup = true;
@@ -2583,6 +2596,91 @@ function normalizePaceProfile(value) {
   const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (PACE_TO_SHOT_BIAS[normalized] !== undefined) return normalized;
   return PaceProfile.NORMAL;
+}
+
+function getTeamCoachingStaff(team) {
+  if (team?.coachingStaff) return team.coachingStaff;
+  if (Array.isArray(team?.coaches) && team.coaches.length) {
+    return {
+      headCoach: team.coaches[0],
+      assistants: team.coaches.slice(1),
+      gamePrepAssistantIndex: null,
+    };
+  }
+  return {
+    headCoach: null,
+    assistants: [],
+    gamePrepAssistantIndex: null,
+  };
+}
+
+function getAssistantByGamePrepDesignation(team, assistants) {
+  const designatedIndex = Number(team?.coachingStaff?.gamePrepAssistantIndex);
+  if (
+    Number.isInteger(designatedIndex) &&
+    designatedIndex >= 0 &&
+    designatedIndex < assistants.length
+  ) {
+    return assistants[designatedIndex];
+  }
+  return assistants.find((assistant) => assistant?.isGamePrep || assistant?.gamePrep) || null;
+}
+
+function getTeamCoachingGameEffect(team) {
+  const staff = getTeamCoachingStaff(team);
+  const head = staff.headCoach || null;
+  const assistants = Array.isArray(staff.assistants) ? staff.assistants : [];
+  const gamePrep = getAssistantByGamePrepDesignation(team, assistants);
+
+  const headOffense = Number(head?.skills?.offensiveCoaching);
+  const headDefense = Number(head?.skills?.defensiveCoaching);
+  const prepOffense = Number(gamePrep?.skills?.offensiveCoaching);
+  const prepDefense = Number(gamePrep?.skills?.defensiveCoaching);
+
+  const resolveRating = (value, fallback = 50) =>
+    Number.isFinite(value) ? clamp(Math.round(value), 1, 100) : fallback;
+
+  const headOff = resolveRating(headOffense);
+  const headDef = resolveRating(headDefense);
+  const prepOff = resolveRating(prepOffense, headOff);
+  const prepDef = resolveRating(prepDefense, headDef);
+
+  const prepWeight = gamePrep ? GAME_PREP_ASSISTANT_GAME_IMPACT_WEIGHT : 0;
+  const headWeight = 1 - prepWeight;
+
+  const offensiveComposite = headOff * headWeight + prepOff * prepWeight;
+  const defensiveComposite = headDef * headWeight + prepDef * prepWeight;
+
+  const toModifier = (compositeRating) =>
+    clamp(1 + ((compositeRating - 50) / 50) * COACHING_EDGE_MAX_MULTIPLIER, 0.94, 1.06);
+
+  return {
+    offensiveModifier: toModifier(offensiveComposite),
+    defensiveModifier: toModifier(defensiveComposite),
+  };
+}
+
+function applyTeamCoachingModifiers(state) {
+  state.teams.forEach((team) => {
+    const effect = getTeamCoachingGameEffect(team);
+    getTeamRoster(team).forEach((player) => {
+      ensurePlayerCondition(player);
+      player.condition.offensiveCoachingModifier = effect.offensiveModifier;
+      player.condition.defensiveCoachingModifier = effect.defensiveModifier;
+    });
+  });
+}
+
+function syncPossessionTeamRoles(state) {
+  const offenseTeamId = state.possessionTeamId;
+  const defenseTeamId = nextDefenseTeamId(offenseTeamId);
+  state.teams.forEach((team, teamId) => {
+    const role = teamId === offenseTeamId ? "offense" : teamId === defenseTeamId ? "defense" : null;
+    getTeamRoster(team).forEach((player) => {
+      ensurePlayerCondition(player);
+      player.condition.possessionRole = role;
+    });
+  });
 }
 
 function getSecondsLeftInGame(state) {
@@ -3677,6 +3775,7 @@ function shouldTakeShotThisAction({
 }
 
 function resolveActionChunk(state, random = Math.random) {
+  syncPossessionTeamRoles(state);
   syncClutchTimeState(state);
   const offenseTeamId = state.possessionTeamId;
   const defenseTeamId = nextDefenseTeamId(state.possessionTeamId);
@@ -5366,7 +5465,29 @@ function createTeam({
   timeouts = 4,
   rotation = null,
   pace = PaceProfile.NORMAL,
+  coachingStaff = null,
+  coaches = null,
+  schoolPool = null,
+  pipelineStateWeights = null,
 }) {
+  const defaultSchoolPool =
+    Array.isArray(schoolPool) && schoolPool.length > 0
+      ? schoolPool
+      : typeof name === "string" && name.trim()
+        ? [name.trim()]
+        : [];
+  const normalizedStaff = createCoachingStaff({
+    headCoach: coachingStaff?.headCoach || coaches?.[0] || null,
+    assistants: coachingStaff?.assistants || (Array.isArray(coaches) ? coaches.slice(1) : []),
+    gamePrepAssistantIndex: coachingStaff?.gamePrepAssistantIndex,
+    schoolPool: defaultSchoolPool,
+    teamName: name,
+    defaultPace: normalizePaceProfile(pace),
+    defaultOffensiveSet: formation,
+    defaultDefensiveSet: defenseScheme,
+    pipelineStateWeights: pipelineStateWeights || undefined,
+  });
+
   return {
     name,
     players: players || lineup || [],
@@ -5378,6 +5499,8 @@ function createTeam({
     timeouts,
     rotation,
     pace: normalizePaceProfile(pace),
+    coachingStaff: normalizedStaff,
+    coaches: normalizedStaff.coaches,
   };
 }
 

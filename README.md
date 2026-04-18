@@ -65,6 +65,12 @@ Implemented:
   - `tendencies.crashBoardsDefense` vs `tendencies.attemptFastBreakDefense`,
   - `tendencies.press` and `tendencies.trapRate`,
   - `tendencies.pressBreakPass` and `tendencies.pressBreakAttack`.
+- Team coaching staffs:
+  - each team has 1 `head_coach` and 4 `assistant` coaches,
+  - coach skills include recruiting, player/position development, offense/defense coaching, scouting, and potential,
+  - coaches include age, press aggressiveness, pace, default offensive/defensive sets, alma mater, and weighted pipeline state,
+  - during games, coach `offensiveCoaching` / `defensiveCoaching` have a slight effect on player performance (head coach weighted most, optional `game prep` assistant weighted second),
+  - set the game prep assistant with `coachingStaff.gamePrepAssistantIndex` (0-based into assistants) or `assistant.isGamePrep = true`.
 
 ## Quick run
 
@@ -79,6 +85,8 @@ Use either `src/gameEngine.js` directly or the barrel export in `src/index.js`.
 ```js
 const {
   createPlayer,
+  createCoach,
+  createCoachingStaff,
   createTeam,
   simulateGame,
   OffensiveFormation,
@@ -86,6 +94,8 @@ const {
   PaceProfile,
 } = require("./src");
 ```
+
+`createTeam(...)` now auto-generates a full coaching staff when one is not provided. You can pass partial inputs via `coachingStaff` (or `coaches`) and missing roles are filled in.
 
 ## Notes for next iteration
 
