@@ -3,6 +3,7 @@ const { createPlayer } = require("./player");
 const CHUNK_SECONDS = 5;
 const HALF_SECONDS = 20 * 60;
 const SHOT_CLOCK_SECONDS = 30;
+const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0.03;
 
 const OffensiveSpot = Object.freeze({
   MIDDLE_PAINT: "middle_paint",
@@ -1757,6 +1758,7 @@ function shouldTakeShotThisAction({
   const qualityBoost = clamp(shotQuality, 0, 1.2) * 0.32;
   const earlyClockShotChance = clamp(
     0.14 +
+      EARLY_CLOCK_SHOT_ATTEMPT_BONUS +
       clockPressure * 0.45 +
       (shotIQ - 60) / 240 +
       (shootVsPass - 55) / 240 +
