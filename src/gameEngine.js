@@ -1647,6 +1647,12 @@ function getWingspanInches(player) {
   return parseLengthToInches(player?.size?.wingspan, getHeightInches(player) + 3);
 }
 
+function getPassInterceptionLengthBonus(player) {
+  const wingspanEdge = getWingspanInches(player) - getHeightInches(player);
+  if (wingspanEdge <= 2) return 0;
+  return clamp((wingspanEdge - 2) / 80, 0, 0.06);
+}
+
 function getWeightPounds(player) {
   const raw = Number(player?.size?.weight);
   return Number.isFinite(raw) ? raw : 220;
@@ -2021,6 +2027,7 @@ function evaluatePassTarget({
 
 function resolvePassDelivery({ passer, receiver, defenseContributors, zonePenalty = 0, random = Math.random }) {
   const relevantDefenders = (defenseContributors || []).filter(Boolean).slice(0, 1);
+  const interceptionLengthBonus = average(relevantDefenders.map(getPassInterceptionLengthBonus));
   const passerSecurity = average([
     getRating(passer, "skills.ballHandling"),
     getRating(passer, "skills.ballSafety"),
@@ -2066,7 +2073,7 @@ function resolvePassDelivery({ passer, receiver, defenseContributors, zonePenalt
       "skills.ballSafety",
     ],
     defenseRatings: ["defense.passPerception", "defense.steals", "defense.offballDefense"],
-    contextEdge: zonePenalty + PASS_DELIVERY_COMPLETION_EDGE_BONUS + passSecurityEdge,
+    contextEdge: zonePenalty + PASS_DELIVERY_COMPLETION_EDGE_BONUS + passSecurityEdge - interceptionLengthBonus,
     random,
   });
 
@@ -2086,7 +2093,7 @@ function resolvePassDelivery({ passer, receiver, defenseContributors, zonePenalt
     ]);
     const failureSeverity = clamp((0.62 - interaction.successProbability) / 0.62, 0, 1);
     const stealOnFailureChance = clamp(
-      0.8 + failureSeverity * 0.14 + (ballhawkPressure - offensiveControl) / 340,
+      0.8 + failureSeverity * 0.14 + (ballhawkPressure - offensiveControl) / 340 + interceptionLengthBonus * 0.45,
       0.7,
       0.95,
     );
@@ -2097,7 +2104,9 @@ function resolvePassDelivery({ passer, receiver, defenseContributors, zonePenalt
         ? pickWeighted(
           defendersForSteal.map((d) => ({
             value: d,
-            weight: getRating(d, "defense.steals") + getRating(d, "defense.passPerception"),
+            weight:
+              (getRating(d, "defense.steals") + getRating(d, "defense.passPerception")) *
+              (1 + getPassInterceptionLengthBonus(d) * 4),
           })),
           random,
         )
