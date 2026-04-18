@@ -3,7 +3,7 @@ const { createPlayer } = require("./player");
 const CHUNK_SECONDS = 5;
 const HALF_SECONDS = 20 * 60;
 const SHOT_CLOCK_SECONDS = 30;
-const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0.03;
+const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0;
 const CONTESTED_SHOOTING_FOUL_BASE_CHANCE = 0.15;
 const PASS_DELIVERY_COMPLETION_EDGE_BONUS = 0.4;
 const THREE_POINT_MAKE_EDGE_PENALTY = 0.34;
@@ -1166,9 +1166,10 @@ function resolveShot({
       },
     }
     : shooter;
+  const contestedEdgePenalty = contested ? THREE_POINT_CONTESTED_EXTRA_PENALTY : 0;
   const shotTypeEdgePenalty = isThreePointShot
-    ? THREE_POINT_MAKE_EDGE_PENALTY + (contested ? THREE_POINT_CONTESTED_EXTRA_PENALTY : 0)
-    : 0;
+    ? THREE_POINT_MAKE_EDGE_PENALTY + contestedEdgePenalty
+    : contestedEdgePenalty;
   const shotResult = resolveInteraction({
     offensePlayer,
     defensePlayer: defender,
@@ -2088,21 +2089,22 @@ function shouldTakeShotThisAction({
   const elapsedClock = SHOT_CLOCK_SECONDS - state.shotClockRemaining;
   const pressureSpan = SHOT_CLOCK_SECONDS - forceShotThresholdSeconds;
   const clockPressure = pressureSpan <= 0 ? 1 : clamp(elapsedClock / pressureSpan, 0, 1);
+  const earlyClockRestraint = Math.pow(1 - clockPressure, 1.35) * 0.11;
   // Shot quality matters less as the clock winds down — late in the clock, any look goes up.
   const qualityWeight = 1 - 0.75 * clockPressure;
-  const qualityBoost = clamp(shotQuality, 0, 1.2) * 0.3 * qualityWeight;
+  const qualityBoost = clamp(shotQuality, 0, 1.2) * 0.22 * qualityWeight;
   const shotChance = clamp(
-    0.3 +
+    0.22 +
       EARLY_CLOCK_SHOT_ATTEMPT_BONUS +
-      Math.pow(clockPressure, 1.2) * 0.7 +
-      (shotIQ - 60) / 240 +
-      (shootVsPass - 55) / 240 +
+      Math.pow(clockPressure, 1.35) * 0.73 +
+      (shotIQ - 60) / 300 +
+      (shootVsPass - 55) / 300 +
       qualityBoost,
-    0.12,
+    0.1,
     0.98,
   );
 
-  return random() < shotChance;
+  return random() < clamp(shotChance - earlyClockRestraint, 0.08, 0.98);
 }
 
 function resolveActionChunk(state, random = Math.random) {
