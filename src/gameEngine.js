@@ -2,7 +2,12 @@ const { createPlayer } = require("./player");
 
 const CHUNK_SECONDS = 5;
 const HALF_SECONDS = 20 * 60;
+const OVERTIME_SECONDS = 5 * 60;
 const SHOT_CLOCK_SECONDS = 30;
+const REGULATION_HALVES = 2;
+const CLUTCH_TIME_SECONDS = 2 * 60;
+const CLOSE_GAME_MARGIN = 6;
+const CLUTCH_RATING_IMPACT = 0.08;
 const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0;
 const CONTESTED_SHOOTING_FOUL_BASE_CHANCE = 0.15;
 const PASS_DELIVERY_COMPLETION_EDGE_BONUS = 0.4;
@@ -146,6 +151,57 @@ function getTeamRoster(team) {
     }
   });
   return roster;
+}
+
+function getCurrentPeriodLengthSeconds(state) {
+  return state.currentHalf <= REGULATION_HALVES ? HALF_SECONDS : OVERTIME_SECONDS;
+}
+
+function getElapsedSecondsInCurrentPeriod(state) {
+  return getCurrentPeriodLengthSeconds(state) - state.gameClockRemaining;
+}
+
+function getElapsedGameSeconds(state) {
+  const completedSeconds =
+    state.currentHalf <= REGULATION_HALVES
+      ? (state.currentHalf - 1) * HALF_SECONDS
+      : REGULATION_HALVES * HALF_SECONDS + (state.currentHalf - (REGULATION_HALVES + 1)) * OVERTIME_SECONDS;
+  return completedSeconds + getElapsedSecondsInCurrentPeriod(state);
+}
+
+function isInOvertime(state) {
+  return state.currentHalf > REGULATION_HALVES;
+}
+
+function getScoreMargin(state) {
+  return Math.abs((state.teams?.[0]?.score || 0) - (state.teams?.[1]?.score || 0));
+}
+
+function isClutchTimeActive(state) {
+  if (isInOvertime(state)) return true;
+  return (
+    state.currentHalf === REGULATION_HALVES &&
+    state.gameClockRemaining <= CLUTCH_TIME_SECONDS &&
+    getScoreMargin(state) <= CLOSE_GAME_MARGIN
+  );
+}
+
+function syncClutchTimeState(state) {
+  const clutchActive = isClutchTimeActive(state);
+  state.teams.forEach((team) => {
+    getTeamRoster(team).forEach((player) => {
+      ensurePlayerCondition(player);
+      player.condition.clutchTime = clutchActive;
+    });
+  });
+}
+
+function applyClutchModifier(player, rating) {
+  if (!player?.condition?.clutchTime) return rating;
+  const clutch = getBaseRating(player, "skills.clutch", 50);
+  const clutchEdge = clamp((clutch - 50) / 50, -1, 1);
+  const multiplier = 1 + clutchEdge * CLUTCH_RATING_IMPACT;
+  return clamp(rating * multiplier, 1, 100);
 }
 
 function createEmptyPlayerBoxScore(player) {
@@ -372,8 +428,7 @@ function rankLineupCandidates(state, teamId) {
 }
 
 function runDeadBallSubstitutions(state, reason = "dead_ball") {
-  const elapsedGameSeconds =
-    HALF_SECONDS * (state.currentHalf - 1) + (HALF_SECONDS - state.gameClockRemaining);
+  const elapsedGameSeconds = getElapsedGameSeconds(state);
 
   state.teams.forEach((team, teamId) => {
     if (!Array.isArray(team.lineup) || team.lineup.length !== 5) return;
@@ -556,11 +611,13 @@ function getRating(player, path, fallback = 50) {
 
   // Supports both placeholder defaults (~1) and mature 1-100 ratings.
   if (value <= 1) return fallback;
-  if (value <= 10) return value * 10;
-  if (group === "athleticism" && (key === "stamina" || key === "durability")) return value;
+  if (value <= 10) return applyClutchModifier(player, value * 10);
+  if (group === "athleticism" && (key === "stamina" || key === "durability")) {
+    return applyClutchModifier(player, value);
+  }
 
   const energy = Number(player?.condition?.energy);
-  if (!Number.isFinite(energy)) return value;
+  if (!Number.isFinite(energy)) return applyClutchModifier(player, value);
 
   const fatigue = clamp((100 - energy) / 100, 0, 0.85);
   let impact = 0.2;
@@ -570,7 +627,7 @@ function getRating(player, path, fallback = 50) {
   else if (group === "defense") impact = 0.22;
   else if (group === "rebounding" || group === "postGame") impact = 0.2;
 
-  return value * (1 - fatigue * impact);
+  return applyClutchModifier(player, value * (1 - fatigue * impact));
 }
 
 function makeStrengthBiasedWeights(ratings, random = Math.random) {
@@ -2096,7 +2153,7 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
     getTeamRoster(team).forEach((player) => ensurePlayerCondition(player));
   });
 
-  return {
+  const state = {
     teams,
     boxScore: initializeBoxScoreTracker(teams),
     possessionTeamId: random() < 0.5 ? 0 : 1,
@@ -2107,6 +2164,8 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
     pendingAssist: null,
     playByPlay: [],
   };
+  syncClutchTimeState(state);
+  return state;
 }
 
 function beginNewPossession(state, offenseTeamId, deadBallReason = null) {
@@ -2121,10 +2180,10 @@ function beginNewPossession(state, offenseTeamId, deadBallReason = null) {
 }
 
 function pushEvent(state, event) {
-  const elapsed = HALF_SECONDS * (state.currentHalf - 1) + (HALF_SECONDS - state.gameClockRemaining);
+  const elapsed = getElapsedGameSeconds(state);
   state.playByPlay.push({
     half: state.currentHalf,
-    elapsedSecondsInHalf: HALF_SECONDS - state.gameClockRemaining,
+    elapsedSecondsInHalf: getElapsedSecondsInCurrentPeriod(state),
     elapsedGameSeconds: elapsed,
     ...event,
   });
@@ -2150,7 +2209,12 @@ function getLateGamePaceShotBias(state, offenseTeamId) {
   const defense = state.teams?.[nextDefenseTeamId(offenseTeamId)];
   if (!offense || !defense) return 0;
 
-  const secondsLeftInGame = (state.currentHalf === 1 ? HALF_SECONDS : 0) + state.gameClockRemaining;
+  const secondsLeftInGame =
+    state.currentHalf === 1
+      ? HALF_SECONDS + state.gameClockRemaining
+      : state.currentHalf === 2
+        ? state.gameClockRemaining
+        : 0;
   if (secondsLeftInGame > 120) return 0;
 
   const scoreDiff = (offense.score || 0) - (defense.score || 0);
@@ -2204,6 +2268,7 @@ function shouldTakeShotThisAction({
 }
 
 function resolveActionChunk(state, random = Math.random) {
+  syncClutchTimeState(state);
   const offenseTeamId = state.possessionTeamId;
   const defenseTeamId = nextDefenseTeamId(state.possessionTeamId);
   const offense = state.teams[offenseTeamId];
@@ -3377,8 +3442,26 @@ function simulateGame(homeTeam, awayTeam, options = {}) {
   state.gameClockRemaining = HALF_SECONDS;
   state.shotClockRemaining = SHOT_CLOCK_SECONDS;
   state.possessionNeedsSetup = true;
+  syncClutchTimeState(state);
 
   simulateHalf(state, random);
+
+  let overtimeNumber = 0;
+  while (state.teams[0].score === state.teams[1].score) {
+    overtimeNumber += 1;
+    state.currentHalf = REGULATION_HALVES + overtimeNumber;
+    state.gameClockRemaining = OVERTIME_SECONDS;
+    state.shotClockRemaining = SHOT_CLOCK_SECONDS;
+    state.possessionNeedsSetup = true;
+    clearPendingAssist(state);
+    runDeadBallSubstitutions(state, "timeout");
+    syncClutchTimeState(state);
+    pushEvent(state, {
+      type: "overtime_start",
+      overtime: overtimeNumber,
+    });
+    simulateHalf(state, random);
+  }
 
   const boxScore = state.boxScore.teams.map((teamTracker) => ({
     name: teamTracker.name,
@@ -3440,6 +3523,7 @@ function createTeam({
 module.exports = {
   CHUNK_SECONDS,
   HALF_SECONDS,
+  OVERTIME_SECONDS,
   SHOT_CLOCK_SECONDS,
   OffensiveSpot,
   OffensiveFormation,
