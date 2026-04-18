@@ -4,6 +4,7 @@ const {
   simulateGame,
   OffensiveFormation,
   DefenseScheme,
+  PaceProfile,
 } = require("./gameEngine");
 const ALL_FORMATIONS = Object.values(OffensiveFormation);
 
@@ -609,6 +610,7 @@ const home = createTeam({
       "Luca Meyer": 10,
     },
   },
+  pace: PaceProfile.NORMAL,
 });
 
 const away = createTeam({
@@ -638,10 +640,13 @@ const away = createTeam({
       "Nico Vega": 11,
     },
   },
+  pace: PaceProfile.NORMAL,
 });
 
+const seedFromArg = Number.parseInt(process.argv[2] || "", 10);
+const simulationSeed = Number.isFinite(seedFromArg) ? seedFromArg : 20260417;
 const result = simulateGame(home, away, {
-  random: seededRandom(20260417),
+  random: seededRandom(simulationSeed),
 });
 
 console.log(`${result.away.name} ${result.away.score} - ${result.home.name} ${result.home.score}`);

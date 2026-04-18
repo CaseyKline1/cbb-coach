@@ -41,6 +41,10 @@ Implemented:
   - substitution decisions consider energy, relative player skill, and minute targets,
   - optional preset rotation support via `team.rotation.minuteTargets` keyed by player name,
   - if no rotation is provided and a roster has more than 5 players, default minute targets ensure everyone plays at least a little in an average game.
+- Team pace profiles:
+  - optional team-level `pace` setting (`very_slow`, `slow`, `slightly_slow`, `normal`, `slightly_fast`, `fast`, `very_fast`),
+  - pace influences early/neutral-clock shot appetite,
+  - late-game game-state adjustment: teams protecting a lead slow down while trailing teams speed up.
 
 ## Quick run
 
@@ -53,7 +57,14 @@ node src/exampleGame.js
 Use either `src/gameEngine.js` directly or the barrel export in `src/index.js`.
 
 ```js
-const { createPlayer, createTeam, simulateGame, OffensiveFormation, DefenseScheme } = require("./src");
+const {
+  createPlayer,
+  createTeam,
+  simulateGame,
+  OffensiveFormation,
+  DefenseScheme,
+  PaceProfile,
+} = require("./src");
 ```
 
 ## Notes for next iteration

@@ -48,6 +48,26 @@ const DefenseScheme = Object.freeze({
   PACK_LINE: "pack_line",
 });
 
+const PaceProfile = Object.freeze({
+  VERY_SLOW: "very_slow",
+  SLOW: "slow",
+  SLIGHTLY_SLOW: "slightly_slow",
+  NORMAL: "normal",
+  SLIGHTLY_FAST: "slightly_fast",
+  FAST: "fast",
+  VERY_FAST: "very_fast",
+});
+
+const PACE_TO_SHOT_BIAS = Object.freeze({
+  [PaceProfile.VERY_SLOW]: -0.1,
+  [PaceProfile.SLOW]: -0.07,
+  [PaceProfile.SLIGHTLY_SLOW]: -0.035,
+  [PaceProfile.NORMAL]: 0,
+  [PaceProfile.SLIGHTLY_FAST]: 0.03,
+  [PaceProfile.FAST]: 0.06,
+  [PaceProfile.VERY_FAST]: 0.09,
+});
+
 const spotCoords = {
   [OffensiveSpot.MIDDLE_PAINT]: { x: 0, y: 2 },
   [OffensiveSpot.RIGHT_POST]: { x: 2, y: 2 },
@@ -2082,6 +2102,37 @@ function applyChunkClock(state, shotClockMode = "tick") {
   }
 }
 
+function normalizePaceProfile(value) {
+  if (typeof value !== "string") return PaceProfile.NORMAL;
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (PACE_TO_SHOT_BIAS[normalized] !== undefined) return normalized;
+  return PaceProfile.NORMAL;
+}
+
+function getLateGamePaceShotBias(state, offenseTeamId) {
+  const offense = state.teams?.[offenseTeamId];
+  const defense = state.teams?.[nextDefenseTeamId(offenseTeamId)];
+  if (!offense || !defense) return 0;
+
+  const secondsLeftInGame = (state.currentHalf === 1 ? HALF_SECONDS : 0) + state.gameClockRemaining;
+  if (secondsLeftInGame > 120) return 0;
+
+  const scoreDiff = (offense.score || 0) - (defense.score || 0);
+  const urgencyByTime = secondsLeftInGame <= 60 ? 1 : 0.7;
+  const urgencyByMargin = clamp(Math.abs(scoreDiff) / 10, 0.2, 1.2);
+  const magnitude = 0.02 + 0.06 * urgencyByTime * urgencyByMargin;
+
+  if (scoreDiff >= 2) return -magnitude;
+  if (scoreDiff <= -2) return magnitude;
+  return 0;
+}
+
+function getPaceShotBias(state, offenseTeamId) {
+  const offense = state.teams?.[offenseTeamId];
+  const baseBias = PACE_TO_SHOT_BIAS[normalizePaceProfile(offense?.pace)];
+  return clamp(baseBias + getLateGamePaceShotBias(state, offenseTeamId), -0.18, 0.18);
+}
+
 function shouldTakeShotThisAction({
   state,
   shooter,
@@ -2096,6 +2147,7 @@ function shouldTakeShotThisAction({
   const elapsedClock = SHOT_CLOCK_SECONDS - state.shotClockRemaining;
   const pressureSpan = SHOT_CLOCK_SECONDS - forceShotThresholdSeconds;
   const clockPressure = pressureSpan <= 0 ? 1 : clamp(elapsedClock / pressureSpan, 0, 1);
+  const paceShotBias = getPaceShotBias(state, state.possessionTeamId);
   const earlyClockRestraint = Math.pow(1 - clockPressure, 1.35) * 0.095;
   // Shot quality matters less as the clock winds down — late in the clock, any look goes up.
   const qualityWeight = 1 - 0.75 * clockPressure;
@@ -2106,6 +2158,7 @@ function shouldTakeShotThisAction({
       Math.pow(clockPressure, 1.35) * 0.73 +
       (shotIQ - 60) / 300 +
       (shootVsPass - 55) / 300 +
+      paceShotBias +
       qualityBoost,
     0.1,
     0.98,
@@ -3332,6 +3385,7 @@ function createTeam({
   tendencies = {},
   timeouts = 4,
   rotation = null,
+  pace = PaceProfile.NORMAL,
 }) {
   return {
     name,
@@ -3343,6 +3397,7 @@ function createTeam({
     tendencies,
     timeouts,
     rotation,
+    pace: normalizePaceProfile(pace),
   };
 }
 
@@ -3353,6 +3408,7 @@ module.exports = {
   OffensiveSpot,
   OffensiveFormation,
   DefenseScheme,
+  PaceProfile,
   createTeam,
   createInitialGameState,
   resolveInteraction,
