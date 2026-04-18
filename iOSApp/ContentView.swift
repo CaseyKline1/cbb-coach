@@ -201,26 +201,26 @@ private struct CoachStyleStepView: View {
             }
         ) {
             VStack(alignment: .leading, spacing: 16) {
-                Picker("Tempo", selection: $selectedPace) {
-                    ForEach(PaceProfile.allCases, id: \.self) { pace in
-                        Text(pace.label).tag(pace)
-                    }
-                }
-                .pickerStyle(.menu)
+                SingleSelectDropdown(
+                    label: "Tempo",
+                    selection: $selectedPace,
+                    options: PaceProfile.allCases,
+                    optionLabel: \.label
+                )
 
-                Picker("Base Offense", selection: $selectedOffense) {
-                    ForEach(OffensiveFormation.allCases, id: \.self) { formation in
-                        Text(formation.label).tag(formation)
-                    }
-                }
-                .pickerStyle(.menu)
+                SingleSelectDropdown(
+                    label: "Base Offense",
+                    selection: $selectedOffense,
+                    options: OffensiveFormation.allCases,
+                    optionLabel: \.label
+                )
 
-                Picker("Base Defense", selection: $selectedDefense) {
-                    ForEach(DefenseScheme.allCases, id: \.self) { defense in
-                        Text(defense.label).tag(defense)
-                    }
-                }
-                .pickerStyle(.menu)
+                SingleSelectDropdown(
+                    label: "Base Defense",
+                    selection: $selectedDefense,
+                    options: DefenseScheme.allCases,
+                    optionLabel: \.label
+                )
 
                 Text("\(identity.firstName) \(identity.lastName), age \(identity.age)")
                     .font(.footnote)
@@ -305,6 +305,84 @@ private struct CoachTeamStepView: View {
         "Michigan State",
         "Baylor"
     ]
+}
+
+struct SingleSelectDropdown<Option: Hashable>: View {
+    let label: String
+    @Binding var selection: Option
+    let options: [Option]
+    let optionLabel: (Option) -> String
+
+    init(
+        label: String,
+        selection: Binding<Option>,
+        options: [Option],
+        optionLabel: @escaping (Option) -> String
+    ) {
+        self.label = label
+        self._selection = selection
+        self.options = options
+        self.optionLabel = optionLabel
+    }
+
+    init(
+        label: String,
+        selection: Binding<Option>,
+        options: [Option],
+        optionLabel: KeyPath<Option, String>
+    ) {
+        self.init(
+            label: label,
+            selection: selection,
+            options: options,
+            optionLabel: { $0[keyPath: optionLabel] }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Menu {
+                ForEach(options.indices, id: \.self) { index in
+                    let option = options[index]
+                    Button {
+                        selection = option
+                    } label: {
+                        if option == selection {
+                            Label(optionLabel(option), systemImage: "checkmark")
+                        } else {
+                            Text(optionLabel(option))
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(optionLabel(selection))
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(.systemBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.black.opacity(0.14), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(label): \(optionLabel(selection))"))
+    }
 }
 
 private struct OnboardingStepScaffold<Content: View>: View {
