@@ -47,6 +47,16 @@ Implemented:
   - optional team-level `pace` setting (`very_slow`, `slow`, `slightly_slow`, `normal`, `slightly_fast`, `fast`, `very_fast`),
   - pace influences early/neutral-clock shot appetite,
   - late-game game-state adjustment: teams protecting a lead slow down while trailing teams speed up.
+- Transition/fast-break flow:
+  - only available after live-ball steals or defensive rebounds (never after dead-ball inbounds),
+  - two transition chunks: `0-5s` primary break then `5-10s` secondary break,
+  - primary break can create open rim runs (layup/dunk only) with optional lead-pass influence from passer accuracy + receiver hands,
+  - missed primary-break finishes use trailer-weighted rebound chances,
+  - secondary break uses normal shot mix but with potential openness when recovery is late.
+- Optional team tendency levers:
+  - `tendencies.fastBreakOffense`,
+  - `tendencies.crashBoardsOffense` vs `tendencies.defendFastBreakOffense`,
+  - `tendencies.crashBoardsDefense` vs `tendencies.attemptFastBreakDefense`.
 
 ## Quick run
 
