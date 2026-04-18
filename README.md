@@ -53,10 +53,18 @@ Implemented:
   - primary break can create open rim runs (layup/dunk only) with optional lead-pass influence from passer accuracy + receiver hands,
   - missed primary-break finishes use trailer-weighted rebound chances,
   - secondary break uses normal shot mix but with potential openness when recovery is late.
+- Full-court press / press-break flow:
+  - press can trigger based on `tendencies.press` and late-game trailing urgency,
+  - offense can break pressure by passing or dribbling over multiple setup chunks,
+  - defense traps aggressively (double-team pressure), with trap success influenced by defender excess wingspan and ball-handler passing reads,
+  - failure to advance in two setup chunks triggers a 10-second turnover,
+  - clean press breaks can immediately flow into transition offense.
 - Optional team tendency levers:
   - `tendencies.fastBreakOffense`,
   - `tendencies.crashBoardsOffense` vs `tendencies.defendFastBreakOffense`,
-  - `tendencies.crashBoardsDefense` vs `tendencies.attemptFastBreakDefense`.
+  - `tendencies.crashBoardsDefense` vs `tendencies.attemptFastBreakDefense`,
+  - `tendencies.press` and `tendencies.trapRate`,
+  - `tendencies.pressBreakPass` and `tendencies.pressBreakAttack`.
 
 ## Quick run
 
@@ -82,5 +90,4 @@ const {
 ## Notes for next iteration
 
 - Action selection is intentionally modular in `choosePlayType(...)` so we can add explicit team and lineup decision policy next.
-- Press and press-break flow is stubbed by checking `defense.tendencies.press`; detailed press mechanics are still to be defined.
 - Rebounding uses a first-pass model for man/zone behavior and can be expanded with explicit boxer/boxed assignments.
