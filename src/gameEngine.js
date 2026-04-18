@@ -6,6 +6,9 @@ const SHOT_CLOCK_SECONDS = 30;
 const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0;
 const CONTESTED_SHOOTING_FOUL_BASE_CHANCE = 0.15;
 const PASS_DELIVERY_COMPLETION_EDGE_BONUS = 0.4;
+const LAYUP_MAKE_EDGE_BONUS = 0.14;
+const DUNK_MAKE_EDGE_BONUS = 0.22;
+const MIDRANGE_MAKE_EDGE_PENALTY = 0.18;
 const THREE_POINT_MAKE_EDGE_PENALTY = 0.34;
 const THREE_POINT_CONTESTED_EXTRA_PENALTY = 0.12;
 const THREE_POINT_SUCCESS_PROBABILITY_PENALTY = 0.1;
@@ -1161,6 +1164,11 @@ function resolveShot({
       },
     }
     : shooter;
+  let shotTypeEdgeBonus = 0;
+  if (shotType === "layup") shotTypeEdgeBonus += LAYUP_MAKE_EDGE_BONUS;
+  if (shotType === "dunk") shotTypeEdgeBonus += DUNK_MAKE_EDGE_BONUS;
+  if (shotType === "midrange") shotTypeEdgeBonus -= MIDRANGE_MAKE_EDGE_PENALTY;
+
   const contestedEdgePenalty = contested ? THREE_POINT_CONTESTED_EXTRA_PENALTY : 0;
   const shotTypeEdgePenalty = isThreePointShot
     ? THREE_POINT_MAKE_EDGE_PENALTY + contestedEdgePenalty
@@ -1170,7 +1178,7 @@ function resolveShot({
     defensePlayer: defender,
     offenseRatings: profile.offenseRatings,
     defenseRatings: profile.defenseRatings,
-    contextEdge: zonePenalty + shotQualityEdge - shotTypeEdgePenalty,
+    contextEdge: zonePenalty + shotQualityEdge + shotTypeEdgeBonus - shotTypeEdgePenalty,
     random,
   });
 
