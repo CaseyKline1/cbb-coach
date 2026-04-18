@@ -722,6 +722,145 @@ function pickNearestDefenderTeammate({
   return nearest || fallback;
 }
 
+function getOffenderCourtPositions({ offenseLineup, offensiveAssignments }) {
+  const assignmentByPlayer = new Map(
+    (offensiveAssignments || []).map((entry) => [entry.player, entry]),
+  );
+  return offenseLineup.map((player, index) => {
+    const assignment = assignmentByPlayer.get(player) || offensiveAssignments?.[index];
+    return {
+      player,
+      coord: spotCoords[assignment?.spot] || { x: 0, y: 4.5 },
+    };
+  });
+}
+
+function pickReboundDirection({ shooter, offensiveAssignments, random = Math.random }) {
+  const assignmentByPlayer = new Map(
+    (offensiveAssignments || []).map((entry) => [entry.player, entry]),
+  );
+  const shooterSpot = assignmentByPlayer.get(shooter)?.spot;
+  const shooterX = spotCoords[shooterSpot]?.x || 0;
+
+  let leftWeight = 1;
+  let middleWeight = 1.15;
+  let rightWeight = 1;
+  if (shooterX < -1) leftWeight += 0.25;
+  if (shooterX > 1) rightWeight += 0.25;
+  if (Math.abs(shooterX) > 2.5) middleWeight -= 0.1;
+
+  return pickWeighted(
+    [
+      { value: "left", weight: leftWeight },
+      { value: "middle", weight: middleWeight },
+      { value: "right", weight: rightWeight },
+    ],
+    random,
+  );
+}
+
+function baseLongReboundChance(shotType) {
+  if (shotType === "three") return 0.62;
+  if (shotType === "midrange" || shotType === "fadeaway") return 0.42;
+  if (shotType === "hook") return 0.36;
+  return 0.28;
+}
+
+function buildReboundLandingSpot({ direction, isLong, random = Math.random }) {
+  const directionX = direction === "left" ? -2.9 : direction === "right" ? 2.9 : 0;
+  const baseY = isLong ? 6.1 : 2.35;
+  const xJitter = (random() - 0.5) * (isLong ? 3.2 : 1.7);
+  const yJitter = (random() - 0.5) * (isLong ? 1.8 : 1.2);
+  return {
+    x: clamp(directionX + xJitter, -4.8, 4.8),
+    y: clamp(baseY + yJitter, 0.8, 8.4),
+  };
+}
+
+function collectReboundBoxoutInteractions({
+  offenseLineup,
+  defenseLineup,
+  offensePositions,
+  defensePositions,
+  defenseScheme,
+}) {
+  const interactions = [];
+  if (defenseScheme === DefenseScheme.MAN_TO_MAN) {
+    const count = Math.min(offenseLineup.length, defenseLineup.length);
+    for (let i = 0; i < count; i += 1) {
+      interactions.push({
+        offense: offenseLineup[i],
+        defense: defenseLineup[i],
+      });
+    }
+    return interactions;
+  }
+
+  const offenseByPlayer = new Map(offensePositions.map((entry) => [entry.player, entry.coord]));
+  const defenseByPlayer = new Map(defensePositions.map((entry) => [entry.player, entry.coord]));
+  offenseLineup.forEach((offensePlayer) => {
+    const oCoord = offenseByPlayer.get(offensePlayer);
+    if (!oCoord) return;
+    defenseLineup.forEach((defensePlayer) => {
+      const dCoord = defenseByPlayer.get(defensePlayer);
+      if (!dCoord) return;
+      if (dist(oCoord, dCoord) <= 2.8) {
+        interactions.push({ offense: offensePlayer, defense: defensePlayer });
+      }
+    });
+  });
+  return interactions;
+}
+
+function resolveBoxoutPositioning({
+  offenseLineup,
+  defenseLineup,
+  offensePositions,
+  defensePositions,
+  defenseScheme,
+  random = Math.random,
+}) {
+  const positioning = new Map();
+  offenseLineup.forEach((player) => positioning.set(player, 1));
+  defenseLineup.forEach((player) => positioning.set(player, 1));
+
+  const interactions = collectReboundBoxoutInteractions({
+    offenseLineup,
+    defenseLineup,
+    offensePositions,
+    defensePositions,
+    defenseScheme,
+  });
+
+  interactions.forEach(({ offense, defense }) => {
+    const boxoutEdge = (getRating(offense, "rebounding.boxouts") - getRating(defense, "rebounding.boxouts")) / 20;
+    const strengthEdge = (getRating(offense, "athleticism.strength") - getRating(defense, "athleticism.strength")) / 24;
+    const weightEdge = (getWeightPounds(offense) - getWeightPounds(defense)) / 45;
+    const edge = boxoutEdge * 0.64 + strengthEdge * 0.24 + weightEdge * 0.12;
+    const offenseShare = clamp(logistic(edge + (random() - 0.5) * 0.08), 0.14, 0.86);
+    const defenseShare = 1 - offenseShare;
+    const offenseBump = 0.78 + offenseShare * 0.88;
+    const defenseBump = 0.78 + defenseShare * 0.88;
+    positioning.set(offense, clamp((positioning.get(offense) || 1) * offenseBump, 0.5, 2.25));
+    positioning.set(defense, clamp((positioning.get(defense) || 1) * defenseBump, 0.5, 2.25));
+  });
+
+  return positioning;
+}
+
+function collectReboundCandidates({ offensePositions, defensePositions, landingSpot, radius }) {
+  const candidates = [];
+  offensePositions.forEach(({ player, coord }) => {
+    const distance = dist(coord, landingSpot);
+    if (distance <= radius) candidates.push({ player, team: "offense", distance });
+  });
+  defensePositions.forEach(({ player, coord }) => {
+    const distance = dist(coord, landingSpot);
+    if (distance <= radius) candidates.push({ player, team: "defense", distance });
+  });
+  return candidates;
+}
+
 function zoneDistanceAdvantage(defender, startDistance) {
   if (startDistance <= 1.5) return 0;
   const recoveryRatingPaths = [
@@ -1354,6 +1493,9 @@ function resolvePossessionEndAfterShot({
     offenseLineup,
     defenseLineup,
     defenseScheme,
+    offensiveAssignments,
+    shooter,
+    shotType,
     random,
   });
 
@@ -1412,61 +1554,98 @@ function resolveRebound({
   offenseLineup,
   defenseLineup,
   defenseScheme,
+  offensiveAssignments,
+  shooter,
+  shotType,
   random = Math.random,
 }) {
-  const offenseScore = average(
-    offenseLineup.map((player) =>
-      average([
-        getRating(player, "rebounding.offensiveRebounding"),
-        getRating(player, "rebounding.boxouts"),
-        getRating(player, "athleticism.vertical"),
-        getRating(player, "skills.hustle"),
-      ]),
-    ),
-  );
+  const offensePositions = getOffenderCourtPositions({
+    offenseLineup,
+    offensiveAssignments,
+  });
+  const defensePositions = getDefenderCourtPositions({
+    defenseScheme,
+    defenseLineup,
+    offensiveAssignments,
+  });
+  const positioning = resolveBoxoutPositioning({
+    offenseLineup,
+    defenseLineup,
+    offensePositions,
+    defensePositions,
+    defenseScheme,
+    random,
+  });
 
-  let defenseScore = average(
-    defenseLineup.map((player) =>
-      average([
-        getRating(player, "rebounding.defensiveRebound"),
-        getRating(player, "rebounding.boxouts"),
-        getRating(player, "athleticism.strength"),
-        getRating(player, "skills.hustle"),
-      ]),
-    ),
-  );
+  const direction = pickReboundDirection({ shooter, offensiveAssignments, random });
+  let isLong = random() < baseLongReboundChance(shotType);
+  let landingSpot = buildReboundLandingSpot({ direction, isLong, random });
+  let radius = isLong ? 3.3 : 2.2;
+  let candidates = collectReboundCandidates({
+    offensePositions,
+    defensePositions,
+    landingSpot,
+    radius,
+  });
 
-  if (defenseScheme !== DefenseScheme.MAN_TO_MAN) {
-    const freeReboundersBoost = 2 + random() * 3;
-    defenseScore -= freeReboundersBoost;
+  if (!isLong && candidates.length === 0) {
+    isLong = true;
+    landingSpot = buildReboundLandingSpot({ direction, isLong, random });
+    radius = 3.3;
+    candidates = collectReboundCandidates({
+      offensePositions,
+      defensePositions,
+      landingSpot,
+      radius,
+    });
   }
 
-  const orebProbability = clamp(logistic((offenseScore - defenseScore) / 12), 0.12, 0.48);
-  const offenseRebounder = pickWeighted(
-    offenseLineup.map((player) => ({
-      value: player,
-      weight:
-        getRating(player, "rebounding.offensiveRebounding") +
-        getRating(player, "rebounding.boxouts") * 0.6 +
-        getRating(player, "skills.hustle") * 0.5,
-    })),
+  const fallbackCandidates =
+    candidates.length > 0
+      ? candidates
+      : [
+          ...offensePositions.map(({ player, coord }) => ({
+            player,
+            team: "offense",
+            distance: dist(coord, landingSpot),
+          })),
+          ...defensePositions.map(({ player, coord }) => ({
+            player,
+            team: "defense",
+            distance: dist(coord, landingSpot),
+          })),
+        ];
+
+  const rebounder = pickWeighted(
+    fallbackCandidates.map((entry) => {
+      const player = entry.player;
+      const reachScore = getHeightInches(player) * 0.42 + getWingspanInches(player) * 0.58;
+      const verticalScore = getRating(player, "athleticism.vertical");
+      const reboundingScore =
+        entry.team === "offense"
+          ? getRating(player, "rebounding.offensiveRebounding")
+          : getRating(player, "rebounding.defensiveRebound");
+      const positioningScore = positioning.get(player) || 1;
+      const distanceScore = clamp(1 - entry.distance / (radius + 0.15), 0.18, 1);
+      const weight =
+        (reboundingScore * 0.47 + reachScore * 0.22 + verticalScore * 0.21 + getRating(player, "rebounding.boxouts") * 0.1) *
+        positioningScore *
+        distanceScore;
+      return {
+        value: entry,
+        weight: Math.max(1, weight),
+      };
+    }),
     random,
   );
-  const defenseRebounder = pickWeighted(
-    defenseLineup.map((player) => ({
-      value: player,
-      weight:
-        getRating(player, "rebounding.defensiveRebound") +
-        getRating(player, "rebounding.boxouts") * 0.65 +
-        getRating(player, "skills.hustle") * 0.45,
-    })),
-    random,
-  );
-  const offensiveRebound = random() < orebProbability;
+
+  const offensiveRebound = rebounder.team === "offense";
   return {
     offensiveRebound,
-    rebounder: offensiveRebound ? offenseRebounder : defenseRebounder,
-    orebProbability,
+    rebounder: rebounder.player,
+    direction,
+    isLong,
+    landingSpot,
   };
 }
 
