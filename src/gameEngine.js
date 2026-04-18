@@ -897,10 +897,22 @@ function pickBallHandler(offensiveAssignments, random = Math.random) {
 function choosePlayType({ offenseTeam, ballHandler, random = Math.random }) {
   const drive = getRating(ballHandler, "tendencies.drive");
   const post = getRating(ballHandler, "tendencies.post");
+  const shootVsPass = getRating(ballHandler, "tendencies.shootVsPass");
+  const passAroundProfile = average([
+    getRating(ballHandler, "skills.passingVision"),
+    getRating(ballHandler, "skills.passingIQ"),
+    getRating(ballHandler, "skills.passingAccuracy"),
+    getRating(ballHandler, "skills.ballHandling"),
+  ]);
+  const passAround = clamp((100 - shootVsPass) * 0.55 + passAroundProfile * 0.5, 1, 115);
 
   const teamDriveBias = offenseTeam?.tendencies?.drive ?? 1;
   const teamPostBias = offenseTeam?.tendencies?.post ?? 1;
+  const teamPassAroundBias = offenseTeam?.tendencies?.passAround ?? 1;
   const ballSpot = offenseTeam?.context?.ballHandlerSpot;
+  const formation = offenseTeam?.context?.formation;
+  const passAroundFormationBoost =
+    formation === OffensiveFormation.MOTION || formation === OffensiveFormation.FIVE_OUT ? 1.1 : 0.96;
 
   const postSpots = new Set([
     OffensiveSpot.RIGHT_POST,
@@ -931,6 +943,10 @@ function choosePlayType({ offenseTeam, ballHandler, random = Math.random }) {
       {
         value: "post_up",
         weight: canPost ? Math.max(1, post) * teamPostBias * postDistancePenalty : 1,
+      },
+      {
+        value: "pass_around_for_shot",
+        weight: Math.max(1, passAround) * teamPassAroundBias * passAroundFormationBoost,
       },
     ],
     random,
@@ -1332,13 +1348,122 @@ function getDefenderForOffensiveIndex({
   };
 }
 
-function evaluatePassTarget({ passer, receiver, receiverDefender, threatBonus = 0, random = Math.random }) {
+function isPaintSpot(spot) {
+  return (
+    spot === OffensiveSpot.MIDDLE_PAINT ||
+    spot === OffensiveSpot.RIGHT_POST ||
+    spot === OffensiveSpot.LEFT_POST
+  );
+}
+
+function getOffballOpenLocationEdge(spot) {
+  if (isThreePointSpot(spot)) return 0.11;
+  if (spot === OffensiveSpot.RIGHT_SLOT || spot === OffensiveSpot.LEFT_SLOT) return 0.04;
+  if (isPaintSpot(spot)) return -0.1;
+  if (spot === OffensiveSpot.RIGHT_ELBOW || spot === OffensiveSpot.LEFT_ELBOW || spot === OffensiveSpot.FT_LINE) {
+    return -0.04;
+  }
+  return 0;
+}
+
+function getNearbySpots(spot, maxDistance = 3.75) {
+  const origin = spotCoords[spot];
+  if (!origin) return [];
+  return allSpots.filter((candidate) => {
+    if (candidate === spot) return false;
+    const coord = spotCoords[candidate];
+    if (!coord) return false;
+    return dist(origin, coord) <= maxDistance;
+  });
+}
+
+function maybeRelocateOffBallPlayers({ offensiveAssignments, ballHandlerIndex, random = Math.random }) {
+  const occupiedSpots = new Set(offensiveAssignments.map((assignment) => assignment.spot));
+
+  offensiveAssignments.forEach((assignment, idx) => {
+    if (idx === ballHandlerIndex) return;
+
+    const player = assignment.player;
+    const moveSkill = average([
+      getRating(player, "skills.offballOffense"),
+      getRating(player, "athleticism.agility"),
+      getRating(player, "athleticism.speed"),
+    ]);
+    const moveChance = clamp(0.24 + (moveSkill - 50) / 115, 0.18, 0.76);
+    if (random() >= moveChance) return;
+
+    const nearby = getNearbySpots(assignment.spot).filter((spot) => !occupiedSpots.has(spot));
+    if (!nearby.length) return;
+
+    const currentCoord = spotCoords[assignment.spot];
+    const threeBias = clamp((getRating(player, "tendencies.threePoint") - 45) / 45, -0.4, 1.2);
+    const destination = pickWeighted(
+      nearby.map((spot) => {
+        const coord = spotCoords[spot];
+        const travelEase = clamp(1.3 - dist(currentCoord, coord) / 4.5, 0.35, 1.2);
+        const perimeterBoost = isThreePointSpot(spot) ? 0.45 * (1 + threeBias) : 0;
+        const paintBoost = isPaintSpot(spot) ? 0.18 * Math.max(0, -threeBias) : 0;
+        const offballEdge = getOffballOpenLocationEdge(spot) + 0.14;
+        return {
+          value: spot,
+          weight: Math.max(1, 1 + travelEase + perimeterBoost + paintBoost + offballEdge),
+        };
+      }),
+      random,
+    );
+
+    occupiedSpots.delete(assignment.spot);
+    assignment.spot = destination;
+    occupiedSpots.add(destination);
+  });
+}
+
+function getNearbyPassDefenders({
+  defenseScheme,
+  defenseLineup,
+  offensiveAssignments,
+  ballHandlerDefender,
+  receiverDefender,
+  receiverSpot,
+}) {
+  const contributors = [];
+  if (ballHandlerDefender) contributors.push(ballHandlerDefender);
+  if (receiverDefender && receiverDefender !== ballHandlerDefender) contributors.push(receiverDefender);
+
+  const receiverCoord = spotCoords[receiverSpot];
+  if (!receiverCoord) return contributors.length ? contributors : defenseLineup.slice(0, 2);
+
+  const defensePositions = getDefenderCourtPositions({
+    defenseScheme,
+    defenseLineup,
+    offensiveAssignments,
+  });
+
+  defensePositions.forEach(({ player, coord }) => {
+    if (!player || !coord) return;
+    if (dist(coord, receiverCoord) > 2.8) return;
+    if (!contributors.includes(player)) contributors.push(player);
+  });
+
+  if (!contributors.length) return defenseLineup.slice(0, 2);
+  return contributors;
+}
+
+function evaluatePassTarget({
+  passer,
+  receiver,
+  receiverDefender,
+  receiverSpot = null,
+  threatBonus = 0,
+  random = Math.random,
+}) {
+  const locationEdge = getOffballOpenLocationEdge(receiverSpot);
   const getOpen = resolveInteraction({
     offensePlayer: receiver,
     defensePlayer: receiverDefender,
     offenseRatings: ["skills.offballOffense", "athleticism.agility", "skills.hands"],
     defenseRatings: ["defense.offballDefense", "defense.lateralQuickness", "defense.perimeterDefense"],
-    contextEdge: threatBonus,
+    contextEdge: threatBonus + locationEdge,
     random,
   });
 
@@ -1848,7 +1973,7 @@ function resolveActionChunk(state, random = Math.random) {
   markInvolvement(offenseTeamId, ballHandler, 1);
   markInvolvement(defenseTeamId, onBall.defender, 0.9);
 
-  offense.context = { ballHandlerSpot };
+  offense.context = { ballHandlerSpot, formation };
   const playType = choosePlayType({ offenseTeam: offense, ballHandler, random });
   delete offense.context;
 
@@ -2023,6 +2148,7 @@ function resolveActionChunk(state, random = Math.random) {
             passer: ballHandler,
             receiver: target.player,
             receiverDefender: cover.defender,
+            receiverSpot: target.spot,
             threatBonus,
             random,
           });
@@ -2218,6 +2344,241 @@ function resolveActionChunk(state, random = Math.random) {
         }
       }
     }
+  } else if (playType === "pass_around_for_shot") {
+    const pgStarterIndex = offensiveAssignments.findIndex(
+      (assignment) => assignment.player?.bio?.position === "PG",
+    );
+    const starterIndex = pgStarterIndex >= 0 ? pgStarterIndex : ballHandlerIndex;
+    const starterOnBall = getOnBallDefender({
+      defenseScheme,
+      defenseLineup,
+      offensiveAssignments,
+      ballHandlerIndex: starterIndex,
+    });
+
+    let currentHandlerIndex = starterIndex;
+    let currentHandler = offensiveAssignments[currentHandlerIndex].player;
+    let currentDefender = starterOnBall.defender;
+    let currentZonePenalty = starterOnBall.isZone
+      ? -0.08 + zoneDistanceAdvantage(starterOnBall.defender, starterOnBall.startDistance)
+      : 0;
+    let openBeforeCatch = clamp(starterOnBall.isZone ? 0.34 + starterOnBall.startDistance * 0.03 : 0.3, 0.2, 0.6);
+    let passesCompleted = 0;
+    let scrambleBonus = 0;
+    let scrambleFresh = false;
+    const maxPasses = 4;
+    let actionDone = false;
+    markInvolvement(offenseTeamId, currentHandler, 0.55);
+    markInvolvement(defenseTeamId, currentDefender, 0.45);
+
+    while (!actionDone && !possessionChanged) {
+      const canStillPass = passesCompleted < maxPasses;
+      const activeScrambleBonus = scrambleBonus;
+      const shotQuality = clamp(openBeforeCatch * 0.85 + activeScrambleBonus * 0.4, 0.1, 1.05);
+      const shouldShoot = shouldTakeShotThisAction({
+        state,
+        shooter: currentHandler,
+        shotQuality,
+        random,
+      });
+
+      if (shouldShoot || !canStillPass) {
+        if (!shouldShoot && !resolveLateClockBailout({
+          shooter: currentHandler,
+          defender: currentDefender,
+          sourceDetail: "Pass limit reached; offense resets without a shot.",
+          shotQualityEdge: openBeforeCatch * 0.12 - 0.06,
+        })) {
+          pushEvent(state, {
+            type: "reset",
+            offenseTeam: offense.name,
+            playType,
+            detail: "Pass-around hit max passes and reset to neutral offense.",
+          });
+          actionDone = true;
+          break;
+        }
+        if (!shouldShoot) {
+          actionDone = true;
+          break;
+        }
+
+        const shotType = chooseShotFromTendencies(currentHandler, random);
+        const contested = openBeforeCatch < 0.62;
+        const shot = resolveShot({
+          shooter: currentHandler,
+          defender: currentDefender,
+          shotType,
+          zonePenalty: currentZonePenalty,
+          shotQualityEdge: openBeforeCatch * 0.28 + scrambleBonus * 0.1,
+          contested,
+          random,
+        });
+        shot.shooter = currentHandler;
+        markInvolvement(offenseTeamId, currentHandler, 0.95);
+        markInvolvement(defenseTeamId, currentDefender, 0.8);
+
+        const endState = resolvePossessionEndAfterShot({
+          state,
+          offenseTeamId,
+          defenseTeamId,
+          offense,
+          defense,
+          offenseLineup,
+          defenseLineup,
+          defenseScheme,
+          offensiveAssignments,
+          playType,
+          shotType,
+          shot,
+          random,
+        });
+        possessionChanged = endState.possessionChanged;
+        shotClockMode = endState.shotClockMode;
+        actionDone = true;
+        break;
+      }
+
+      maybeRelocateOffBallPlayers({
+        offensiveAssignments,
+        ballHandlerIndex: currentHandlerIndex,
+        random,
+      });
+
+      const targets = offensiveAssignments
+        .map((assignment, idx) => ({ ...assignment, idx }))
+        .filter((entry) => entry.idx !== currentHandlerIndex);
+      const threatBonus =
+        clamp((getRating(currentHandler, "skills.passingVision") - 55) / 180, -0.05, 0.2) +
+        activeScrambleBonus;
+
+      const targetScores = targets.map((target) => {
+        const cover = getDefenderForOffensiveIndex({
+          defenseScheme,
+          defenseLineup,
+          offensiveAssignments,
+          offenseIndex: target.idx,
+        });
+
+        const evalResult = evaluatePassTarget({
+          passer: currentHandler,
+          receiver: target.player,
+          receiverDefender: cover.defender,
+          receiverSpot: target.spot,
+          threatBonus,
+          random,
+        });
+
+        markInvolvement(offenseTeamId, target.player, 0.16);
+        markInvolvement(defenseTeamId, cover.defender, 0.12);
+
+        const getsOpen = evalResult.getOpen.success;
+        return {
+          ...target,
+          cover,
+          evalResult,
+          getsOpen,
+          score:
+            evalResult.openLevel *
+            estimateOpenShotValue(target.player, target.spot) *
+            (getsOpen ? 1.25 : 0.25) *
+            (evalResult.canSeeWindow ? 1.25 : 0.35),
+        };
+      });
+
+      targetScores.sort((a, b) => b.score - a.score);
+      const best = targetScores.find((candidate) => candidate.getsOpen && candidate.evalResult.canSeeWindow);
+      if (activeScrambleBonus > 0) {
+        if (scrambleFresh) scrambleFresh = false;
+        else scrambleBonus *= 0.28;
+      }
+      if (!best) {
+        if (!resolveLateClockBailout({
+          shooter: currentHandler,
+          defender: currentDefender,
+          sourceDetail: "No passing window opened in action; neutral reset.",
+          shotQualityEdge: openBeforeCatch * 0.11 - 0.07,
+        })) {
+          pushEvent(state, {
+            type: "reset",
+            offenseTeam: offense.name,
+            playType,
+            detail: "Pass-around found no clean option and reset to neutral offense.",
+          });
+          actionDone = true;
+          break;
+        }
+        actionDone = true;
+        break;
+      }
+
+      const defenseContributors = getNearbyPassDefenders({
+        defenseScheme,
+        defenseLineup,
+        offensiveAssignments,
+        ballHandlerDefender: currentDefender,
+        receiverDefender: best.cover.defender,
+        receiverSpot: best.spot,
+      });
+      const passDelivery = resolvePassDelivery({
+        passer: currentHandler,
+        receiver: best.player,
+        defenseContributors,
+        zonePenalty: currentZonePenalty,
+        random,
+      });
+
+      markInvolvement(offenseTeamId, currentHandler, 0.52);
+      markInvolvement(offenseTeamId, best.player, 0.7);
+      defenseContributors.forEach((defender) => markInvolvement(defenseTeamId, defender, 0.18));
+
+      if (passDelivery.turnover) {
+        recordTurnover(
+          state,
+          offenseTeamId,
+          currentHandler,
+          defenseTeamId,
+          passDelivery.stealByPlayer,
+        );
+        pushEvent(state, {
+          type: "turnover_pass",
+          offenseTeam: offense.name,
+          defenderTeam: defense.name,
+          playType,
+          detail: `Steal by ${passDelivery.stealBy}`,
+        });
+        beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
+        possessionChanged = true;
+        shotClockMode = "hold";
+        actionDone = true;
+        break;
+      }
+
+      setPendingAssist(state, offenseTeamId, currentHandler, best.player);
+      passesCompleted += 1;
+      openBeforeCatch = best.evalResult.openLevel;
+      scrambleBonus = clamp(
+        Math.max(scrambleBonus * 0.3, (best.evalResult.openLevel - 0.34) * 0.5),
+        0,
+        0.4,
+      );
+      scrambleFresh = true;
+      currentHandlerIndex = best.idx;
+      currentHandler = best.player;
+      currentDefender = best.cover.defender;
+      currentZonePenalty = defenseScheme === DefenseScheme.MAN_TO_MAN
+        ? 0
+        : -0.08 + zoneDistanceAdvantage(best.cover.defender, best.cover.distance);
+    }
+
+    if (!actionDone && !possessionChanged) {
+      pushEvent(state, {
+        type: "reset",
+        offenseTeam: offense.name,
+        playType,
+        detail: "Pass-around action timed out and reset to neutral offense.",
+      });
+    }
   } else if (playType === "post_up") {
     const postEligibleSpots = new Set([
       OffensiveSpot.RIGHT_POST,
@@ -2340,6 +2701,7 @@ function resolveActionChunk(state, random = Math.random) {
               passer: ballHandler,
               receiver: target.player,
               receiverDefender: cover.defender,
+              receiverSpot: target.spot,
               threatBonus,
               random,
             });

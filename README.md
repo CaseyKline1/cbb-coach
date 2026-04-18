@@ -24,6 +24,8 @@ Implemented:
 - Beginner offensive actions:
   - `dribble_drive`: decisive/normal/tie/defensive-win branches, help-defense reactions, drive kick-outs, jump/paint finish options, and steal windows.
   - `post_up`: spot-gated post initiation, positioning battle tiers, shoot/pass/give-up branches, and dominant-loss steal chance.
+  - `pass_around_for_shot`: multi-pass (up to 4) swing action with moving off-ball teammates, pass-window reads (`passingVision`/`passingIQ`), delivery checks (`passingAccuracy` + receiver `hands` vs nearby defenders), scramble-driven temporary spacing advantage, and neutral reset when no window appears.
+- Off-ball get-open interactions include location context: it is easier to create space beyond the arc than near the basket.
 - Contested shot foul model:
   - foul chance based on offensive `drawFoul` vs defensive `defensiveControl`,
   - makes on fouls are reduced but still possible,
