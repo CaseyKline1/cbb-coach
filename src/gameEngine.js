@@ -6,12 +6,14 @@ const SHOT_CLOCK_SECONDS = 30;
 const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0;
 const CONTESTED_SHOOTING_FOUL_BASE_CHANCE = 0.15;
 const PASS_DELIVERY_COMPLETION_EDGE_BONUS = 0.4;
-const LAYUP_MAKE_EDGE_BONUS = 0.14;
-const DUNK_MAKE_EDGE_BONUS = 0.22;
-const MIDRANGE_MAKE_EDGE_PENALTY = 0.18;
-const THREE_POINT_MAKE_EDGE_PENALTY = 0.34;
+const LAYUP_MAKE_EDGE_BONUS = 0.28;
+const DUNK_MAKE_EDGE_BONUS = 0.38;
+const MIDRANGE_MAKE_EDGE_PENALTY = 0.34;
+const HOOK_MAKE_EDGE_BONUS = 0.08;
+const FADEAWAY_MAKE_EDGE_PENALTY = 0.06;
+const THREE_POINT_MAKE_EDGE_PENALTY = 0.4;
 const THREE_POINT_CONTESTED_EXTRA_PENALTY = 0.12;
-const THREE_POINT_SUCCESS_PROBABILITY_PENALTY = 0.1;
+const THREE_POINT_SUCCESS_PROBABILITY_PENALTY = 0.12;
 
 const OffensiveSpot = Object.freeze({
   MIDDLE_PAINT: "middle_paint",
@@ -1168,6 +1170,8 @@ function resolveShot({
   if (shotType === "layup") shotTypeEdgeBonus += LAYUP_MAKE_EDGE_BONUS;
   if (shotType === "dunk") shotTypeEdgeBonus += DUNK_MAKE_EDGE_BONUS;
   if (shotType === "midrange") shotTypeEdgeBonus -= MIDRANGE_MAKE_EDGE_PENALTY;
+  if (shotType === "hook") shotTypeEdgeBonus += HOOK_MAKE_EDGE_BONUS;
+  if (shotType === "fadeaway") shotTypeEdgeBonus -= FADEAWAY_MAKE_EDGE_PENALTY;
 
   const contestedEdgePenalty = contested ? THREE_POINT_CONTESTED_EXTRA_PENALTY : 0;
   const shotTypeEdgePenalty = isThreePointShot
@@ -2092,12 +2096,12 @@ function shouldTakeShotThisAction({
   const elapsedClock = SHOT_CLOCK_SECONDS - state.shotClockRemaining;
   const pressureSpan = SHOT_CLOCK_SECONDS - forceShotThresholdSeconds;
   const clockPressure = pressureSpan <= 0 ? 1 : clamp(elapsedClock / pressureSpan, 0, 1);
-  const earlyClockRestraint = Math.pow(1 - clockPressure, 1.35) * 0.11;
+  const earlyClockRestraint = Math.pow(1 - clockPressure, 1.35) * 0.095;
   // Shot quality matters less as the clock winds down — late in the clock, any look goes up.
   const qualityWeight = 1 - 0.75 * clockPressure;
-  const qualityBoost = clamp(shotQuality, 0, 1.2) * 0.22 * qualityWeight;
+  const qualityBoost = clamp(shotQuality, 0, 1.2) * 0.23 * qualityWeight;
   const shotChance = clamp(
-    0.22 +
+    0.23 +
       EARLY_CLOCK_SHOT_ATTEMPT_BONUS +
       Math.pow(clockPressure, 1.35) * 0.73 +
       (shotIQ - 60) / 300 +
