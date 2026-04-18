@@ -122,6 +122,7 @@ const BASE_CHUNK_BENCH_RECOVERY = 1.65;
 const FREE_THROW_BREAK_RECOVERY = 5.5;
 const TIMEOUT_RECOVERY = 7.5;
 const HALFTIME_RECOVERY = 18;
+const FOUL_OUT_LIMIT = 5;
 
 function ensurePlayerCondition(player) {
   if (!player.condition) player.condition = {};
@@ -199,6 +200,16 @@ function addPlayerStat(state, teamId, player, stat, amount = 1) {
   const line = getPlayerStatsLine(state, teamId, player);
   if (!line || !Object.prototype.hasOwnProperty.call(line, stat)) return;
   line[stat] += amount;
+}
+
+function getPlayerFouls(state, teamId, player) {
+  const line = getPlayerStatsLine(state, teamId, player);
+  const fouls = Number(line?.fouls);
+  return Number.isFinite(fouls) ? fouls : 0;
+}
+
+function isPlayerFouledOut(state, teamId, player) {
+  return getPlayerFouls(state, teamId, player) >= FOUL_OUT_LIMIT;
 }
 
 function addTeamExtra(state, teamId, stat, amount = 1) {
@@ -339,6 +350,7 @@ function rankLineupCandidates(state, teamId) {
   const roster = getTeamRoster(team);
   const targetMinutes = getTargetMinutesMap(state, teamId);
   return roster
+    .filter((player) => !isPlayerFouledOut(state, teamId, player))
     .map((player) => {
       const energy = getPlayerEnergy(player);
       const skill = getPlayerOverallSkill(player);
@@ -364,8 +376,7 @@ function runDeadBallSubstitutions(state, reason = "dead_ball") {
     HALF_SECONDS * (state.currentHalf - 1) + (HALF_SECONDS - state.gameClockRemaining);
 
   state.teams.forEach((team, teamId) => {
-    const roster = getTeamRoster(team);
-    if (roster.length <= 5 || !Array.isArray(team.lineup) || team.lineup.length !== 5) return;
+    if (!Array.isArray(team.lineup) || team.lineup.length !== 5) return;
     if (reason !== "halftime" && reason !== "timeout") {
       const last = Number(team.lastSubElapsedGameSeconds);
       if (Number.isFinite(last) && elapsedGameSeconds - last < 25) {
@@ -374,12 +385,24 @@ function runDeadBallSubstitutions(state, reason = "dead_ball") {
     }
 
     const ranked = rankLineupCandidates(state, teamId);
-    const scoreByPlayer = new Map(ranked.map((entry) => [entry.player, entry]));
     const current = [...team.lineup];
     const currentSet = new Set(current);
 
     if (reason === "halftime") {
       const next = ranked.slice(0, 5).map((entry) => entry.player);
+      if (next.length < 5) {
+        current.forEach((player) => {
+          if (next.length >= 5) return;
+          if (!next.includes(player) && !isPlayerFouledOut(state, teamId, player)) {
+            next.push(player);
+          }
+        });
+      }
+      if (next.length < 5) {
+        current.forEach((player) => {
+          if (next.length < 5 && !next.includes(player)) next.push(player);
+        });
+      }
       const changed = next.filter((player) => !currentSet.has(player)).length;
       if (changed > 0) {
         team.lineup = next;
@@ -397,12 +420,24 @@ function runDeadBallSubstitutions(state, reason = "dead_ball") {
     const maxSwaps = 2;
     let swaps = 0;
     const next = [...current];
+    let bench = ranked.filter((entry) => !next.includes(entry.player));
+
+    // Force out fouled-out players at dead balls if an eligible bench option exists.
+    for (let idx = 0; idx < next.length; idx += 1) {
+      if (!isPlayerFouledOut(state, teamId, next[idx])) continue;
+      const replacement = bench.shift();
+      if (!replacement) break;
+      next[idx] = replacement.player;
+      swaps += 1;
+      bench = ranked.filter((entry) => !next.includes(entry.player));
+    }
+
+    const scoreByPlayer = new Map(ranked.map((entry) => [entry.player, entry]));
 
     while (swaps < maxSwaps) {
       const onCourt = next
         .map((player, idx) => ({ idx, player, ...(scoreByPlayer.get(player) || {}) }))
         .sort((a, b) => (a.score ?? -9999) - (b.score ?? -9999));
-      const bench = ranked.filter((entry) => !next.includes(entry.player));
       if (!bench.length || !onCourt.length) break;
 
       const outCandidate = onCourt[0];
@@ -421,6 +456,7 @@ function runDeadBallSubstitutions(state, reason = "dead_ball") {
 
       next[outCandidate.idx] = inCandidate.player;
       swaps += 1;
+      bench = ranked.filter((entry) => !next.includes(entry.player));
     }
 
     if (swaps > 0) {
