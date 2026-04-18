@@ -139,6 +139,12 @@ const FREE_THROW_BREAK_RECOVERY = 5.5;
 const TIMEOUT_RECOVERY = 7.5;
 const HALFTIME_RECOVERY = 18;
 const FOUL_OUT_LIMIT = 5;
+const MOBILITY_INTERACTION_RATINGS = new Set([
+  "athleticism.burst",
+  "athleticism.speed",
+  "athleticism.agility",
+  "defense.lateralQuickness",
+]);
 
 function ensurePlayerCondition(player) {
   if (!player.condition) player.condition = {};
@@ -683,6 +689,28 @@ function logistic(x) {
   return 1 / (1 + Math.exp(-x));
 }
 
+function isMobilityInteraction(ratingPaths = []) {
+  return ratingPaths.some((path) => MOBILITY_INTERACTION_RATINGS.has(path));
+}
+
+function getMobilitySizePenalty(player) {
+  const heightPenalty = (getHeightInches(player) - 76) / 12;
+  const weightPenalty = (getWeightPounds(player) - 205) / 80;
+  return clamp(heightPenalty * 0.7 + weightPenalty * 0.9, -0.45, 1.35);
+}
+
+function getMobilitySizeEdge({
+  offensePlayer,
+  defensePlayer,
+  offenseUsesMobility,
+  defenseUsesMobility,
+}) {
+  if (!offenseUsesMobility && !defenseUsesMobility) return 0;
+  const offensePenalty = offenseUsesMobility ? getMobilitySizePenalty(offensePlayer) : 0;
+  const defensePenalty = defenseUsesMobility ? getMobilitySizePenalty(defensePlayer) : 0;
+  return clamp((defensePenalty - offensePenalty) / 12, -0.16, 0.16);
+}
+
 function resolveInteraction({
   offensePlayer,
   defensePlayer,
@@ -693,7 +721,15 @@ function resolveInteraction({
 }) {
   const offense = weightedSkillScore(offensePlayer, offenseRatings, random);
   const defense = weightedSkillScore(defensePlayer, defenseRatings, random);
-  const edge = (offense.score - defense.score) / 14 + contextEdge;
+  const offenseUsesMobility = isMobilityInteraction(offenseRatings);
+  const defenseUsesMobility = isMobilityInteraction(defenseRatings);
+  const mobilitySizeEdge = getMobilitySizeEdge({
+    offensePlayer,
+    defensePlayer,
+    offenseUsesMobility,
+    defenseUsesMobility,
+  });
+  const edge = (offense.score - defense.score) / 14 + contextEdge + mobilitySizeEdge;
   const successProbability = clamp(logistic(edge), 0.03, 0.97);
 
   return {
@@ -702,6 +738,7 @@ function resolveInteraction({
     offense,
     defense,
     edge,
+    mobilitySizeEdge,
   };
 }
 
