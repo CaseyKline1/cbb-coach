@@ -60,6 +60,21 @@ final class JSRuntime: @unchecked Sendable {
         let bootstrap = """
         (function() {
           var __modules = {};
+          var __handles = {};
+          var __nextHandle = 1;
+
+          function __storeHandle(value) {
+            var handle = 'h' + (__nextHandle++);
+            __handles[handle] = value;
+            return handle;
+          }
+
+          function __getHandle(handle) {
+            if (!__handles.hasOwnProperty(handle)) {
+              throw new Error('Unknown handle: ' + handle);
+            }
+            return __handles[handle];
+          }
 
           function __define(id, factory) {
             __modules[id] = { factory: factory, exports: {}, loaded: false };
@@ -164,6 +179,13 @@ final class JSRuntime: @unchecked Sendable {
             return __stringify(result);
           };
 
+          globalThis.__invokeNew = function(moduleId, fnName, argsJson) {
+            var args = __parse(argsJson);
+            var target = __require(moduleId);
+            var result = target[fnName].apply(null, args);
+            return __stringify({ handle: __storeHandle(result) });
+          };
+
           globalThis.__invokeWithRandom = function(moduleId, fnName, argsJson, randomValuesJson) {
             var args = __parse(argsJson);
             var rand = __seededRandom(__parse(randomValuesJson));
@@ -171,6 +193,15 @@ final class JSRuntime: @unchecked Sendable {
             var target = __require(moduleId);
             var result = target[fnName].apply(null, args);
             return __stringify({ result: result, randomUsed: rand.__used() });
+          };
+
+          globalThis.__invokeNewWithRandom = function(moduleId, fnName, argsJson, randomValuesJson) {
+            var args = __parse(argsJson);
+            var rand = __seededRandom(__parse(randomValuesJson));
+            args.push(rand);
+            var target = __require(moduleId);
+            var result = target[fnName].apply(null, args);
+            return __stringify({ handle: __storeHandle(result), randomUsed: rand.__used() });
           };
 
           globalThis.__invokeMutableWithRandom = function(moduleId, fnName, firstArgJson, restArgsJson, randomValuesJson) {
@@ -184,6 +215,35 @@ final class JSRuntime: @unchecked Sendable {
             return __stringify({ state: first, result: ret, randomUsed: rand.__used() });
           };
 
+          globalThis.__invokeHandle = function(moduleId, fnName, handle, restArgsJson) {
+            var first = __getHandle(handle);
+            var rest = __parse(restArgsJson);
+            var args = [first].concat(rest);
+            var target = __require(moduleId);
+            var ret = target[fnName].apply(null, args);
+            return __stringify(ret);
+          };
+
+          globalThis.__invokeHandleMutable = function(moduleId, fnName, handle, restArgsJson) {
+            var first = __getHandle(handle);
+            var rest = __parse(restArgsJson);
+            var args = [first].concat(rest);
+            var target = __require(moduleId);
+            var ret = target[fnName].apply(null, args);
+            return __stringify(ret);
+          };
+
+          globalThis.__invokeHandleMutableWithRandom = function(moduleId, fnName, handle, restArgsJson, randomValuesJson) {
+            var first = __getHandle(handle);
+            var rest = __parse(restArgsJson);
+            var rand = __seededRandom(__parse(randomValuesJson));
+            var args = [first].concat(rest);
+            args.push(rand);
+            var target = __require(moduleId);
+            var ret = target[fnName].apply(null, args);
+            return __stringify({ result: ret, randomUsed: rand.__used() });
+          };
+
           globalThis.__invokeMutable = function(moduleId, fnName, firstArgJson, restArgsJson) {
             var first = __parse(firstArgJson);
             var rest = __parse(restArgsJson);
@@ -191,6 +251,11 @@ final class JSRuntime: @unchecked Sendable {
             var target = __require(moduleId);
             var ret = target[fnName].apply(null, args);
             return __stringify({ state: first, result: ret });
+          };
+
+          globalThis.__snapshotHandle = function(handle) {
+            var value = __getHandle(handle);
+            return __stringify(value);
           };
         })();
         """
@@ -250,6 +315,64 @@ final class JSRuntime: @unchecked Sendable {
         return (decoded.result, used)
     }
 
+    func invokeNew(moduleId: String, fn: String, args: [JSONValue]) throws -> String {
+        let payload = try toJSONString(args)
+        let raw = try call(functionName: "__invokeNew", args: [moduleId, fn, payload])
+        struct Response: Codable { let handle: String }
+        let decoded: Response = try fromJSONString(raw)
+        return decoded.handle
+    }
+
+    func invokeNewWithRandom(moduleId: String, fn: String, args: [JSONValue], random: inout SeededRandom) throws -> (handle: String, randomUsed: Int) {
+        let argsPayload = try toJSONString(args)
+        let poolSize = 200_000
+        var copy = random
+        var values: [Double] = []
+        values.reserveCapacity(poolSize)
+        for _ in 0..<poolSize { values.append(copy.nextUnit()) }
+        let valuesPayload = try toJSONString(values)
+        let raw = try call(functionName: "__invokeNewWithRandom", args: [moduleId, fn, argsPayload, valuesPayload])
+
+        struct Response: Codable { let handle: String; let randomUsed: Int }
+        let decoded: Response = try fromJSONString(raw)
+        let used = max(0, decoded.randomUsed)
+        for _ in 0..<used { _ = random.nextUnit() }
+        return (decoded.handle, used)
+    }
+
+    func invokeHandle(moduleId: String, fn: String, handle: String, restArgs: [JSONValue]) throws -> JSONValue {
+        let restPayload = try toJSONString(restArgs)
+        let raw = try call(functionName: "__invokeHandle", args: [moduleId, fn, handle, restPayload])
+        return try fromJSONString(raw, as: JSONValue.self)
+    }
+
+    func invokeHandleMutable(moduleId: String, fn: String, handle: String, restArgs: [JSONValue]) throws -> JSONValue {
+        let restPayload = try toJSONString(restArgs)
+        let raw = try call(functionName: "__invokeHandleMutable", args: [moduleId, fn, handle, restPayload])
+        return try fromJSONString(raw, as: JSONValue.self)
+    }
+
+    func invokeHandleMutableWithRandom(moduleId: String, fn: String, handle: String, restArgs: [JSONValue], random: inout SeededRandom) throws -> (result: JSONValue, randomUsed: Int) {
+        let restPayload = try toJSONString(restArgs)
+        let poolSize = 200_000
+        var copy = random
+        var values: [Double] = []
+        values.reserveCapacity(poolSize)
+        for _ in 0..<poolSize { values.append(copy.nextUnit()) }
+        let valuesPayload = try toJSONString(values)
+        let raw = try call(functionName: "__invokeHandleMutableWithRandom", args: [moduleId, fn, handle, restPayload, valuesPayload])
+        struct Response: Codable { let result: JSONValue; let randomUsed: Int }
+        let decoded: Response = try fromJSONString(raw)
+        let used = max(0, decoded.randomUsed)
+        for _ in 0..<used { _ = random.nextUnit() }
+        return (decoded.result, used)
+    }
+
+    func snapshot(handle: String) throws -> JSONValue {
+        let raw = try call(functionName: "__snapshotHandle", args: [handle])
+        return try fromJSONString(raw, as: JSONValue.self)
+    }
+
     func invokeMutableWithRandom(moduleId: String, fn: String, state: JSONValue, restArgs: [JSONValue], random: inout SeededRandom) throws -> (state: JSONValue, result: JSONValue, randomUsed: Int) {
         let statePayload = try toJSONString(state)
         let restPayload = try toJSONString(restArgs)
@@ -284,6 +407,30 @@ final class JSRuntime: @unchecked Sendable {
     }
 
     func invokeWithRandom(moduleId: String, fn: String, args: [JSONValue], random: inout SeededRandom) throws -> (result: JSONValue, randomUsed: Int) {
+        throw NSError(domain: "CBBCoachCore", code: 999, userInfo: [NSLocalizedDescriptionKey: "JavaScriptCore unavailable on this platform"])
+    }
+
+    func invokeNew(moduleId: String, fn: String, args: [JSONValue]) throws -> String {
+        throw NSError(domain: "CBBCoachCore", code: 999, userInfo: [NSLocalizedDescriptionKey: "JavaScriptCore unavailable on this platform"])
+    }
+
+    func invokeNewWithRandom(moduleId: String, fn: String, args: [JSONValue], random: inout SeededRandom) throws -> (handle: String, randomUsed: Int) {
+        throw NSError(domain: "CBBCoachCore", code: 999, userInfo: [NSLocalizedDescriptionKey: "JavaScriptCore unavailable on this platform"])
+    }
+
+    func invokeHandle(moduleId: String, fn: String, handle: String, restArgs: [JSONValue]) throws -> JSONValue {
+        throw NSError(domain: "CBBCoachCore", code: 999, userInfo: [NSLocalizedDescriptionKey: "JavaScriptCore unavailable on this platform"])
+    }
+
+    func invokeHandleMutable(moduleId: String, fn: String, handle: String, restArgs: [JSONValue]) throws -> JSONValue {
+        throw NSError(domain: "CBBCoachCore", code: 999, userInfo: [NSLocalizedDescriptionKey: "JavaScriptCore unavailable on this platform"])
+    }
+
+    func invokeHandleMutableWithRandom(moduleId: String, fn: String, handle: String, restArgs: [JSONValue], random: inout SeededRandom) throws -> (result: JSONValue, randomUsed: Int) {
+        throw NSError(domain: "CBBCoachCore", code: 999, userInfo: [NSLocalizedDescriptionKey: "JavaScriptCore unavailable on this platform"])
+    }
+
+    func snapshot(handle: String) throws -> JSONValue {
         throw NSError(domain: "CBBCoachCore", code: 999, userInfo: [NSLocalizedDescriptionKey: "JavaScriptCore unavailable on this platform"])
     }
 

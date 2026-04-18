@@ -71,10 +71,10 @@ public struct SimulatedGameResult: Codable, Equatable, Sendable {
 }
 
 public struct GameState: Codable, Equatable, Sendable {
-    public var raw: JSONValue
+    public var handle: String
 
-    public init(raw: JSONValue) {
-        self.raw = raw
+    public init(handle: String) {
+        self.handle = handle
     }
 }
 
@@ -83,8 +83,8 @@ private let gameEngineModule = "./gameEngine"
 public func createInitialGameState(homeTeam: Team, awayTeam: Team, random: inout SeededRandom) -> GameState {
     do {
         let args = [try toJSONValue(homeTeam), try toJSONValue(awayTeam)]
-        let response = try JSRuntime.shared.invokeWithRandom(moduleId: gameEngineModule, fn: "createInitialGameState", args: args, random: &random)
-        return GameState(raw: response.result)
+        let response = try JSRuntime.shared.invokeNewWithRandom(moduleId: gameEngineModule, fn: "createInitialGameState", args: args, random: &random)
+        return GameState(handle: response.handle)
     } catch {
         fatalError("createInitialGameState failed: \(error)")
     }
@@ -114,8 +114,7 @@ public func resolveInteraction(
 @discardableResult
 public func resolveActionChunk(state: inout GameState, random: inout SeededRandom) -> String {
     do {
-        let response = try JSRuntime.shared.invokeMutableWithRandom(moduleId: gameEngineModule, fn: "resolveActionChunk", state: state.raw, restArgs: [], random: &random)
-        state.raw = response.state
+        let response = try JSRuntime.shared.invokeHandleMutableWithRandom(moduleId: gameEngineModule, fn: "resolveActionChunk", handle: state.handle, restArgs: [], random: &random)
         return try fromJSONValue(response.result, as: String.self)
     } catch {
         fatalError("resolveActionChunk failed: \(error)")
@@ -124,8 +123,7 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
 
 public func simulateHalf(state: inout GameState, random: inout SeededRandom) {
     do {
-        let response = try JSRuntime.shared.invokeMutableWithRandom(moduleId: gameEngineModule, fn: "simulateHalf", state: state.raw, restArgs: [], random: &random)
-        state.raw = response.state
+        _ = try JSRuntime.shared.invokeHandleMutableWithRandom(moduleId: gameEngineModule, fn: "simulateHalf", handle: state.handle, restArgs: [], random: &random)
     } catch {
         fatalError("simulateHalf failed: \(error)")
     }

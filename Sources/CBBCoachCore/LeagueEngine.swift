@@ -5,10 +5,10 @@ public let LEAGUE_SAVE_FORMAT = "cbb-coach.league-state"
 public let LEAGUE_SAVE_VERSION = 1
 
 public struct LeagueState: Codable, Equatable, Sendable {
-    public var raw: JSONValue
+    public var handle: String
 
-    public init(raw: JSONValue) {
-        self.raw = raw
+    public init(handle: String) {
+        self.handle = handle
     }
 }
 
@@ -115,13 +115,13 @@ private let leagueEngineModule = "./leagueEngine"
 
 public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
     let args = [try toJSONValue(options)]
-    let raw = try JSRuntime.shared.invoke(moduleId: leagueEngineModule, fn: "createD1League", args: args)
-    return LeagueState(raw: raw)
+    let handle = try JSRuntime.shared.invokeNew(moduleId: leagueEngineModule, fn: "createD1League", args: args)
+    return LeagueState(handle: handle)
 }
 
 public func listUserNonConferenceOptions(_ league: LeagueState) -> [NonConferenceOption] {
     do {
-        let raw = try JSRuntime.shared.invoke(moduleId: leagueEngineModule, fn: "listUserNonConferenceOptions", args: [league.raw])
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "listUserNonConferenceOptions", handle: league.handle, restArgs: [])
         return try fromJSONValue(raw, as: [NonConferenceOption].self)
     } catch {
         fatalError("listUserNonConferenceOptions failed: \(error)")
@@ -135,7 +135,7 @@ public func getPreseasonSchedulingBoard(_ league: LeagueState, page: Int = 1, pa
             "pageSize": .number(Double(pageSize)),
             "search": .string(query ?? ""),
         ])
-        let raw = try JSRuntime.shared.invoke(moduleId: leagueEngineModule, fn: "getPreseasonSchedulingBoard", args: [league.raw, options])
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "getPreseasonSchedulingBoard", handle: league.handle, restArgs: [options])
         return try fromJSONValue(raw, as: PreseasonBoard.self)
     } catch {
         fatalError("getPreseasonSchedulingBoard failed: \(error)")
@@ -144,8 +144,7 @@ public func getPreseasonSchedulingBoard(_ league: LeagueState, page: Int = 1, pa
 
 public func setUserNonConferenceOpponents(_ league: inout LeagueState, opponentTeamIds: [String]) {
     do {
-        let response = try JSRuntime.shared.invokeMutable(moduleId: leagueEngineModule, fn: "setUserNonConferenceOpponents", state: league.raw, restArgs: [try toJSONValue(opponentTeamIds)])
-        league.raw = response.state
+        _ = try JSRuntime.shared.invokeHandleMutable(moduleId: leagueEngineModule, fn: "setUserNonConferenceOpponents", handle: league.handle, restArgs: [try toJSONValue(opponentTeamIds)])
     } catch {
         fatalError("setUserNonConferenceOpponents failed: \(error)")
     }
@@ -153,8 +152,7 @@ public func setUserNonConferenceOpponents(_ league: inout LeagueState, opponentT
 
 public func autoFillUserNonConferenceOpponents(_ league: inout LeagueState, seed: String = "autofill") {
     do {
-        let response = try JSRuntime.shared.invokeMutable(moduleId: leagueEngineModule, fn: "autoFillUserNonConferenceOpponents", state: league.raw, restArgs: [JSONValue.object(["seed": .string(seed)])])
-        league.raw = response.state
+        _ = try JSRuntime.shared.invokeHandleMutable(moduleId: leagueEngineModule, fn: "autoFillUserNonConferenceOpponents", handle: league.handle, restArgs: [JSONValue.object(["seed": .string(seed)])])
     } catch {
         fatalError("autoFillUserNonConferenceOpponents failed: \(error)")
     }
@@ -162,8 +160,7 @@ public func autoFillUserNonConferenceOpponents(_ league: inout LeagueState, seed
 
 public func generateSeasonSchedule(_ league: inout LeagueState) {
     do {
-        let response = try JSRuntime.shared.invokeMutable(moduleId: leagueEngineModule, fn: "generateSeasonSchedule", state: league.raw, restArgs: [])
-        league.raw = response.state
+        _ = try JSRuntime.shared.invokeHandleMutable(moduleId: leagueEngineModule, fn: "generateSeasonSchedule", handle: league.handle, restArgs: [])
     } catch {
         fatalError("generateSeasonSchedule failed: \(error)")
     }
@@ -171,7 +168,7 @@ public func generateSeasonSchedule(_ league: inout LeagueState) {
 
 public func getUserSchedule(_ league: LeagueState) -> [UserGameSummary] {
     do {
-        let raw = try JSRuntime.shared.invoke(moduleId: leagueEngineModule, fn: "getUserSchedule", args: [league.raw])
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "getUserSchedule", handle: league.handle, restArgs: [])
         return try fromJSONValue(raw, as: [UserGameSummary].self)
     } catch {
         fatalError("getUserSchedule failed: \(error)")
@@ -180,9 +177,8 @@ public func getUserSchedule(_ league: LeagueState) -> [UserGameSummary] {
 
 public func advanceToNextUserGame(_ league: inout LeagueState) -> UserGameSummary? {
     do {
-        let response = try JSRuntime.shared.invokeMutable(moduleId: leagueEngineModule, fn: "advanceToNextUserGame", state: league.raw, restArgs: [])
-        league.raw = response.state
-        return try fromJSONValue(response.result, as: UserGameSummary.self)
+        let result = try JSRuntime.shared.invokeHandleMutable(moduleId: leagueEngineModule, fn: "advanceToNextUserGame", handle: league.handle, restArgs: [])
+        return try fromJSONValue(result, as: UserGameSummary.self)
     } catch {
         return nil
     }
@@ -190,7 +186,7 @@ public func advanceToNextUserGame(_ league: inout LeagueState) -> UserGameSummar
 
 public func getUserCompletedGames(_ league: LeagueState) -> [UserGameSummary] {
     do {
-        let raw = try JSRuntime.shared.invoke(moduleId: leagueEngineModule, fn: "getUserCompletedGames", args: [league.raw])
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "getUserCompletedGames", handle: league.handle, restArgs: [])
         return try fromJSONValue(raw, as: [UserGameSummary].self)
     } catch {
         fatalError("getUserCompletedGames failed: \(error)")
@@ -201,11 +197,11 @@ public func getConferenceStandings(_ league: LeagueState, conferenceId: String? 
     do {
         let args: [JSONValue]
         if let conferenceId {
-            args = [league.raw, .string(conferenceId)]
+            args = [.string(conferenceId)]
         } else {
-            args = [league.raw]
+            args = []
         }
-        let raw = try JSRuntime.shared.invoke(moduleId: leagueEngineModule, fn: "getConferenceStandings", args: args)
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "getConferenceStandings", handle: league.handle, restArgs: args)
         if case .array = raw {
             return try fromJSONValue(raw, as: [ConferenceStanding].self)
         }
@@ -217,7 +213,7 @@ public func getConferenceStandings(_ league: LeagueState, conferenceId: String? 
 
 public func getLeagueSummary(_ league: LeagueState) -> LeagueSummary {
     do {
-        let raw = try JSRuntime.shared.invoke(moduleId: leagueEngineModule, fn: "getLeagueSummary", args: [league.raw])
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "getLeagueSummary", handle: league.handle, restArgs: [])
         return try fromJSONValue(raw, as: LeagueSummary.self)
     } catch {
         fatalError("getLeagueSummary failed: \(error)")
@@ -226,7 +222,7 @@ public func getLeagueSummary(_ league: LeagueState) -> LeagueSummary {
 
 public func saveLeagueState(_ league: LeagueState, destinationPath: String, pretty: Bool = true) throws -> (filePath: String, bytes: Int, format: String, version: Int, savedAt: String) {
     let options = JSONValue.object(["pretty": .bool(pretty)])
-    let raw = try JSRuntime.shared.invoke(moduleId: leagueEngineModule, fn: "saveLeagueState", args: [league.raw, .string(destinationPath), options])
+    let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "saveLeagueState", handle: league.handle, restArgs: [.string(destinationPath), options])
 
     struct SaveResult: Codable {
         let filePath: String
@@ -241,6 +237,6 @@ public func saveLeagueState(_ league: LeagueState, destinationPath: String, pret
 }
 
 public func loadLeagueState(_ sourcePath: String) throws -> LeagueState {
-    let raw = try JSRuntime.shared.invoke(moduleId: leagueEngineModule, fn: "loadLeagueState", args: [.string(sourcePath)])
-    return LeagueState(raw: raw)
+    let handle = try JSRuntime.shared.invokeNew(moduleId: leagueEngineModule, fn: "loadLeagueState", args: [.string(sourcePath)])
+    return LeagueState(handle: handle)
 }
