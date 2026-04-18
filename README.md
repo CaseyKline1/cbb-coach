@@ -78,6 +78,43 @@ Implemented:
 node src/exampleGame.js
 ```
 
+League-mode quick run:
+
+```bash
+node src/exampleLeagueSeason.js
+```
+
+## D1 league mode (new)
+
+`src/leagueEngine.js` adds a full-season D1 league layer on top of the game engine.
+
+Implemented:
+- Real DI conference + team mapping from NCAA standings snapshot (`src/data/d1-conferences.2026.json`).
+- Conference/nonconference schedule generation for all teams.
+- NCAA-style conference game targets by conference (inferred from standings data, then normalized).
+- User-controlled preseason nonconference opponent selection.
+- Locked user nonconference games applied first, then global schedule fills around them.
+- User season progression one game at a time.
+- Detailed box scores and play-by-play retained for user games.
+- Fast CPU sim for non-user games (with optional full-engine sim if desired).
+
+Primary API:
+
+```js
+const {
+  createD1League,
+  listUserNonConferenceOptions,
+  setUserNonConferenceOpponents,
+  autoFillUserNonConferenceOpponents,
+  generateSeasonSchedule,
+  advanceToNextUserGame,
+  getUserSchedule,
+  getUserCompletedGames,
+  getConferenceStandings,
+  getLeagueSummary,
+} = require("./src");
+```
+
 ## API
 
 Use either `src/gameEngine.js` directly or the barrel export in `src/index.js`.
