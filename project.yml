@@ -1,0 +1,42 @@
+name: CBBCoach
+defaultConfig: Debug
+options:
+  minimumXcodeGenVersion: 2.38.0
+packages:
+  CBBCoach:
+    path: .
+targets:
+  CBBCoachApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: iOSApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.casey.cbbcoach
+        SWIFT_VERSION: 6.0
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 1.0
+        DEVELOPMENT_TEAM: ""
+    info:
+      path: iOSApp/Info.plist
+      properties:
+        CFBundleDisplayName: CBB Coach
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    dependencies:
+      - package: CBBCoach
+        product: CBBCoachCore
+schemes:
+  CBBCoachApp:
+    build:
+      targets:
+        CBBCoachApp: all
+    run:
+      config: Debug
