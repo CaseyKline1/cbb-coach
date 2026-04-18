@@ -5,6 +5,7 @@ const {
   OffensiveFormation,
   DefenseScheme,
 } = require("./gameEngine");
+const ALL_FORMATIONS = Object.values(OffensiveFormation);
 
 function seededRandom(seed) {
   let state = seed >>> 0;
@@ -586,6 +587,7 @@ const home = createTeam({
   players: ridgeCityPlayers,
   lineup: ridgeCityPlayers.slice(0, 5),
   formation: OffensiveFormation.FIVE_OUT,
+  formations: ALL_FORMATIONS,
   defenseScheme: DefenseScheme.MAN_TO_MAN,
   tendencies: {
     drive: 1.15,
@@ -614,6 +616,7 @@ const away = createTeam({
   players: harborTechPlayers,
   lineup: harborTechPlayers.slice(0, 5),
   formation: OffensiveFormation.HIGH_LOW,
+  formations: ALL_FORMATIONS,
   defenseScheme: DefenseScheme.ZONE_2_3,
   tendencies: {
     drive: 0.98,

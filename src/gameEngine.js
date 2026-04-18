@@ -5,6 +5,7 @@ const HALF_SECONDS = 20 * 60;
 const SHOT_CLOCK_SECONDS = 30;
 const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0.03;
 const CONTESTED_SHOOTING_FOUL_BASE_CHANCE = 0.15;
+const PASS_DELIVERY_COMPLETION_EDGE_BONUS = 0.4;
 
 const OffensiveSpot = Object.freeze({
   MIDDLE_PAINT: "middle_paint",
@@ -1493,6 +1494,86 @@ function getNearbyPassDefenders({
   return contributors;
 }
 
+function resolveLooseBallRecovery({
+  offenseLineup,
+  defenseLineup,
+  offenseTeamId,
+  defenseTeamId,
+  offensiveAssignments,
+  defenseScheme,
+  receiverSpot,
+  random = Math.random,
+}) {
+  const receiverCoord = spotCoords[receiverSpot] || { x: 0, y: 4 };
+  const radius = 2.8;
+  const offensePositions = getOffenderCourtPositions({ offenseLineup, offensiveAssignments });
+  const defensePositions = getDefenderCourtPositions({
+    defenseScheme,
+    defenseLineup,
+    offensiveAssignments,
+  });
+
+  let candidates = [
+    ...offensePositions.map(({ player, coord }) => ({
+      player,
+      coord,
+      team: "offense",
+      teamId: offenseTeamId,
+      distance: dist(coord, receiverCoord),
+    })),
+    ...defensePositions.map(({ player, coord }) => ({
+      player,
+      coord,
+      team: "defense",
+      teamId: defenseTeamId,
+      distance: dist(coord, receiverCoord),
+    })),
+  ].filter((entry) => entry.player && entry.distance <= radius);
+
+  if (!candidates.length) {
+    candidates = [
+      ...offensePositions.map(({ player, coord }) => ({
+        player,
+        coord,
+        team: "offense",
+        teamId: offenseTeamId,
+        distance: dist(coord, receiverCoord),
+      })),
+      ...defensePositions.map(({ player, coord }) => ({
+        player,
+        coord,
+        team: "defense",
+        teamId: defenseTeamId,
+        distance: dist(coord, receiverCoord),
+      })),
+    ]
+      .filter((entry) => entry.player)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 6);
+  }
+
+  const averageHustle = average(candidates.map((entry) => getRating(entry.player, "skills.hustle")));
+  const recoveredBy = pickWeighted(
+    candidates.map((entry) => {
+      const hustle = getRating(entry.player, "skills.hustle");
+      const hustleEdge = (hustle - averageHustle) / 22;
+      const hustleMultiplier = clamp(1 + hustleEdge * 1.85, 0.25, 3.8);
+      const proximityMultiplier = clamp(1.45 - entry.distance / (radius + 0.35), 0.25, 1.3);
+      return {
+        value: entry,
+        weight: Math.max(0.15, proximityMultiplier * hustleMultiplier),
+      };
+    }),
+    random,
+  );
+
+  return {
+    recoveredByTeam: recoveredBy.team,
+    recoveredByTeamId: recoveredBy.teamId,
+    recoveredByPlayer: recoveredBy.player,
+  };
+}
+
 function evaluatePassTarget({
   passer,
   receiver,
@@ -1531,15 +1612,26 @@ function evaluatePassTarget({
 }
 
 function resolvePassDelivery({ passer, receiver, defenseContributors, zonePenalty = 0, random = Math.random }) {
+  const relevantDefenders = (defenseContributors || []).filter(Boolean).slice(0, 1);
+  const passerSecurity = average([
+    getRating(passer, "skills.ballHandling"),
+    getRating(passer, "skills.ballSafety"),
+    getRating(passer, "skills.passingIQ"),
+  ]);
+  const receiverSecurity = average([
+    getRating(receiver, "skills.hands"),
+    getRating(receiver, "skills.offballOffense"),
+  ]);
+  const passSecurityEdge = clamp((passerSecurity + receiverSecurity - 120) / 280, 0, 0.35);
   const compositeDefender = {
     skills: {},
     defense: {
-      passPerception: average(defenseContributors.map((p) => getRating(p, "defense.passPerception"))),
-      steals: average(defenseContributors.map((p) => getRating(p, "defense.steals"))),
-      offballDefense: average(defenseContributors.map((p) => getRating(p, "defense.offballDefense"))),
+      passPerception: average(relevantDefenders.map((p) => getRating(p, "defense.passPerception"))) * 0.85,
+      steals: average(relevantDefenders.map((p) => getRating(p, "defense.steals"))) * 0.5,
+      offballDefense: average(relevantDefenders.map((p) => getRating(p, "defense.offballDefense"))) * 0.7,
     },
     athleticism: {
-      lateralQuickness: average(defenseContributors.map((p) => getRating(p, "defense.lateralQuickness"))),
+      lateralQuickness: average(relevantDefenders.map((p) => getRating(p, "defense.lateralQuickness"))),
     },
   };
 
@@ -1549,34 +1641,69 @@ function resolvePassDelivery({ passer, receiver, defenseContributors, zonePenalt
         passingAccuracy: getRating(passer, "skills.passingAccuracy"),
         passingVision: getRating(passer, "skills.passingVision"),
         passingIQ: getRating(passer, "skills.passingIQ"),
+        ballHandling: getRating(passer, "skills.ballHandling"),
+        ballSafety: getRating(passer, "skills.ballSafety"),
         hands: getRating(receiver, "skills.hands"),
       },
       athleticism: {},
       defense: {},
     },
     defensePlayer: compositeDefender,
-    offenseRatings: ["skills.passingAccuracy", "skills.hands", "skills.passingVision", "skills.passingIQ"],
+    offenseRatings: [
+      "skills.passingAccuracy",
+      "skills.hands",
+      "skills.passingVision",
+      "skills.passingIQ",
+      "skills.ballHandling",
+      "skills.ballSafety",
+    ],
     defenseRatings: ["defense.passPerception", "defense.steals", "defense.offballDefense"],
-    contextEdge: zonePenalty,
+    contextEdge: zonePenalty + PASS_DELIVERY_COMPLETION_EDGE_BONUS + passSecurityEdge,
     random,
   });
 
   let stealBy = null;
   let stealByPlayer = null;
+  let looseBall = false;
   if (!interaction.success) {
-    const defender = pickWeighted(
-      defenseContributors.map((d) => ({
-        value: d,
-        weight: getRating(d, "defense.steals") + getRating(d, "defense.passPerception"),
-      })),
-      random,
+    const ballhawkPressure = average(
+      relevantDefenders.map((d) =>
+        getRating(d, "defense.steals") * 1.1 + getRating(d, "defense.passPerception") * 0.9,
+      ),
     );
-    stealByPlayer = defender;
-    stealBy = defender?.bio?.name || "Unknown";
+    const offensiveControl = average([
+      getRating(passer, "skills.passingAccuracy"),
+      getRating(passer, "skills.ballSafety"),
+      getRating(receiver, "skills.hands"),
+    ]);
+    const failureSeverity = clamp((0.62 - interaction.successProbability) / 0.62, 0, 1);
+    const stealOnFailureChance = clamp(
+      0.8 + failureSeverity * 0.14 + (ballhawkPressure - offensiveControl) / 340,
+      0.7,
+      0.95,
+    );
+
+    if (random() < stealOnFailureChance) {
+      const defendersForSteal = (defenseContributors || []).filter(Boolean);
+      const defender = defendersForSteal.length
+        ? pickWeighted(
+          defendersForSteal.map((d) => ({
+            value: d,
+            weight: getRating(d, "defense.steals") + getRating(d, "defense.passPerception"),
+          })),
+          random,
+        )
+        : null;
+      stealByPlayer = defender;
+      stealBy = defender?.bio?.name || "Unknown";
+    } else {
+      looseBall = true;
+    }
   }
 
   return {
-    turnover: !interaction.success,
+    turnover: !interaction.success && !looseBall,
+    looseBall,
     stealBy,
     stealByPlayer,
     interaction,
@@ -2108,9 +2235,9 @@ function resolveActionChunk(state, random = Math.random) {
 
     if (decisiveDWin) {
       const stealChance = clamp(
-        0.08 + (getRating(onBall.defender, "defense.steals") - getRating(ballHandler, "skills.ballSafety")) / 160,
-        0.02,
-        0.4,
+        0.04 + (getRating(onBall.defender, "defense.steals") - getRating(ballHandler, "skills.ballSafety")) / 220,
+        0.01,
+        0.26,
       );
       if (random() < stealChance) {
         recordTurnover(state, offenseTeamId, ballHandler, defenseTeamId, onBall.defender);
@@ -2255,6 +2382,39 @@ function resolveActionChunk(state, random = Math.random) {
             beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
             possessionChanged = true;
             shotClockMode = "hold";
+          } else if (passDelivery.looseBall) {
+            clearPendingAssist(state);
+            const looseBall = resolveLooseBallRecovery({
+              offenseLineup,
+              defenseLineup,
+              offenseTeamId,
+              defenseTeamId,
+              offensiveAssignments,
+              defenseScheme,
+              receiverSpot: best.spot,
+              random,
+            });
+
+            if (looseBall.recoveredByTeam === "defense") {
+              addPlayerStat(state, offenseTeamId, ballHandler, "turnovers", 1);
+              pushEvent(state, {
+                type: "loose_ball_recovery",
+                offenseTeam: offense.name,
+                defenderTeam: defense.name,
+                playType,
+                detail: `Loose ball recovered by ${looseBall.recoveredByPlayer?.bio?.name || "Unknown"}.`,
+              });
+              beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
+              possessionChanged = true;
+              shotClockMode = "hold";
+            } else {
+              pushEvent(state, {
+                type: "loose_ball_recovery",
+                offenseTeam: offense.name,
+                playType,
+                detail: `Loose ball recovered by ${looseBall.recoveredByPlayer?.bio?.name || "Unknown"} (${offense.name}).`,
+              });
+            }
           } else {
             setPendingAssist(state, offenseTeamId, ballHandler, best.player);
             if (!shouldTakeShotThisAction({
@@ -2599,6 +2759,41 @@ function resolveActionChunk(state, random = Math.random) {
         shotClockMode = "hold";
         actionDone = true;
         break;
+      } else if (passDelivery.looseBall) {
+        clearPendingAssist(state);
+        const looseBall = resolveLooseBallRecovery({
+          offenseLineup,
+          defenseLineup,
+          offenseTeamId,
+          defenseTeamId,
+          offensiveAssignments,
+          defenseScheme,
+          receiverSpot: best.spot,
+          random,
+        });
+
+        if (looseBall.recoveredByTeam === "defense") {
+          addPlayerStat(state, offenseTeamId, currentHandler, "turnovers", 1);
+          pushEvent(state, {
+            type: "loose_ball_recovery",
+            offenseTeam: offense.name,
+            defenderTeam: defense.name,
+            playType,
+            detail: `Loose ball recovered by ${looseBall.recoveredByPlayer?.bio?.name || "Unknown"}.`,
+          });
+          beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
+          possessionChanged = true;
+          shotClockMode = "hold";
+        } else {
+          pushEvent(state, {
+            type: "loose_ball_recovery",
+            offenseTeam: offense.name,
+            playType,
+            detail: `Loose ball recovered by ${looseBall.recoveredByPlayer?.bio?.name || "Unknown"} (${offense.name}).`,
+          });
+        }
+        actionDone = true;
+        break;
       }
 
       setPendingAssist(state, offenseTeamId, currentHandler, best.player);
@@ -2677,9 +2872,9 @@ function resolveActionChunk(state, random = Math.random) {
 
       if (postTier === "dom_loss") {
         const stealChance = clamp(
-          0.07 + (getRating(onBall.defender, "defense.steals") - getRating(ballHandler, "skills.ballSafety")) / 170,
-          0.02,
-          0.34,
+          0.035 + (getRating(onBall.defender, "defense.steals") - getRating(ballHandler, "skills.ballSafety")) / 240,
+          0.01,
+          0.24,
         );
         if (random() < stealChance) {
           recordTurnover(state, offenseTeamId, ballHandler, defenseTeamId, onBall.defender);
@@ -2811,6 +3006,39 @@ function resolveActionChunk(state, random = Math.random) {
               beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
               possessionChanged = true;
               shotClockMode = "hold";
+            } else if (passDelivery.looseBall) {
+              clearPendingAssist(state);
+              const looseBall = resolveLooseBallRecovery({
+                offenseLineup,
+                defenseLineup,
+                offenseTeamId,
+                defenseTeamId,
+                offensiveAssignments,
+                defenseScheme,
+                receiverSpot: best.spot,
+                random,
+              });
+
+              if (looseBall.recoveredByTeam === "defense") {
+                addPlayerStat(state, offenseTeamId, ballHandler, "turnovers", 1);
+                pushEvent(state, {
+                  type: "loose_ball_recovery",
+                  offenseTeam: offense.name,
+                  defenderTeam: defense.name,
+                  playType,
+                  detail: `Loose ball recovered by ${looseBall.recoveredByPlayer?.bio?.name || "Unknown"}.`,
+                });
+                beginNewPossession(state, nextDefenseTeamId(state.possessionTeamId));
+                possessionChanged = true;
+                shotClockMode = "hold";
+              } else {
+                pushEvent(state, {
+                  type: "loose_ball_recovery",
+                  offenseTeam: offense.name,
+                  playType,
+                  detail: `Loose ball recovered by ${looseBall.recoveredByPlayer?.bio?.name || "Unknown"} (${offense.name}).`,
+                });
+              }
             } else {
               setPendingAssist(state, offenseTeamId, ballHandler, best.player);
               if (!shouldTakeShotThisAction({
