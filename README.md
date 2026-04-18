@@ -84,6 +84,18 @@ League-mode quick run:
 node src/exampleLeagueSeason.js
 ```
 
+League save/load persistence demo:
+
+```bash
+node src/exampleLeaguePersistence.js
+```
+
+Interactive preseason nonconference scheduler (CLI):
+
+```bash
+node src/examplePreseasonSchedulingCli.js "Duke"
+```
+
 ## D1 league mode (new)
 
 `src/leagueEngine.js` adds a full-season D1 league layer on top of the game engine.
@@ -93,10 +105,12 @@ Implemented:
 - Conference/nonconference schedule generation for all teams.
 - NCAA-style conference game targets by conference (inferred from standings data, then normalized).
 - User-controlled preseason nonconference opponent selection.
+- Interactive preseason scheduling helper (paged/searchable CLI).
 - Locked user nonconference games applied first, then global schedule fills around them.
 - User season progression one game at a time.
 - Detailed box scores and play-by-play retained for user games.
 - Fast CPU sim for non-user games (with optional full-engine sim if desired).
+- League state save/load persistence via JSON snapshots.
 
 Primary API:
 
@@ -104,15 +118,28 @@ Primary API:
 const {
   createD1League,
   listUserNonConferenceOptions,
+  getPreseasonSchedulingBoard,
   setUserNonConferenceOpponents,
   autoFillUserNonConferenceOpponents,
+  runPreseasonSchedulingCli,
   generateSeasonSchedule,
   advanceToNextUserGame,
   getUserSchedule,
   getUserCompletedGames,
   getConferenceStandings,
   getLeagueSummary,
+  saveLeagueState,
+  loadLeagueState,
 } = require("./src");
+```
+
+Persistence quick example:
+
+```js
+const { saveLeagueState, loadLeagueState } = require("./src");
+
+saveLeagueState(league, "./tmp/my-league.json");
+const restoredLeague = loadLeagueState("./tmp/my-league.json");
 ```
 
 ## API
