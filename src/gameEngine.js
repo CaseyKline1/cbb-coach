@@ -29,6 +29,7 @@ const OffensiveFormation = Object.freeze({
   TRIANGLE: "triangle",
   MOTION: "motion",
 });
+const OFFENSIVE_FORMATION_VALUES = Object.values(OffensiveFormation);
 
 const DefenseScheme = Object.freeze({
   MAN_TO_MAN: "man_to_man",
@@ -575,6 +576,47 @@ function getDefaultLineup(team) {
   return new Array(5).fill(null).map(() => createPlayer());
 }
 
+function normalizeFormationCycle(formations, fallbackFormation = OffensiveFormation.MOTION) {
+  const source = Array.isArray(formations) && formations.length
+    ? formations
+    : [fallbackFormation];
+  const deduped = [];
+  source.forEach((formation) => {
+    if (!OFFENSIVE_FORMATION_VALUES.includes(formation)) return;
+    if (!deduped.includes(formation)) deduped.push(formation);
+  });
+  return deduped.length ? deduped : [OffensiveFormation.MOTION];
+}
+
+function initializeTeamFormationState(team) {
+  const cycle = normalizeFormationCycle(team.formations, team.formation);
+  return {
+    ...team,
+    formations: cycle,
+    formationCycleIndex: 0,
+    formation: cycle[0],
+  };
+}
+
+function getCurrentOffensiveFormation(team) {
+  if (!team) return OffensiveFormation.MOTION;
+  if (Array.isArray(team.formations) && team.formations.length > 0) {
+    const index = Number.isInteger(team.formationCycleIndex)
+      ? clamp(team.formationCycleIndex, 0, team.formations.length - 1)
+      : 0;
+    return team.formations[index];
+  }
+  return team.formation || OffensiveFormation.MOTION;
+}
+
+function advanceTeamOffensiveFormation(team) {
+  if (!team || !Array.isArray(team.formations) || team.formations.length <= 1) return;
+  const index = Number.isInteger(team.formationCycleIndex) ? team.formationCycleIndex : 0;
+  const nextIndex = (index + 1) % team.formations.length;
+  team.formationCycleIndex = nextIndex;
+  team.formation = team.formations[nextIndex];
+}
+
 function getFormationSpots(formation) {
   switch (formation) {
     case OffensiveFormation.FIVE_OUT:
@@ -885,9 +927,11 @@ function pickBallHandler(offensiveAssignments, random = Math.random) {
       getRating(player, "skills.shotIQ"),
       getRating(player, "skills.offballOffense"),
     ]);
+    // Add light per-possession noise so the same creator isn't selected every time.
+    const varianceFactor = 0.8 + random() * 0.4;
     return {
       value: index,
-      weight: Math.max(1, ballSkill),
+      weight: Math.max(1, ballSkill * varianceFactor),
     };
   });
 
@@ -1806,20 +1850,20 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
   const homeLineup = getDefaultLineup(homeTeam);
   const awayLineup = getDefaultLineup(awayTeam);
   const teams = [
-    {
+    initializeTeamFormationState({
       ...homeTeam,
       players: homeTeam.players?.length ? homeTeam.players : homeLineup,
       lineup: homeLineup,
       score: 0,
       timeoutsRemaining: Number.isFinite(homeTeam.timeouts) ? homeTeam.timeouts : 4,
-    },
-    {
+    }),
+    initializeTeamFormationState({
       ...awayTeam,
       players: awayTeam.players?.length ? awayTeam.players : awayLineup,
       lineup: awayLineup,
       score: 0,
       timeoutsRemaining: Number.isFinite(awayTeam.timeouts) ? awayTeam.timeouts : 4,
-    },
+    }),
   ];
 
   teams.forEach((team) => {
@@ -1842,6 +1886,7 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
 function beginNewPossession(state, offenseTeamId, deadBallReason = null) {
   clearPendingAssist(state);
   state.possessionTeamId = offenseTeamId;
+  advanceTeamOffensiveFormation(state.teams[offenseTeamId]);
   state.shotClockRemaining = SHOT_CLOCK_SECONDS;
   state.possessionNeedsSetup = true;
   if (deadBallReason) {
@@ -1891,7 +1936,7 @@ function shouldTakeShotThisAction({
       (shotIQ - 60) / 240 +
       (shootVsPass - 55) / 240 +
       qualityBoost,
-    0.25,
+    0.12,
     0.98,
   );
 
@@ -1943,7 +1988,7 @@ function resolveActionChunk(state, random = Math.random) {
     return;
   }
 
-  const formation = offense.formation || OffensiveFormation.MOTION;
+  const formation = getCurrentOffensiveFormation(offense);
   const offensiveAssignments = assignOffensiveSpots(offenseLineup, formation, random);
   const ballHandlerIndex = pickBallHandler(offensiveAssignments, random);
   const ballHandler = offensiveAssignments[ballHandlerIndex].player;
@@ -2373,9 +2418,10 @@ function resolveActionChunk(state, random = Math.random) {
 
     while (!actionDone && !possessionChanged) {
       const canStillPass = passesCompleted < maxPasses;
+      const hasCompletedRequiredPass = passesCompleted > 0;
       const activeScrambleBonus = scrambleBonus;
       const shotQuality = clamp(openBeforeCatch * 0.85 + activeScrambleBonus * 0.4, 0.1, 1.05);
-      const shouldShoot = shouldTakeShotThisAction({
+      const shouldShoot = hasCompletedRequiredPass && shouldTakeShotThisAction({
         state,
         shooter: currentHandler,
         shotQuality,
@@ -2493,12 +2539,13 @@ function resolveActionChunk(state, random = Math.random) {
         else scrambleBonus *= 0.28;
       }
       if (!best) {
-        if (!resolveLateClockBailout({
+        const canLateClockBailout = hasCompletedRequiredPass && resolveLateClockBailout({
           shooter: currentHandler,
           defender: currentDefender,
           sourceDetail: "No passing window opened in action; neutral reset.",
           shotQualityEdge: openBeforeCatch * 0.11 - 0.07,
-        })) {
+        });
+        if (!canLateClockBailout) {
           pushEvent(state, {
             type: "reset",
             offenseTeam: offense.name,
@@ -2986,6 +3033,7 @@ function createTeam({
   players,
   lineup,
   formation = OffensiveFormation.MOTION,
+  formations = null,
   defenseScheme = DefenseScheme.MAN_TO_MAN,
   tendencies = {},
   timeouts = 4,
@@ -2996,6 +3044,7 @@ function createTeam({
     players: players || lineup || [],
     lineup: lineup || players || [],
     formation,
+    formations,
     defenseScheme,
     tendencies,
     timeouts,
