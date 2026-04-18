@@ -1854,6 +1854,64 @@ function resolveActionChunk(state, random = Math.random) {
 
   let possessionChanged = false;
   let shotClockMode = "tick";
+  const resolveLateClockBailout = ({
+    shooter,
+    defender,
+    sourceDetail,
+    shotQualityEdge = -0.2,
+  }) => {
+    if (state.shotClockRemaining > 5) return false;
+
+    const forcedShotType = chooseShotFromTendencies(shooter, random);
+    const forcedShot = resolveShot({
+      shooter,
+      defender,
+      shotType: forcedShotType,
+      zonePenalty,
+      shotQualityEdge,
+      contested: true,
+      random,
+    });
+    forcedShot.shooter = shooter;
+    if (
+      state.pendingAssist &&
+      state.pendingAssist.teamId === offenseTeamId &&
+      state.pendingAssist.receiver === shooter
+    ) {
+      forcedShot.assister = state.pendingAssist.passer;
+    }
+    markInvolvement(offenseTeamId, shooter, 1);
+    markInvolvement(defenseTeamId, defender, 0.9);
+
+    pushEvent(state, {
+      type: "forced_shot_clock",
+      offenseTeam: offense.name,
+      playType,
+      shotType: forcedShotType,
+      shooter: shooter?.bio?.name,
+      detail: sourceDetail,
+    });
+
+    const endState = resolvePossessionEndAfterShot({
+      state,
+      offenseTeamId,
+      defenseTeamId,
+      offense,
+      defense,
+      offenseLineup,
+      defenseLineup,
+      defenseScheme,
+      offensiveAssignments,
+      playType,
+      shotType: forcedShotType,
+      shot: forcedShot,
+      random,
+    });
+    possessionChanged = endState.possessionChanged;
+    shotClockMode = endState.shotClockMode;
+    return true;
+  };
+
   if (playType === "dribble_drive") {
     const drive = resolveInteraction({
       offensePlayer: ballHandler,
@@ -1897,20 +1955,32 @@ function resolveActionChunk(state, random = Math.random) {
         possessionChanged = true;
         shotClockMode = "hold";
       } else {
+        if (!resolveLateClockBailout({
+          shooter: ballHandler,
+          defender: onBall.defender,
+          sourceDetail: "Defense cut off the drive; late-clock bailout shot.",
+        })) {
+          pushEvent(state, {
+            type: "reset",
+            offenseTeam: offense.name,
+            playType,
+            detail: "Defense cut off the drive.",
+          });
+        }
+      }
+    } else if (dTieOrSmallWin) {
+      if (!resolveLateClockBailout({
+        shooter: ballHandler,
+        defender: onBall.defender,
+        sourceDetail: "Drive stalled; late-clock bailout shot.",
+      })) {
         pushEvent(state, {
           type: "reset",
           offenseTeam: offense.name,
           playType,
-          detail: "Defense cut off the drive.",
+          detail: "Drive stalled.",
         });
       }
-    } else if (dTieOrSmallWin) {
-      pushEvent(state, {
-        type: "reset",
-        offenseTeam: offense.name,
-        playType,
-        detail: "Drive stalled.",
-      });
     } else {
       const helpCandidates = defenseLineup.filter((_, idx) => idx !== ballHandlerIndex);
       const helpQuality = average(
@@ -1971,12 +2041,18 @@ function resolveActionChunk(state, random = Math.random) {
         targetScores.sort((a, b) => b.score - a.score);
         const best = targetScores[0];
         if (!best || !best.evalResult.canSeeWindow) {
-          pushEvent(state, {
-            type: "reset",
-            offenseTeam: offense.name,
-            playType,
-            detail: "Drive-and-kick read not found.",
-          });
+          if (!resolveLateClockBailout({
+            shooter: ballHandler,
+            defender: onBall.defender,
+            sourceDetail: "Drive-and-kick read not found; late-clock bailout shot.",
+          })) {
+            pushEvent(state, {
+              type: "reset",
+              offenseTeam: offense.name,
+              playType,
+              detail: "Drive-and-kick read not found.",
+            });
+          }
         } else {
           const passDelivery = resolvePassDelivery({
             passer: ballHandler,
@@ -2016,12 +2092,19 @@ function resolveActionChunk(state, random = Math.random) {
               shotQuality: best.evalResult.openLevel,
               random,
             })) {
-              pushEvent(state, {
-                type: "reset",
-                offenseTeam: offense.name,
-                playType,
-                detail: "Kick-out caught, offense reset for a later shot.",
-              });
+              if (!resolveLateClockBailout({
+                shooter: best.player,
+                defender: best.cover.defender,
+                sourceDetail: "Kick-out caught; late-clock catch-and-shoot bailout.",
+                shotQualityEdge: best.evalResult.openLevel * 0.15 - 0.08,
+              })) {
+                pushEvent(state, {
+                  type: "reset",
+                  offenseTeam: offense.name,
+                  playType,
+                  detail: "Kick-out caught, offense reset for a later shot.",
+                });
+              }
             } else {
               const shotType = chooseShotFromTendencies(best.player, random);
               const contested = best.evalResult.openLevel < 0.56;
@@ -2067,12 +2150,18 @@ function resolveActionChunk(state, random = Math.random) {
           shotQuality: decisiveOWin ? 0.8 : (helpArrives ? 0.35 : 0.55),
           random,
         })) {
-          pushEvent(state, {
-            type: "reset",
-            offenseTeam: offense.name,
-            playType,
-            detail: "Drive advantage wasn't enough, offense reset.",
-          });
+          if (!resolveLateClockBailout({
+            shooter: ballHandler,
+            defender: onBall.defender,
+            sourceDetail: "Drive advantage faded; late-clock bailout shot.",
+          })) {
+            pushEvent(state, {
+              type: "reset",
+              offenseTeam: offense.name,
+              playType,
+              detail: "Drive advantage wasn't enough, offense reset.",
+            });
+          }
         } else {
           const shotType = jumpDecision ? chooseShotFromTendencies(ballHandler, random) : chooseDriveFinishType(ballHandler, random);
           const contestWeight = decisiveOWin ? 0.08 : 0.2;
@@ -2141,12 +2230,18 @@ function resolveActionChunk(state, random = Math.random) {
     ]);
 
     if (!postEligibleSpots.has(ballHandlerSpot)) {
-      pushEvent(state, {
-        type: "reset",
-        offenseTeam: offense.name,
-        playType,
-        detail: "No post touch angle available.",
-      });
+      if (!resolveLateClockBailout({
+        shooter: ballHandler,
+        defender: onBall.defender,
+        sourceDetail: "No post angle; late-clock bailout shot.",
+      })) {
+        pushEvent(state, {
+          type: "reset",
+          offenseTeam: offense.name,
+          playType,
+          detail: "No post touch angle available.",
+        });
+      }
     } else {
       const weightEdge = (getWeightPounds(ballHandler) - getWeightPounds(onBall.defender)) / 220;
       const postBattle = resolveInteraction({
@@ -2191,12 +2286,18 @@ function resolveActionChunk(state, random = Math.random) {
           possessionChanged = true;
           shotClockMode = "hold";
         } else {
-          pushEvent(state, {
-            type: "reset",
-            offenseTeam: offense.name,
-            playType,
-            detail: "Post entry neutralized.",
-          });
+          if (!resolveLateClockBailout({
+            shooter: ballHandler,
+            defender: onBall.defender,
+            sourceDetail: "Post entry neutralized; late-clock bailout shot.",
+          })) {
+            pushEvent(state, {
+              type: "reset",
+              offenseTeam: offense.name,
+              playType,
+              detail: "Post entry neutralized.",
+            });
+          }
         }
       } else {
         const shootVsPass = getRating(ballHandler, "tendencies.shootVsPass");
@@ -2211,12 +2312,18 @@ function resolveActionChunk(state, random = Math.random) {
         const giveUpChance = clamp((45 - getRating(ballHandler, "skills.shotIQ")) / 200, 0.03, 0.25);
 
         if (random() < giveUpChance && postTier !== "dom_win") {
-          pushEvent(state, {
-            type: "reset",
-            offenseTeam: offense.name,
-            playType,
-            detail: "Post touch kicked back out.",
-          });
+          if (!resolveLateClockBailout({
+            shooter: ballHandler,
+            defender: onBall.defender,
+            sourceDetail: "Post touch kicked out; late-clock bailout shot.",
+          })) {
+            pushEvent(state, {
+              type: "reset",
+              offenseTeam: offense.name,
+              playType,
+              detail: "Post touch kicked back out.",
+            });
+          }
         } else if (random() < passChance) {
           const targets = offensiveAssignments
             .map((assignment, idx) => ({ ...assignment, idx }))
@@ -2252,12 +2359,18 @@ function resolveActionChunk(state, random = Math.random) {
           const best = targetScores[0];
 
           if (!best || !best.evalResult.canSeeWindow) {
-            pushEvent(state, {
-              type: "reset",
-              offenseTeam: offense.name,
-              playType,
-              detail: "Post kick-out window closed.",
-            });
+            if (!resolveLateClockBailout({
+              shooter: ballHandler,
+              defender: onBall.defender,
+              sourceDetail: "Post kick-out window closed; late-clock bailout shot.",
+            })) {
+              pushEvent(state, {
+                type: "reset",
+                offenseTeam: offense.name,
+                playType,
+                detail: "Post kick-out window closed.",
+              });
+            }
           } else {
             const passDelivery = resolvePassDelivery({
               passer: ballHandler,
@@ -2297,12 +2410,19 @@ function resolveActionChunk(state, random = Math.random) {
                 shotQuality: best.evalResult.openLevel,
                 random,
               })) {
-                pushEvent(state, {
-                  type: "reset",
-                  offenseTeam: offense.name,
-                  playType,
-                  detail: "Kick-out was there, but offense waited for late clock.",
-                });
+                if (!resolveLateClockBailout({
+                  shooter: best.player,
+                  defender: best.cover.defender,
+                  sourceDetail: "Kick-out window there; late-clock catch-and-shoot bailout.",
+                  shotQualityEdge: best.evalResult.openLevel * 0.14 - 0.08,
+                })) {
+                  pushEvent(state, {
+                    type: "reset",
+                    offenseTeam: offense.name,
+                    playType,
+                    detail: "Kick-out was there, but offense waited for late clock.",
+                  });
+                }
               } else {
                 const shotType = chooseShotFromTendencies(best.player, random);
                 const contested = best.evalResult.openLevel < 0.56;
@@ -2370,12 +2490,18 @@ function resolveActionChunk(state, random = Math.random) {
             shotQuality: postTier === "dom_win" ? 0.9 : postTier === "win" ? 0.65 : 0.35,
             random,
           })) {
-            pushEvent(state, {
-              type: "reset",
-              offenseTeam: offense.name,
-              playType,
-              detail: "Post touch didn't force a shot; offense reset.",
-            });
+            if (!resolveLateClockBailout({
+              shooter: ballHandler,
+              defender: onBall.defender,
+              sourceDetail: "Post touch hesitated; late-clock bailout shot.",
+            })) {
+              pushEvent(state, {
+                type: "reset",
+                offenseTeam: offense.name,
+                playType,
+                detail: "Post touch didn't force a shot; offense reset.",
+              });
+            }
           } else {
             const shot = resolveShot({
               shooter: ballHandler,
