@@ -1747,28 +1747,30 @@ function shouldTakeShotThisAction({
   shooter,
   shotQuality = 0,
   random = Math.random,
-  endClockWindowSeconds = 10,
+  forceShotThresholdSeconds = 5,
 }) {
-  if (state.shotClockRemaining <= endClockWindowSeconds) return true;
+  if (state.shotClockRemaining <= forceShotThresholdSeconds) return true;
 
   const shotIQ = getRating(shooter, "skills.shotIQ");
   const shootVsPass = getRating(shooter, "tendencies.shootVsPass");
-  const maxEarlyClock = SHOT_CLOCK_SECONDS - endClockWindowSeconds;
-  const elapsedEarlyClock = clamp(maxEarlyClock - (state.shotClockRemaining - endClockWindowSeconds), 0, maxEarlyClock);
-  const clockPressure = maxEarlyClock <= 0 ? 1 : elapsedEarlyClock / maxEarlyClock;
-  const qualityBoost = clamp(shotQuality, 0, 1.2) * 0.32;
-  const earlyClockShotChance = clamp(
-    0.14 +
+  const elapsedClock = SHOT_CLOCK_SECONDS - state.shotClockRemaining;
+  const pressureSpan = SHOT_CLOCK_SECONDS - forceShotThresholdSeconds;
+  const clockPressure = pressureSpan <= 0 ? 1 : clamp(elapsedClock / pressureSpan, 0, 1);
+  // Shot quality matters less as the clock winds down — late in the clock, any look goes up.
+  const qualityWeight = 1 - 0.75 * clockPressure;
+  const qualityBoost = clamp(shotQuality, 0, 1.2) * 0.3 * qualityWeight;
+  const shotChance = clamp(
+    0.3 +
       EARLY_CLOCK_SHOT_ATTEMPT_BONUS +
-      clockPressure * 0.45 +
+      Math.pow(clockPressure, 1.2) * 0.7 +
       (shotIQ - 60) / 240 +
       (shootVsPass - 55) / 240 +
       qualityBoost,
-    0.12,
-    0.9,
+    0.25,
+    0.98,
   );
 
-  return random() < earlyClockShotChance;
+  return random() < shotChance;
 }
 
 function resolveActionChunk(state, random = Math.random) {
