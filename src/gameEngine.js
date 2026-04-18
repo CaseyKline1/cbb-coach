@@ -1018,7 +1018,6 @@ function resolveShot({
         "shooting.layups",
         "shooting.closeShot",
         "athleticism.burst",
-        "skills.shotIQ",
       ],
       defenseRatings: [
         "defense.shotContest",
@@ -1060,7 +1059,6 @@ function resolveShot({
     close: {
       offenseRatings: [
         "shooting.closeShot",
-        "skills.shotIQ",
         "athleticism.agility",
       ],
       defenseRatings: [
@@ -1074,7 +1072,6 @@ function resolveShot({
     midrange: {
       offenseRatings: [
         "shooting.midrangeShot",
-        "skills.shotIQ",
         "athleticism.agility",
       ],
       defenseRatings: [
@@ -1103,7 +1100,6 @@ function resolveShot({
       offenseRatings: [
         "postGame.postFadeaways",
         "shooting.midrangeShot",
-        "skills.shotIQ",
       ],
       defenseRatings: [
         "defense.shotContest",
@@ -1130,7 +1126,6 @@ function resolveShot({
     jump: {
       offenseRatings: [
         "shooting.midrangeShot",
-        "skills.shotIQ",
         "athleticism.agility",
       ],
       defenseRatings: [
