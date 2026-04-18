@@ -4,6 +4,7 @@ const CHUNK_SECONDS = 5;
 const HALF_SECONDS = 20 * 60;
 const SHOT_CLOCK_SECONDS = 30;
 const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0.03;
+const CONTESTED_SHOOTING_FOUL_BASE_CHANCE = 0.15;
 
 const OffensiveSpot = Object.freeze({
   MIDDLE_PAINT: "middle_paint",
@@ -1103,7 +1104,7 @@ function resolveShot({
   const drawFoul = getRating(shooter, profile.foulDraw);
   const defensiveControl = getRating(defender, "defense.defensiveControl");
   const foulPressure = (drawFoul - defensiveControl) / 140;
-  const baseFoulChance = clamp(0.075 + foulPressure, 0.015, 0.34);
+  const baseFoulChance = clamp(CONTESTED_SHOOTING_FOUL_BASE_CHANCE + foulPressure, 0.08, 0.42);
   const isShootingFoul = contested && random() < baseFoulChance;
 
   let made = shotResult.success;
