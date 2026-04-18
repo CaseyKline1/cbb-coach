@@ -11,14 +11,14 @@ const CLUTCH_RATING_IMPACT = 0.08;
 const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0;
 const CONTESTED_SHOOTING_FOUL_BASE_CHANCE = 0.15;
 const PASS_DELIVERY_COMPLETION_EDGE_BONUS = 0.52;
-const LAYUP_MAKE_EDGE_BONUS = 0.24;
+const LAYUP_MAKE_EDGE_BONUS = 0.22;
 const DUNK_MAKE_EDGE_BONUS = 0.31;
 const MIDRANGE_MAKE_EDGE_PENALTY = 0.4;
 const HOOK_MAKE_EDGE_BONUS = 0.08;
 const FADEAWAY_MAKE_EDGE_PENALTY = 0.06;
-const THREE_POINT_MAKE_EDGE_PENALTY = 0.43;
+const THREE_POINT_MAKE_EDGE_PENALTY = 0.42;
 const THREE_POINT_CONTESTED_EXTRA_PENALTY = 0.12;
-const THREE_POINT_SUCCESS_PROBABILITY_PENALTY = 0.13;
+const THREE_POINT_SUCCESS_PROBABILITY_PENALTY = 0.125;
 const GLOBAL_SHOT_MAKE_PROBABILITY_PENALTY = 0.04;
 
 const OffensiveSpot = Object.freeze({
@@ -1119,7 +1119,7 @@ function choosePlayType({ offenseTeam, ballHandler, random = Math.random }) {
       ballSpot === OffensiveSpot.LEFT_SLOT ||
       ballSpot === OffensiveSpot.RIGHT_ELBOW ||
       ballSpot === OffensiveSpot.LEFT_ELBOW
-      ? 0.75
+      ? 0.82
       : 1)
     : 0.2;
 
@@ -1127,11 +1127,11 @@ function choosePlayType({ offenseTeam, ballHandler, random = Math.random }) {
     [
       {
         value: "dribble_drive",
-        weight: Math.max(1, drive) * teamDriveBias * 1.32,
+        weight: Math.max(1, drive) * teamDriveBias * 1.42,
       },
       {
         value: "post_up",
-        weight: canPost ? Math.max(1, post) * teamPostBias * postDistancePenalty : 1,
+        weight: canPost ? Math.max(1, post) * teamPostBias * postDistancePenalty * 1.12 : 1,
       },
       {
         value: "pick_and_roll",
@@ -1142,7 +1142,7 @@ function choosePlayType({ offenseTeam, ballHandler, random = Math.random }) {
           ) *
           teamPickAndRollBias *
           pickFormationBoost *
-          0.97,
+          0.9,
       },
       {
         value: "pick_and_pop",
@@ -1157,7 +1157,7 @@ function choosePlayType({ offenseTeam, ballHandler, random = Math.random }) {
       },
       {
         value: "pass_around_for_shot",
-        weight: Math.max(1, passAround) * teamPassAroundBias * passAroundFormationBoost * 0.93,
+        weight: Math.max(1, passAround) * teamPassAroundBias * passAroundFormationBoost * 0.68,
       },
     ],
     random,
@@ -2145,7 +2145,13 @@ function resolvePossessionEndAfterShot({
     offense.score += shot.points;
     addPlayerStat(state, offenseTeamId, shooter, "points", shot.points);
     if (shot.assister) {
-      addPlayerStat(state, offenseTeamId, shot.assister, "assists", 1);
+      const contestedPenalty = shot.contested ? 0.52 : 1;
+      const creationPenalty =
+        playType === "dribble_drive" || playType === "post_up" ? 0.9 : 1;
+      const assistCreditChance = clamp(0.9 * contestedPenalty * creationPenalty, 0.28, 0.92);
+      if (random() < assistCreditChance) {
+        addPlayerStat(state, offenseTeamId, shot.assister, "assists", 1);
+      }
     }
     let foulDetail = "";
     if (shot.isShootingFoul) {
@@ -3086,13 +3092,6 @@ function resolveActionChunk(state, random = Math.random) {
       random,
     });
     forcedShot.shooter = shooter;
-    if (
-      state.pendingAssist &&
-      state.pendingAssist.teamId === offenseTeamId &&
-      state.pendingAssist.receiver === shooter
-    ) {
-      forcedShot.assister = state.pendingAssist.passer;
-    }
     markInvolvement(offenseTeamId, shooter, 1);
     markInvolvement(defenseTeamId, defender, 0.9);
 
@@ -3217,9 +3216,9 @@ function resolveActionChunk(state, random = Math.random) {
 
       const shootVsPass = getRating(ballHandler, "tendencies.shootVsPass");
       const passChance = clamp(
-        (59 - shootVsPass) / 100 + (helpArrives ? 0.28 : 0.12),
-        0.1,
-        decisiveOWin ? 0.9 : 0.8,
+        (54 - shootVsPass) / 100 + (helpArrives ? 0.22 : 0.08),
+        0.06,
+        decisiveOWin ? 0.82 : 0.72,
       );
       const jumpChance = decisiveOWin ? 0 : clamp((shootVsPass - 58) / 220, 0, 0.16);
       const passDecision = random() < passChance;
@@ -4233,7 +4232,7 @@ function resolveActionChunk(state, random = Math.random) {
           getRating(ballHandler, "shooting.closeShot"),
         ]);
         const threatBonus = clamp((scoringThreat - 60) / 120, 0, 0.24);
-        const passChance = clamp((52 - shootVsPass) / 100 + threatBonus * 0.65, 0.05, 0.6);
+        const passChance = clamp((48 - shootVsPass) / 110 + threatBonus * 0.45, 0.03, 0.5);
         const giveUpChance = clamp((45 - getRating(ballHandler, "skills.shotIQ")) / 200, 0.03, 0.25);
 
         if (random() < giveUpChance && postTier !== "dom_win") {
