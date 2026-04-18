@@ -9,6 +9,7 @@ struct ContentView: View {
     @AppStorage("coachPace") private var coachPaceRaw: String = PaceProfile.normal.rawValue
     @AppStorage("coachOffense") private var coachOffenseRaw: String = OffensiveFormation.motion.rawValue
     @AppStorage("coachDefense") private var coachDefenseRaw: String = DefenseScheme.manToMan.rawValue
+    @AppStorage("coachArchetype") private var coachArchetypeRaw: String = CoachArchetype.recruiting.rawValue
     @AppStorage("coachTeam") private var coachTeam: String = "Duke"
 
     var body: some View {
@@ -26,6 +27,7 @@ struct ContentView: View {
             let pace = PaceProfile(rawValue: coachPaceRaw),
             let offense = OffensiveFormation(rawValue: coachOffenseRaw),
             let defense = DefenseScheme(rawValue: coachDefenseRaw),
+            let archetype = CoachArchetype(rawValue: coachArchetypeRaw),
             !coachFirstName.isEmpty,
             !coachLastName.isEmpty,
             !coachTeam.isEmpty
@@ -37,6 +39,7 @@ struct ContentView: View {
             firstName: coachFirstName,
             lastName: coachLastName,
             age: coachAge,
+            archetype: archetype,
             pace: pace,
             offense: offense,
             defense: defense,
@@ -51,6 +54,7 @@ struct ContentView: View {
         coachPaceRaw = profile.pace.rawValue
         coachOffenseRaw = profile.offense.rawValue
         coachDefenseRaw = profile.defense.rawValue
+        coachArchetypeRaw = profile.archetype.rawValue
         coachTeam = profile.teamName
         coachCreationComplete = true
     }
@@ -68,16 +72,20 @@ private struct CoachCreationFlowView: View {
     var body: some View {
         NavigationStack(path: $path) {
             CoachIdentityStepView { identity in
-                path.append(.style(identity))
+                path.append(.archetype(identity))
             }
             .navigationDestination(for: CoachCreationStep.self) { step in
                 switch step {
-                case .style(let identity):
-                    CoachStyleStepView(identity: identity) { style in
-                        path.append(.team(identity, style))
+                case .archetype(let identity):
+                    CoachArchetypeStepView(identity: identity) { archetype in
+                        path.append(.style(identity, archetype))
                     }
-                case .team(let identity, let style):
-                    CoachTeamStepView(identity: identity, style: style, onComplete: onComplete)
+                case .style(let identity, let archetype):
+                    CoachStyleStepView(identity: identity) { style in
+                        path.append(.team(identity, archetype, style))
+                    }
+                case .team(let identity, let archetype, let style):
+                    CoachTeamStepView(identity: identity, archetype: archetype, style: style, onComplete: onComplete)
                 }
             }
         }
@@ -85,14 +93,16 @@ private struct CoachCreationFlowView: View {
 }
 
 private enum CoachCreationStep: Hashable {
-    case style(CoachIdentitySelection)
-    case team(CoachIdentitySelection, CoachStyleSelection)
+    case archetype(CoachIdentitySelection)
+    case style(CoachIdentitySelection, CoachArchetype)
+    case team(CoachIdentitySelection, CoachArchetype, CoachStyleSelection)
 }
 
 private struct CoachCreationProfile {
     let firstName: String
     let lastName: String
     let age: Int
+    let archetype: CoachArchetype
     let pace: PaceProfile
     let offense: OffensiveFormation
     let defense: DefenseScheme
@@ -115,6 +125,14 @@ private struct CoachStyleSelection: Hashable {
     let defense: DefenseScheme
 }
 
+private enum CoachArchetype: String, CaseIterable, Hashable {
+    case recruiting
+    case offense
+    case defense
+    case playerDevelopment = "player_development"
+    case fundraising
+}
+
 private struct CoachIdentityStepView: View {
     let onNext: (CoachIdentitySelection) -> Void
 
@@ -130,9 +148,9 @@ private struct CoachIdentityStepView: View {
     var body: some View {
         OnboardingStepScaffold(
             title: "Create Your Coach",
-            subtitle: "Step 1 of 3",
+            subtitle: "Step 1 of 4",
             navTitle: "Coach Setup",
-            nextLabel: "Next: Style",
+            nextLabel: "Next: Archetype",
             nextDisabled: !isValid,
             onNext: {
                 onNext(
@@ -175,6 +193,44 @@ private struct CoachIdentityStepView: View {
     }
 }
 
+private struct CoachArchetypeStepView: View {
+    let identity: CoachIdentitySelection
+    let onNext: (CoachArchetype) -> Void
+
+    @State private var selectedArchetype: CoachArchetype = .recruiting
+
+    var body: some View {
+        OnboardingStepScaffold(
+            title: "Choose Your Archetype",
+            subtitle: "Step 2 of 4",
+            navTitle: "Coach Setup",
+            nextLabel: "Next: Style",
+            nextDisabled: false,
+            onNext: { onNext(selectedArchetype) }
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                SingleSelectDropdown(
+                    label: "Archetype",
+                    selection: $selectedArchetype,
+                    options: CoachArchetype.allCases,
+                    optionLabel: \.label
+                )
+
+                Text(selectedArchetype.summary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Text("\(identity.firstName) \(identity.lastName), age \(identity.age)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(18)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+}
+
 private struct CoachStyleStepView: View {
     let identity: CoachIdentitySelection
     let onNext: (CoachStyleSelection) -> Void
@@ -186,7 +242,7 @@ private struct CoachStyleStepView: View {
     var body: some View {
         OnboardingStepScaffold(
             title: "Define Your Style",
-            subtitle: "Step 2 of 3",
+            subtitle: "Step 3 of 4",
             navTitle: "Coach Setup",
             nextLabel: "Next: Team",
             nextDisabled: false,
@@ -235,6 +291,7 @@ private struct CoachStyleStepView: View {
 
 private struct CoachTeamStepView: View {
     let identity: CoachIdentitySelection
+    let archetype: CoachArchetype
     let style: CoachStyleSelection
     let onComplete: (CoachCreationProfile) -> Void
 
@@ -243,7 +300,7 @@ private struct CoachTeamStepView: View {
     var body: some View {
         OnboardingStepScaffold(
             title: "Choose Your Program",
-            subtitle: "Step 3 of 3",
+            subtitle: "Step 4 of 4",
             navTitle: "Coach Setup",
             nextLabel: "Start Career",
             nextDisabled: false,
@@ -253,6 +310,7 @@ private struct CoachTeamStepView: View {
                         firstName: identity.firstName,
                         lastName: identity.lastName,
                         age: identity.age,
+                        archetype: archetype,
                         pace: style.pace,
                         offense: style.offense,
                         defense: style.defense,
@@ -451,7 +509,7 @@ private struct SimulatorHubView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Coach \(profile.fullName)")
                         .font(.largeTitle.bold())
-                    Text("\(profile.teamName) | Pace: \(profile.pace.label)")
+                    Text("\(profile.teamName) | \(profile.archetype.label) Archetype | Pace: \(profile.pace.label)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -519,7 +577,9 @@ private struct SimulatorHubView: View {
 
     private func runLeague() {
         do {
-            var league = try createD1League(options: CreateLeagueOptions(userTeamName: profile.teamName, seed: "ios-league-\(profile.fullName)"))
+            var options = CreateLeagueOptions(userTeamName: profile.teamName, seed: "ios-league-\(profile.fullName)")
+            options.userHeadCoachSkills = profile.archetype.initialSkills
+            var league = try createD1League(options: options)
             autoFillUserNonConferenceOpponents(&league)
             generateSeasonSchedule(&league)
             _ = advanceToNextUserGame(&league)
@@ -542,6 +602,95 @@ private extension PaceProfile {
         case .fast: "Fast"
         case .veryFast: "Very Fast"
         }
+    }
+}
+
+private extension CoachArchetype {
+    var label: String {
+        switch self {
+        case .recruiting: "Recruiting"
+        case .offense: "Offense"
+        case .defense: "Defense"
+        case .playerDevelopment: "Player Development"
+        case .fundraising: "Fundraising"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .recruiting:
+            "Elite relationship builder. Starts with stronger recruiting and scouting ratings."
+        case .offense:
+            "System play-caller. Starts with stronger offensive coaching and guard/wing development."
+        case .defense:
+            "Stops-first tactician. Starts with stronger defensive coaching and scouting ratings."
+        case .playerDevelopment:
+            "Teacher and builder. Starts with stronger player growth ratings across positions."
+        case .fundraising:
+            "Program CEO. Starts with stronger fundraising and long-term program potential ratings."
+        }
+    }
+
+    var initialSkills: CoachSkills {
+        var skills = CoachSkills()
+        switch self {
+        case .recruiting:
+            skills.recruiting = 84
+            skills.scouting = 76
+            skills.playerDevelopment = 66
+            skills.guardDevelopment = 64
+            skills.wingDevelopment = 64
+            skills.bigDevelopment = 62
+            skills.offensiveCoaching = 62
+            skills.defensiveCoaching = 62
+            skills.fundraising = 58
+            skills.potential = 70
+        case .offense:
+            skills.recruiting = 60
+            skills.scouting = 64
+            skills.playerDevelopment = 72
+            skills.guardDevelopment = 80
+            skills.wingDevelopment = 76
+            skills.bigDevelopment = 66
+            skills.offensiveCoaching = 84
+            skills.defensiveCoaching = 58
+            skills.fundraising = 56
+            skills.potential = 68
+        case .defense:
+            skills.recruiting = 60
+            skills.scouting = 76
+            skills.playerDevelopment = 70
+            skills.guardDevelopment = 68
+            skills.wingDevelopment = 70
+            skills.bigDevelopment = 74
+            skills.offensiveCoaching = 56
+            skills.defensiveCoaching = 84
+            skills.fundraising = 56
+            skills.potential = 68
+        case .playerDevelopment:
+            skills.recruiting = 62
+            skills.scouting = 66
+            skills.playerDevelopment = 84
+            skills.guardDevelopment = 76
+            skills.wingDevelopment = 76
+            skills.bigDevelopment = 76
+            skills.offensiveCoaching = 66
+            skills.defensiveCoaching = 66
+            skills.fundraising = 56
+            skills.potential = 72
+        case .fundraising:
+            skills.recruiting = 64
+            skills.scouting = 62
+            skills.playerDevelopment = 62
+            skills.guardDevelopment = 60
+            skills.wingDevelopment = 60
+            skills.bigDevelopment = 60
+            skills.offensiveCoaching = 62
+            skills.defensiveCoaching = 62
+            skills.fundraising = 84
+            skills.potential = 78
+        }
+        return skills
     }
 }
 

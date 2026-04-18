@@ -11,6 +11,7 @@ const DEFAULT_COACH_SKILLS = Object.freeze({
   bigDevelopment: 50,
   offensiveCoaching: 50,
   defensiveCoaching: 50,
+  fundraising: 50,
   scouting: 50,
   potential: 50,
 });

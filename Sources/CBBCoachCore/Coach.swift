@@ -13,10 +13,52 @@ public struct CoachSkills: Codable, Equatable, Sendable {
     public var bigDevelopment: Int = 50
     public var offensiveCoaching: Int = 50
     public var defensiveCoaching: Int = 50
+    public var fundraising: Int = 50
     public var scouting: Int = 50
     public var potential: Int = 50
 
     public init() {}
+
+    enum CodingKeys: String, CodingKey {
+        case recruiting
+        case playerDevelopment
+        case guardDevelopment
+        case wingDevelopment
+        case bigDevelopment
+        case offensiveCoaching
+        case defensiveCoaching
+        case fundraising
+        case scouting
+        case potential
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        recruiting = try container.decodeIfPresent(Int.self, forKey: .recruiting) ?? 50
+        playerDevelopment = try container.decodeIfPresent(Int.self, forKey: .playerDevelopment) ?? 50
+        guardDevelopment = try container.decodeIfPresent(Int.self, forKey: .guardDevelopment) ?? 50
+        wingDevelopment = try container.decodeIfPresent(Int.self, forKey: .wingDevelopment) ?? 50
+        bigDevelopment = try container.decodeIfPresent(Int.self, forKey: .bigDevelopment) ?? 50
+        offensiveCoaching = try container.decodeIfPresent(Int.self, forKey: .offensiveCoaching) ?? 50
+        defensiveCoaching = try container.decodeIfPresent(Int.self, forKey: .defensiveCoaching) ?? 50
+        fundraising = try container.decodeIfPresent(Int.self, forKey: .fundraising) ?? 50
+        scouting = try container.decodeIfPresent(Int.self, forKey: .scouting) ?? 50
+        potential = try container.decodeIfPresent(Int.self, forKey: .potential) ?? 50
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(recruiting, forKey: .recruiting)
+        try container.encode(playerDevelopment, forKey: .playerDevelopment)
+        try container.encode(guardDevelopment, forKey: .guardDevelopment)
+        try container.encode(wingDevelopment, forKey: .wingDevelopment)
+        try container.encode(bigDevelopment, forKey: .bigDevelopment)
+        try container.encode(offensiveCoaching, forKey: .offensiveCoaching)
+        try container.encode(defensiveCoaching, forKey: .defensiveCoaching)
+        try container.encode(fundraising, forKey: .fundraising)
+        try container.encode(scouting, forKey: .scouting)
+        try container.encode(potential, forKey: .potential)
+    }
 
     static func normalized(from source: CoachSkills?, random: inout SeededRandom) -> CoachSkills {
         var output = CoachSkills()
@@ -29,6 +71,7 @@ public struct CoachSkills: Codable, Equatable, Sendable {
         output.bigDevelopment = clamp(source?.bigDevelopment ?? fallback(), min: 1, max: 100)
         output.offensiveCoaching = clamp(source?.offensiveCoaching ?? fallback(), min: 1, max: 100)
         output.defensiveCoaching = clamp(source?.defensiveCoaching ?? fallback(), min: 1, max: 100)
+        output.fundraising = clamp(source?.fundraising ?? fallback(), min: 1, max: 100)
         output.scouting = clamp(source?.scouting ?? fallback(), min: 1, max: 100)
         output.potential = clamp(source?.potential ?? fallback(), min: 1, max: 100)
 

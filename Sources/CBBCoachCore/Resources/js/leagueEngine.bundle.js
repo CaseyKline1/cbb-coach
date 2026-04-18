@@ -1254,6 +1254,22 @@ function createD1League(options = {}) {
   const userTeamState = teamStateById[userTeamId];
   const userConference = conferencesById[userTeamState.conferenceId];
   const userNonConferenceTarget = totalRegularSeasonGames - userConference.conferenceGamesTarget;
+  const requestedUserSkills =
+    options.userHeadCoachSkills && typeof options.userHeadCoachSkills === "object" ? options.userHeadCoachSkills : null;
+  if (requestedUserSkills) {
+    const headCoachSkills = userTeamState?.teamModel?.coachingStaff?.headCoach?.skills;
+    if (headCoachSkills && typeof headCoachSkills === "object") {
+      for (const [key, rawValue] of Object.entries(requestedUserSkills)) {
+        const numeric = Number(rawValue);
+        if (Number.isFinite(numeric) && Object.prototype.hasOwnProperty.call(headCoachSkills, key)) {
+          headCoachSkills[key] = clamp(Math.round(numeric), 1, 100);
+        }
+      }
+      if (Array.isArray(userTeamState?.teamModel?.coaches) && userTeamState.teamModel.coaches[0]) {
+        userTeamState.teamModel.coaches[0].skills = { ...headCoachSkills };
+      }
+    }
+  }
 
   return {
     version: 1,
