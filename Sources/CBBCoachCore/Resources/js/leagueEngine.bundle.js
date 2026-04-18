@@ -11,11 +11,19 @@ const {
 } = require("./gameEngine");
 
 const DEFAULT_TOTAL_REGULAR_SEASON_GAMES = 31;
-const DEFAULT_NON_CONFERENCE_BUFFER_DAYS = 0;
+const DEFAULT_NON_CONFERENCE_BUFFER_DAYS = 1;
 const DEFAULT_CONFERENCE_BUFFER_DAYS = 2;
 const LEAGUE_SAVE_FORMAT = "cbb-coach.league-state";
 const LEAGUE_SAVE_VERSION = 1;
 const DEFAULT_PRESEASON_BOARD_PAGE_SIZE = 20;
+
+const DEFAULT_COLLEGE_CONFERENCE_IDS = Object.freeze([
+  "acc",
+  "sec",
+  "big-ten",
+  "big-12",
+  "big-east",
+]);
 
 const TEAM_OVR_CONFERENCE_BONUS = Object.freeze({
   acc: 7,
@@ -23,128 +31,30 @@ const TEAM_OVR_CONFERENCE_BONUS = Object.freeze({
   "big-ten": 7,
   "big-east": 6,
   sec: 6,
-  "atlantic-10": 3,
-  american: 2,
-  "mountain-west": 3,
-  wcc: 3,
-  mvc: 2,
-  cusa: 1,
-  sun_belt: 1,
-  "sun-belt": 1,
 });
 
 const POSITION_TEMPLATE = Object.freeze(["PG", "SG", "SF", "PF", "C", "CG", "Wing", "F", "Big", "PG"]);
 
 const POSITION_OFFSETS = Object.freeze({
-  PG: {
-    shooting: 1,
-    passing: 10,
-    defendingPerimeter: 5,
-    rebounding: -6,
-    inside: -4,
-  },
-  SG: {
-    shooting: 6,
-    passing: 2,
-    defendingPerimeter: 4,
-    rebounding: -3,
-    inside: -2,
-  },
-  SF: {
-    shooting: 3,
-    passing: 1,
-    defendingPerimeter: 3,
-    rebounding: 2,
-    inside: 1,
-  },
-  PF: {
-    shooting: -1,
-    passing: -2,
-    defendingPerimeter: -1,
-    rebounding: 7,
-    inside: 7,
-  },
-  C: {
-    shooting: -4,
-    passing: -5,
-    defendingPerimeter: -5,
-    rebounding: 10,
-    inside: 10,
-  },
-  CG: {
-    shooting: 4,
-    passing: 7,
-    defendingPerimeter: 4,
-    rebounding: -4,
-    inside: -2,
-  },
-  Wing: {
-    shooting: 5,
-    passing: 1,
-    defendingPerimeter: 5,
-    rebounding: 1,
-    inside: -1,
-  },
-  F: {
-    shooting: 0,
-    passing: -1,
-    defendingPerimeter: 1,
-    rebounding: 5,
-    inside: 5,
-  },
-  Big: {
-    shooting: -3,
-    passing: -3,
-    defendingPerimeter: -4,
-    rebounding: 9,
-    inside: 9,
-  },
+  PG: { shooting: 1, passing: 10, defendingPerimeter: 5, rebounding: -6, inside: -4 },
+  SG: { shooting: 6, passing: 2, defendingPerimeter: 4, rebounding: -3, inside: -2 },
+  SF: { shooting: 3, passing: 1, defendingPerimeter: 3, rebounding: 2, inside: 1 },
+  PF: { shooting: -1, passing: -2, defendingPerimeter: -1, rebounding: 7, inside: 7 },
+  C: { shooting: -4, passing: -5, defendingPerimeter: -5, rebounding: 10, inside: 10 },
+  CG: { shooting: 4, passing: 7, defendingPerimeter: 4, rebounding: -4, inside: -2 },
+  Wing: { shooting: 5, passing: 1, defendingPerimeter: 5, rebounding: 1, inside: -1 },
+  F: { shooting: 0, passing: -1, defendingPerimeter: 1, rebounding: 5, inside: 5 },
+  Big: { shooting: -3, passing: -3, defendingPerimeter: -4, rebounding: 9, inside: 9 },
 });
 
 const FIRST_NAME_POOL = Object.freeze([
-  "Jalen",
-  "Marcus",
-  "Eli",
-  "Noah",
-  "Ty",
-  "Jordan",
-  "Malik",
-  "Darius",
-  "Caleb",
-  "Cameron",
-  "Xavier",
-  "Aiden",
-  "Isaiah",
-  "Liam",
-  "Mason",
-  "Jayden",
-  "Trent",
-  "Damon",
-  "Riley",
-  "Kaden",
+  "Jalen", "Marcus", "Eli", "Noah", "Ty", "Jordan", "Malik", "Darius", "Caleb", "Cameron",
+  "Xavier", "Aiden", "Isaiah", "Liam", "Mason", "Jayden", "Trent", "Damon", "Riley", "Kaden",
 ]);
 
 const LAST_NAME_POOL = Object.freeze([
-  "Carter",
-  "Brooks",
-  "Davis",
-  "Coleman",
-  "Thomas",
-  "Hill",
-  "Moore",
-  "Young",
-  "Turner",
-  "Jenkins",
-  "Mitchell",
-  "Hayes",
-  "Washington",
-  "Edwards",
-  "Jackson",
-  "Powell",
-  "Bennett",
-  "Foster",
-  "Reed",
-  "Bailey",
+  "Carter", "Brooks", "Davis", "Coleman", "Thomas", "Hill", "Moore", "Young", "Turner", "Jenkins",
+  "Mitchell", "Hayes", "Washington", "Edwards", "Jackson", "Powell", "Bennett", "Foster", "Reed", "Bailey",
 ]);
 
 function clamp(value, min, max) {
@@ -220,6 +130,10 @@ function canonicalName(value) {
     .trim();
 }
 
+function randomInt(min, maxInclusive, random = Math.random) {
+  return Math.floor(random() * (maxInclusive - min + 1)) + min;
+}
+
 function getDefaultConferenceGamesTarget(teamCount) {
   if (teamCount <= 8) return 14;
   if (teamCount <= 10) return 18;
@@ -235,25 +149,25 @@ function normalizeConferenceGamesTarget(rawTarget, teamCount, totalGames) {
   return clamp(parsed, minByConvention, Math.min(maxByConvention, maxByOpponentPool));
 }
 
-function buildConferenceCatalogFromSnapshot(snapshot, totalGames) {
-  const conferences = (snapshot?.conferences || []).map((conference) => {
-    const normalizedConferenceName = decodeHtmlEntities(conference.name);
-    const teams = (conference.teams || []).map((team) => ({
-      id: team.id || slugify(`${normalizedConferenceName}-${team.name}`),
-      name: decodeHtmlEntities(team.name),
-    }));
+function buildConferenceCatalogFromSnapshot(snapshot, totalGames, allowedConferenceIds = DEFAULT_COLLEGE_CONFERENCE_IDS) {
+  const allowed = new Set((Array.isArray(allowedConferenceIds) ? allowedConferenceIds : DEFAULT_COLLEGE_CONFERENCE_IDS).map(String));
 
-    return {
-      id: conference.id || slugify(normalizedConferenceName),
-      name: normalizedConferenceName,
-      teams,
-      conferenceGamesTarget: normalizeConferenceGamesTarget(
-        conference.inferredConferenceGames,
-        teams.length,
-        totalGames,
-      ),
-    };
-  });
+  const conferences = (snapshot?.conferences || [])
+    .filter((conference) => allowed.has(String(conference.id)))
+    .map((conference) => {
+      const normalizedConferenceName = decodeHtmlEntities(conference.name);
+      const teams = (conference.teams || []).map((team) => ({
+        id: team.id || slugify(`${normalizedConferenceName}-${team.name}`),
+        name: decodeHtmlEntities(team.name),
+      }));
+
+      return {
+        id: conference.id || slugify(normalizedConferenceName),
+        name: normalizedConferenceName,
+        teams,
+        conferenceGamesTarget: normalizeConferenceGamesTarget(conference.inferredConferenceGames, teams.length, totalGames),
+      };
+    });
 
   return {
     source: snapshot?.source || null,
@@ -261,10 +175,6 @@ function buildConferenceCatalogFromSnapshot(snapshot, totalGames) {
     teamCount: conferences.reduce((sum, conference) => sum + conference.teams.length, 0),
     conferences,
   };
-}
-
-function randomInt(min, maxInclusive, random = Math.random) {
-  return Math.floor(random() * (maxInclusive - min + 1)) + min;
 }
 
 function applyPlayerRatings(player, roleBase, random) {
@@ -467,44 +377,6 @@ function computeConferenceDayCount(conferenceSize, conferenceGamesTarget) {
   return Math.ceil((conferenceGamesTarget * conferenceSize) / (conferenceSize - 1));
 }
 
-function getUserLockedGames(league, seedKey = league.seed) {
-  const selectedOpponentIds = league.userPreseason.nonConferenceOpponentIds;
-  if (!selectedOpponentIds.length) return [];
-
-  const daySlots = spreadEvenly(league.settings.nonConferenceDayCount, selectedOpponentIds.length);
-  const random = createSeededRandom(`${seedKey}:locked-nonconf`);
-
-  return selectedOpponentIds.map((opponentTeamId, index) => {
-    const [homeTeamId, awayTeamId] = pickHomeAway(
-      {
-        homeGamesByTeam: new Map(),
-        awayGamesByTeam: new Map(),
-      },
-      league.userTeamId,
-      opponentTeamId,
-      random,
-    );
-
-    return {
-      homeTeamId,
-      awayTeamId,
-      day: daySlots[index],
-      lockedByUser: true,
-    };
-  });
-}
-
-function spreadEvenly(maxDay, count) {
-  if (count <= 0) return [];
-  if (count === 1) return [1];
-  const values = [];
-  for (let i = 0; i < count; i += 1) {
-    const ratio = i / (count - 1);
-    values.push(clamp(Math.round(1 + ratio * (maxDay - 1)), 1, maxDay));
-  }
-  return unique(values);
-}
-
 function scheduleNonConferenceGames({
   league,
   seedKey = league.seed,
@@ -512,7 +384,6 @@ function scheduleNonConferenceGames({
   teamStateById,
   nonConferenceTargetByTeam,
   dayPool,
-  lockedGames,
 }) {
   const random = createSeededRandom(`${seedKey}:non-conference`);
   const remaining = new Map(Object.entries(nonConferenceTargetByTeam));
@@ -522,11 +393,10 @@ function scheduleNonConferenceGames({
     if (teamAId === teamBId) return false;
     if (teamStateById[teamAId].conferenceId === teamStateById[teamBId].conferenceId) return false;
     const key = gamePairKey(teamAId, teamBId);
-    const pairCount = pairCounts.get(key) || 0;
-    return pairCount < maxPairings;
+    return (pairCounts.get(key) || 0) < maxPairings;
   }
 
-  function schedulePair(teamAId, teamBId, day, lockedByUser = false) {
+  function schedulePair(teamAId, teamBId, day) {
     const [homeTeamId, awayTeamId] = pickHomeAway(context, teamAId, teamBId, random);
     const game = {
       id: `g-${context.nextGameId++}`,
@@ -535,33 +405,18 @@ function scheduleNonConferenceGames({
       awayTeamId,
       type: "non_conference",
       conferenceId: null,
-      lockedByUser,
+      lockedByUser: false,
       completed: false,
       result: null,
     };
 
-    const didSchedule = addScheduledGame(context, game);
-    if (!didSchedule) return false;
+    if (!addScheduledGame(context, game)) return false;
 
     const key = gamePairKey(teamAId, teamBId);
     pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
     remaining.set(teamAId, (remaining.get(teamAId) || 0) - 1);
     remaining.set(teamBId, (remaining.get(teamBId) || 0) - 1);
     return true;
-  }
-
-  for (const lockedGame of lockedGames) {
-    if (!remaining.has(lockedGame.homeTeamId) || !remaining.has(lockedGame.awayTeamId)) continue;
-    if ((remaining.get(lockedGame.homeTeamId) || 0) <= 0 || (remaining.get(lockedGame.awayTeamId) || 0) <= 0) continue;
-    if (!canSchedulePair(lockedGame.homeTeamId, lockedGame.awayTeamId, 1)) continue;
-
-    let scheduledDay = lockedGame.day;
-    if (!dayPool.includes(scheduledDay)) {
-      scheduledDay = selectDayForMatchup(context, dayPool, lockedGame.homeTeamId, lockedGame.awayTeamId);
-    }
-    if (!scheduledDay) continue;
-
-    schedulePair(lockedGame.homeTeamId, lockedGame.awayTeamId, scheduledDay, true);
   }
 
   const allTeamIds = Object.keys(teamStateById);
@@ -576,16 +431,16 @@ function scheduleNonConferenceGames({
       random,
     );
 
-    const taken = new Set();
+    const used = new Set();
     for (let i = 0; i < available.length; i += 1) {
       const teamAId = available[i];
-      if (taken.has(teamAId)) continue;
+      if (used.has(teamAId)) continue;
 
       let bestOpponent = null;
       let bestScore = -Infinity;
       for (let j = i + 1; j < available.length; j += 1) {
         const teamBId = available[j];
-        if (taken.has(teamBId)) continue;
+        if (used.has(teamBId)) continue;
         if (!canSchedulePair(teamAId, teamBId, 1)) continue;
 
         const score = (remaining.get(teamBId) || 0) * 3 + random();
@@ -596,59 +451,13 @@ function scheduleNonConferenceGames({
       }
 
       if (!bestOpponent) continue;
-      if (schedulePair(teamAId, bestOpponent, day, false)) {
-        taken.add(teamAId);
-        taken.add(bestOpponent);
+      if (schedulePair(teamAId, bestOpponent, day)) {
+        used.add(teamAId);
+        used.add(bestOpponent);
       }
     }
   }
 
-  let repairPass = 0;
-  while (repairPass < 3) {
-    repairPass += 1;
-    const unresolved = allTeamIds.filter((teamId) => (remaining.get(teamId) || 0) > 0);
-    if (!unresolved.length) break;
-
-    let madeProgress = false;
-    const pairCap = repairPass >= 2 ? 2 : 1;
-    const ordered = shuffle(
-      unresolved.sort((a, b) => (remaining.get(b) || 0) - (remaining.get(a) || 0)),
-      random,
-    );
-
-    for (const teamAId of ordered) {
-      if ((remaining.get(teamAId) || 0) <= 0) continue;
-
-      const opponents = ordered
-        .filter((teamBId) => (remaining.get(teamBId) || 0) > 0 && teamBId !== teamAId)
-        .filter((teamBId) => canSchedulePair(teamAId, teamBId, pairCap));
-
-      let scheduled = false;
-      for (const teamBId of opponents) {
-        const day = selectDayForMatchup(context, dayPool, teamAId, teamBId);
-        if (!day) continue;
-        if (schedulePair(teamAId, teamBId, day, false)) {
-          madeProgress = true;
-          scheduled = true;
-          break;
-        }
-      }
-
-      if (!scheduled && repairPass === 3) {
-        const extraDay = Math.max(...dayPool) + 1;
-        dayPool.push(extraDay);
-        const teamBId = opponents[0];
-        if (teamBId && schedulePair(teamAId, teamBId, extraDay, false)) {
-          madeProgress = true;
-        }
-      }
-    }
-
-    if (!madeProgress) break;
-  }
-
-  // Final deterministic fallback: keep pairing unresolved teams, expanding the
-  // calendar when needed. This avoids rare dead-ends from greedy passes.
   let fallbackGuard = 0;
   while (fallbackGuard < 20000) {
     fallbackGuard += 1;
@@ -680,7 +489,7 @@ function scheduleNonConferenceGames({
         dayPool.push(day);
       }
 
-      if (schedulePair(teamAId, opponentId, day, false)) {
+      if (schedulePair(teamAId, opponentId, day)) {
         progress = true;
       }
     }
@@ -690,10 +499,7 @@ function scheduleNonConferenceGames({
 
   const stillUnresolved = allTeamIds.filter((teamId) => (remaining.get(teamId) || 0) > 0);
   if (stillUnresolved.length) {
-    throw new Error(
-      `Unable to complete non-conference scheduling for ${stillUnresolved.length} teams. ` +
-        `Try reducing locked games or using a different seed.`,
-    );
+    throw new Error(`Unable to complete non-conference scheduling for ${stillUnresolved.length} teams.`);
   }
 
   return {
@@ -717,8 +523,7 @@ function scheduleConferenceGames({
 
   let degreeSum = conferenceTeamIds.reduce((sum, teamId) => sum + (remaining.get(teamId) || 0), 0);
   if (degreeSum % 2 !== 0) {
-    const candidates = conferenceTeamIds.filter((teamId) => teamId !== league.userTeamId);
-    const fallback = candidates[0] || conferenceTeamIds[0];
+    const fallback = conferenceTeamIds.find((teamId) => teamId !== league.userTeamId) || conferenceTeamIds[0];
     if (fallback) {
       remaining.set(fallback, Math.max(0, (remaining.get(fallback) || 0) - 1));
       degreeSum -= 1;
@@ -745,8 +550,7 @@ function scheduleConferenceGames({
       result: null,
     };
 
-    const didSchedule = addScheduledGame(context, game);
-    if (!didSchedule) return false;
+    if (!addScheduledGame(context, game)) return false;
 
     remaining.set(teamAId, (remaining.get(teamAId) || 0) - 1);
     remaining.set(teamBId, (remaining.get(teamBId) || 0) - 1);
@@ -760,7 +564,7 @@ function scheduleConferenceGames({
   }
 
   let safety = 0;
-  while (unresolvedTeams().length > 0 && safety < 2500) {
+  while (unresolvedTeams().length > 0 && safety < 3000) {
     safety += 1;
     let madeProgress = false;
 
@@ -836,9 +640,7 @@ function scheduleConferenceGames({
       }
 
       if (!scheduled && repairPass === 4) {
-        throw new Error(
-          `Could not finish conference schedule for ${conference.name}. Remaining: ${teamAId} (${remaining.get(teamAId)}).`,
-        );
+        throw new Error(`Could not finish conference schedule for ${conference.name}.`);
       }
     }
 
@@ -870,24 +672,18 @@ function buildScheduleForLeague(league) {
   const nonConferenceTargetByTeam = {};
   for (const teamId of allTeamIds) {
     const teamState = teamStateById[teamId];
-    nonConferenceTargetByTeam[teamId] =
-      league.settings.totalRegularSeasonGames - league.conferences.byId[teamState.conferenceId].conferenceGamesTarget;
+    const conferenceTarget = league.conferences.byId[teamState.conferenceId].conferenceGamesTarget;
+    nonConferenceTargetByTeam[teamId] = Math.max(0, league.settings.totalRegularSeasonGames - conferenceTarget);
   }
 
-  const totalDesiredGames = allTeamIds.reduce(
-    (sum, teamId) => sum + league.settings.totalRegularSeasonGames,
-    0,
-  );
-
+  const totalDesiredGames = allTeamIds.reduce((sum) => sum + league.settings.totalRegularSeasonGames, 0);
   if (totalDesiredGames % 2 !== 0) {
-    const trimCandidates = allTeamIds.filter((teamId) => teamId !== league.userTeamId);
-    const teamToTrim = trimCandidates[0] || allTeamIds[0];
+    const teamToTrim = allTeamIds.find((teamId) => teamId !== league.userTeamId) || allTeamIds[0];
     nonConferenceTargetByTeam[teamToTrim] = Math.max(0, nonConferenceTargetByTeam[teamToTrim] - 1);
     league.metadata.teamWithReducedSchedule = teamToTrim;
   }
 
-  const initialNonConferenceDayCount =
-    Math.max(...Object.values(nonConferenceTargetByTeam), 0) + DEFAULT_NON_CONFERENCE_BUFFER_DAYS;
+  const initialNonConferenceDayCount = Math.max(...Object.values(nonConferenceTargetByTeam), 0) + DEFAULT_NON_CONFERENCE_BUFFER_DAYS;
   const maxAttempts = 20;
   let context = null;
   let conferenceStartDay = 0;
@@ -898,9 +694,8 @@ function buildScheduleForLeague(league) {
     try {
       const scheduleSeed = `${league.seed}:schedule:${attempt}`;
       const attemptContext = initializeScheduleContext();
-      const nonConferenceDayPool = Array.from({ length: initialNonConferenceDayCount }, (_, idx) => idx + 1);
 
-      const lockedGames = getUserLockedGames(league, scheduleSeed);
+      const nonConferenceDayPool = Array.from({ length: initialNonConferenceDayCount }, (_, idx) => idx + 1);
       const nonConferenceResult = scheduleNonConferenceGames({
         league,
         seedKey: scheduleSeed,
@@ -908,20 +703,14 @@ function buildScheduleForLeague(league) {
         teamStateById,
         nonConferenceTargetByTeam,
         dayPool: nonConferenceDayPool,
-        lockedGames,
       });
 
       const attemptConferenceStartDay = nonConferenceResult.nonConferenceDaysUsed + 1;
 
       for (const conference of league.conferences.list) {
         const conferenceTeamIds = conference.teams.map((team) => team.id);
-        const requiredConferenceDays =
-          computeConferenceDayCount(conference.teams.length, conference.conferenceGamesTarget) + DEFAULT_CONFERENCE_BUFFER_DAYS;
-
-        const conferenceDayPool = Array.from(
-          { length: requiredConferenceDays },
-          (_, idx) => attemptConferenceStartDay + idx,
-        );
+        const requiredConferenceDays = computeConferenceDayCount(conference.teams.length, conference.conferenceGamesTarget) + DEFAULT_CONFERENCE_BUFFER_DAYS;
+        const conferenceDayPool = Array.from({ length: requiredConferenceDays }, (_, idx) => attemptConferenceStartDay + idx);
 
         scheduleConferenceGames({
           league,
@@ -968,7 +757,6 @@ function buildScheduleForLeague(league) {
     nonConferenceDays: nonConferenceDaysUsed,
   };
 
-  // Validate team game totals.
   for (const teamId of allTeamIds) {
     const allGames = context.games.filter((game) => game.homeTeamId === teamId || game.awayTeamId === teamId);
     const conferenceGames = allGames.filter((game) => game.type === "conference");
@@ -990,8 +778,6 @@ function cloneTeamForSimulation(teamModel) {
     return cloned;
   }
 
-  // Preserve player identity across `players` and `lineup` so box score tracking
-  // does not treat lineup copies as extra roster members.
   const byIdentity = new Map();
   cloned.players.forEach((player) => {
     const identity = `${player?.bio?.name || "unknown"}|${player?.bio?.position || ""}`;
@@ -1037,7 +823,6 @@ function applyCompletedGameResult(league, game, result) {
 
   const homeTeam = league.teams.byId[game.homeTeamId];
   const awayTeam = league.teams.byId[game.awayTeamId];
-
   const homeWon = result.homeScore > result.awayScore;
 
   homeTeam.record.games += 1;
@@ -1119,7 +904,7 @@ function simulateScheduledGame(league, game, options = {}) {
 
 function simulateThroughDay(league, targetDay, options = {}) {
   if (!league.schedule || !league.schedule.games.length) {
-    throw new Error("No season schedule found. Run generateSeasonSchedule(...) first.");
+    throw new Error("No season schedule found.");
   }
 
   const gamesToSimulate = league.schedule.games.filter((game) => !game.completed && game.day <= targetDay);
@@ -1184,8 +969,32 @@ function createTeamState({ teamId, teamName, conferenceId, teamModel, overall })
   };
 }
 
-function buildLeagueCatalog(totalGames = DEFAULT_TOTAL_REGULAR_SEASON_GAMES) {
-  return buildConferenceCatalogFromSnapshot(d1Snapshot, totalGames);
+function buildLeagueCatalog(totalGames = DEFAULT_TOTAL_REGULAR_SEASON_GAMES, options = {}) {
+  const allowedConferenceIds = Array.isArray(options.allowedConferenceIds) && options.allowedConferenceIds.length
+    ? options.allowedConferenceIds
+    : DEFAULT_COLLEGE_CONFERENCE_IDS;
+  return buildConferenceCatalogFromSnapshot(d1Snapshot, totalGames, allowedConferenceIds);
+}
+
+function listCareerTeamOptions(options = {}) {
+  const totalRegularSeasonGames =
+    Number.isFinite(Number(options.totalRegularSeasonGames)) && Number(options.totalRegularSeasonGames) > 0
+      ? Math.round(Number(options.totalRegularSeasonGames))
+      : DEFAULT_TOTAL_REGULAR_SEASON_GAMES;
+
+  const catalog = buildLeagueCatalog(totalRegularSeasonGames, options);
+  return catalog.conferences
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .flatMap((conference) => conference.teams
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((team) => ({
+        teamId: team.id,
+        teamName: team.name,
+        conferenceId: conference.id,
+        conferenceName: conference.name,
+      })));
 }
 
 function createD1League(options = {}) {
@@ -1194,7 +1003,7 @@ function createD1League(options = {}) {
       ? Math.round(Number(options.totalRegularSeasonGames))
       : DEFAULT_TOTAL_REGULAR_SEASON_GAMES;
 
-  const catalog = buildLeagueCatalog(totalRegularSeasonGames);
+  const catalog = buildLeagueCatalog(totalRegularSeasonGames, options);
   const seed = options.seed || `${Date.now()}`;
 
   const conferencesById = {};
@@ -1246,18 +1055,13 @@ function createD1League(options = {}) {
   }
 
   if (!userTeamId || !teamStateById[userTeamId]) {
-    throw new Error(
-      "Unable to determine user team. Pass a valid `userTeamId` or exact `userTeamName` that exists in D1 data.",
-    );
+    throw new Error("Unable to determine user team. Pass a valid `userTeamId` or exact `userTeamName`.");
   }
 
-  const userTeamState = teamStateById[userTeamId];
-  const userConference = conferencesById[userTeamState.conferenceId];
-  const userNonConferenceTarget = totalRegularSeasonGames - userConference.conferenceGamesTarget;
   const requestedUserSkills =
     options.userHeadCoachSkills && typeof options.userHeadCoachSkills === "object" ? options.userHeadCoachSkills : null;
   if (requestedUserSkills) {
-    const headCoachSkills = userTeamState?.teamModel?.coachingStaff?.headCoach?.skills;
+    const headCoachSkills = teamStateById[userTeamId]?.teamModel?.coachingStaff?.headCoach?.skills;
     if (headCoachSkills && typeof headCoachSkills === "object") {
       for (const [key, rawValue] of Object.entries(requestedUserSkills)) {
         const numeric = Number(rawValue);
@@ -1265,20 +1069,20 @@ function createD1League(options = {}) {
           headCoachSkills[key] = clamp(Math.round(numeric), 1, 100);
         }
       }
-      if (Array.isArray(userTeamState?.teamModel?.coaches) && userTeamState.teamModel.coaches[0]) {
-        userTeamState.teamModel.coaches[0].skills = { ...headCoachSkills };
+      if (Array.isArray(teamStateById[userTeamId]?.teamModel?.coaches) && teamStateById[userTeamId].teamModel.coaches[0]) {
+        teamStateById[userTeamId].teamModel.coaches[0].skills = { ...headCoachSkills };
       }
     }
   }
 
-  return {
+  const league = {
     version: 1,
     seed,
     source: catalog.source,
-    status: "preseason_nonconference",
+    status: "in_season",
     settings: {
       totalRegularSeasonGames,
-      nonConferenceDayCount: userNonConferenceTarget,
+      nonConferenceDayCount: Math.max(1, totalRegularSeasonGames - 20),
     },
     metadata: {
       teamWithReducedSchedule: null,
@@ -1286,7 +1090,7 @@ function createD1League(options = {}) {
     currentDay: 0,
     userTeamId,
     userPreseason: {
-      requiredNonConferenceGames: userNonConferenceTarget,
+      requiredNonConferenceGames: 0,
       nonConferenceOpponentIds: [],
     },
     conferences: {
@@ -1300,161 +1104,48 @@ function createD1League(options = {}) {
     schedule: null,
     userGameHistory: [],
   };
+
+  buildScheduleForLeague(league);
+  return league;
 }
 
-function listUserNonConferenceOptions(league) {
-  const userTeamState = league.teams.byId[league.userTeamId];
-  const selected = new Set(league.userPreseason.nonConferenceOpponentIds);
-  return league.teams.list
-    .filter((team) => team.id !== league.userTeamId)
-    .filter((team) => team.conferenceId !== userTeamState.conferenceId)
-    .map((team) => ({
-      teamId: team.id,
-      teamName: team.name,
-      conferenceId: team.conferenceId,
-      conferenceName: league.conferences.byId[team.conferenceId].name,
-      overall: team.overall,
-      selected: selected.has(team.id),
-    }))
-    .sort((a, b) => {
-      if (a.overall !== b.overall) return b.overall - a.overall;
-      return a.teamName.localeCompare(b.teamName);
-    });
+function listUserNonConferenceOptions() {
+  return [];
 }
 
-function validateUserNonConferenceSelection(league, opponentIds) {
-  const uniqueOpponentIds = unique(opponentIds || []);
-  const requiredCount = league.userPreseason.requiredNonConferenceGames;
-  const userConferenceId = league.teams.byId[league.userTeamId].conferenceId;
-
-  if (uniqueOpponentIds.length > requiredCount) {
-    throw new Error(`You selected ${uniqueOpponentIds.length} opponents but only ${requiredCount} are allowed.`);
-  }
-
-  for (const opponentId of uniqueOpponentIds) {
-    const team = league.teams.byId[opponentId];
-    if (!team) throw new Error(`Unknown team id in selection: ${opponentId}`);
-    if (team.id === league.userTeamId) throw new Error("User team cannot schedule itself.");
-    if (team.conferenceId === userConferenceId) {
-      throw new Error(`Opponent ${team.name} is in your conference; choose a non-conference opponent.`);
-    }
-  }
-
-  return uniqueOpponentIds;
-}
-
-function setUserNonConferenceOpponents(league, opponentIds) {
-  if (league.status !== "preseason_nonconference") {
-    throw new Error("Non-conference selection is only available before schedule generation.");
-  }
-
-  const validatedOpponentIds = validateUserNonConferenceSelection(league, opponentIds);
-  league.userPreseason.nonConferenceOpponentIds = validatedOpponentIds;
-
+function setUserNonConferenceOpponents() {
   return {
-    selectedCount: validatedOpponentIds.length,
-    requiredCount: league.userPreseason.requiredNonConferenceGames,
-    complete: validatedOpponentIds.length === league.userPreseason.requiredNonConferenceGames,
+    selectedCount: 0,
+    requiredCount: 0,
+    complete: true,
   };
 }
 
-function autoFillUserNonConferenceOpponents(league) {
-  if (league.status !== "preseason_nonconference") {
-    throw new Error("Cannot auto-fill opponents after the season starts.");
-  }
-
-  const required = league.userPreseason.requiredNonConferenceGames;
-  const selected = new Set(league.userPreseason.nonConferenceOpponentIds);
-  const options = listUserNonConferenceOptions(league)
-    .filter((option) => !selected.has(option.teamId))
-    .sort((a, b) => {
-      if (a.overall !== b.overall) return b.overall - a.overall;
-      return a.teamName.localeCompare(b.teamName);
-    });
-
-  for (const option of options) {
-    if (selected.size >= required) break;
-    selected.add(option.teamId);
-  }
-
-  if (selected.size < required) {
-    throw new Error(
-      `Could not auto-fill enough opponents. Needed ${required} but only found ${selected.size}.`,
-    );
-  }
-
-  league.userPreseason.nonConferenceOpponentIds = [...selected];
-  return league.userPreseason.nonConferenceOpponentIds;
+function autoFillUserNonConferenceOpponents() {
+  return [];
 }
 
-function getPreseasonSchedulingBoard(league, options = {}) {
-  if (league.status !== "preseason_nonconference") {
-    throw new Error("Preseason scheduling board is only available before schedule generation.");
-  }
-
+function getPreseasonSchedulingBoard(_league, options = {}) {
   const pageSize = clamp(Math.round(asNumber(options.pageSize, DEFAULT_PRESEASON_BOARD_PAGE_SIZE)), 5, 100);
-  const requestedPage = Math.max(1, Math.round(asNumber(options.page, 1)));
-  const search = String(options.search || "")
-    .trim()
-    .toLowerCase();
-
-  const filteredOptions = listUserNonConferenceOptions(league).filter((option) => {
-    if (!search) return true;
-    return (
-      option.teamName.toLowerCase().includes(search) ||
-      option.teamId.toLowerCase().includes(search) ||
-      option.conferenceName.toLowerCase().includes(search)
-    );
-  });
-
-  const totalPages = Math.max(1, Math.ceil(filteredOptions.length / pageSize));
-  const page = clamp(requestedPage, 1, totalPages);
-  const startIndex = (page - 1) * pageSize;
-  const selectedIds = unique(league.userPreseason.nonConferenceOpponentIds);
-
-  const selectedOpponents = selectedIds
-    .map((teamId) => {
-      const team = league.teams.byId[teamId];
-      if (!team) return null;
-      const conference = league.conferences.byId[team.conferenceId];
-      return {
-        teamId: team.id,
-        teamName: team.name,
-        conferenceId: team.conferenceId,
-        conferenceName: conference?.name || "Unknown",
-        overall: team.overall,
-      };
-    })
-    .filter(Boolean);
-
+  const page = Math.max(1, Math.round(asNumber(options.page, 1)));
   return {
     page,
     pageSize,
-    totalPages,
-    search,
-    totalOptions: filteredOptions.length,
-    requiredCount: league.userPreseason.requiredNonConferenceGames,
-    selectedCount: selectedOpponents.length,
-    remainingCount: Math.max(0, league.userPreseason.requiredNonConferenceGames - selectedOpponents.length),
-    selectedOpponents,
-    options: filteredOptions.slice(startIndex, startIndex + pageSize).map((option, index) => ({
-      ...option,
-      displayIndex: index + 1,
-      absoluteIndex: startIndex + index + 1,
-    })),
+    totalPages: 1,
+    search: String(options.search || "").trim().toLowerCase(),
+    totalOptions: 0,
+    requiredCount: 0,
+    selectedCount: 0,
+    remainingCount: 0,
+    selectedOpponents: [],
+    options: [],
   };
 }
 
 function generateSeasonSchedule(league) {
-  if (league.status !== "preseason_nonconference") {
-    throw new Error("Season schedule already generated.");
+  if (!league.schedule || !Array.isArray(league.schedule.games) || league.schedule.games.length === 0) {
+    buildScheduleForLeague(league);
   }
-
-  if (league.userPreseason.nonConferenceOpponentIds.length < league.userPreseason.requiredNonConferenceGames) {
-    autoFillUserNonConferenceOpponents(league);
-  }
-
-  buildScheduleForLeague(league);
   league.status = "in_season";
   return {
     totalGames: league.schedule.games.length,
@@ -1485,10 +1176,32 @@ function getUserSchedule(league) {
     .sort((a, b) => a.day - b.day);
 }
 
+function getUserRoster(league) {
+  const userTeam = league?.teams?.byId?.[league?.userTeamId];
+  const players = Array.isArray(userTeam?.teamModel?.players) ? userTeam.teamModel.players : [];
+  const lineup = Array.isArray(userTeam?.teamModel?.lineup) ? userTeam.teamModel.lineup : [];
+  const lineupKeys = new Set(lineup.map((player) => `${player?.bio?.name || ""}|${player?.bio?.position || ""}`));
+
+  return players
+    .map((player) => {
+      const key = `${player?.bio?.name || ""}|${player?.bio?.position || ""}`;
+      return {
+        name: player?.bio?.name || "Unknown",
+        position: player?.bio?.position || "",
+        year: player?.bio?.year || "",
+        overall: estimatePlayerOverall(player),
+        isStarter: lineupKeys.has(key),
+      };
+    })
+    .sort((a, b) => {
+      if (a.isStarter !== b.isStarter) return a.isStarter ? -1 : 1;
+      if (a.overall !== b.overall) return b.overall - a.overall;
+      return a.name.localeCompare(b.name);
+    });
+}
+
 function advanceToNextUserGame(league, options = {}) {
-  if (league.status === "preseason_nonconference") {
-    generateSeasonSchedule(league);
-  }
+  generateSeasonSchedule(league);
 
   const userSchedule = getUserSchedule(league);
   const pending = userSchedule.find((game) => !game.completed);
@@ -1544,38 +1257,6 @@ function getUserCompletedGames(league) {
 
 function getConferenceStandings(league, conferenceId) {
   return buildConferenceStandings(league, conferenceId);
-}
-
-function sanitizeSelectionForLoadedLeague(league, rawSelection, requiredCount) {
-  const selection = unique(Array.isArray(rawSelection) ? rawSelection : []);
-  const userTeam = league.teams.byId[league.userTeamId];
-  if (!userTeam) return [];
-
-  const filtered = selection.filter((opponentId) => {
-    const opponent = league.teams.byId[opponentId];
-    if (!opponent) return false;
-    if (opponent.id === league.userTeamId) return false;
-    return opponent.conferenceId !== userTeam.conferenceId;
-  });
-
-  return filtered.slice(0, Math.max(0, Math.round(asNumber(requiredCount, filtered.length))));
-}
-
-function deriveRequiredUserNonConferenceGames(league) {
-  const userTeam = league?.teams?.byId?.[league?.userTeamId];
-  const conference = userTeam ? league?.conferences?.byId?.[userTeam.conferenceId] : null;
-  const conferenceTeamCount = Array.isArray(conference?.teams) ? conference.teams.length : 10;
-
-  const conferenceGamesTarget = normalizeConferenceGamesTarget(
-    conference?.conferenceGamesTarget,
-    conferenceTeamCount,
-    asNumber(league?.settings?.totalRegularSeasonGames, DEFAULT_TOTAL_REGULAR_SEASON_GAMES),
-  );
-  const totalRegularSeasonGames = Math.max(
-    conferenceGamesTarget,
-    Math.round(asNumber(league?.settings?.totalRegularSeasonGames, conferenceGamesTarget + 11)),
-  );
-  return Math.max(0, totalRegularSeasonGames - conferenceGamesTarget);
 }
 
 function normalizeTeamRecord(rawRecord = {}) {
@@ -1694,7 +1375,7 @@ function hydrateLoadedLeagueState(rawLeague) {
 
   league.version = Math.round(asNumber(league.version, 1));
   league.seed = String(league.seed || `${Date.now()}`);
-  league.status = typeof league.status === "string" ? league.status : "preseason_nonconference";
+  league.status = typeof league.status === "string" ? league.status : "in_season";
   league.currentDay = Math.max(0, Math.round(asNumber(league.currentDay, 0)));
   league.metadata = typeof league.metadata === "object" && league.metadata ? league.metadata : {};
   if (!Object.prototype.hasOwnProperty.call(league.metadata, "teamWithReducedSchedule")) {
@@ -1702,32 +1383,28 @@ function hydrateLoadedLeagueState(rawLeague) {
   }
   league.userGameHistory = Array.isArray(league.userGameHistory) ? league.userGameHistory : [];
 
-  const requiredNonConferenceGames = deriveRequiredUserNonConferenceGames(league);
-  const totalRegularSeasonGames = Math.max(
-    requiredNonConferenceGames,
-    Math.round(asNumber(league.settings?.totalRegularSeasonGames, requiredNonConferenceGames + 20)),
-  );
   league.settings = {
-    totalRegularSeasonGames,
-    nonConferenceDayCount: Math.max(
-      1,
-      Math.round(asNumber(league.settings?.nonConferenceDayCount, requiredNonConferenceGames || 1)),
-    ),
+    totalRegularSeasonGames: Math.max(1, Math.round(asNumber(league.settings?.totalRegularSeasonGames, DEFAULT_TOTAL_REGULAR_SEASON_GAMES))),
+    nonConferenceDayCount: Math.max(1, Math.round(asNumber(league.settings?.nonConferenceDayCount, 12))),
   };
 
-  const rawSelection = league.userPreseason?.nonConferenceOpponentIds;
   league.userPreseason = {
-    requiredNonConferenceGames,
-    nonConferenceOpponentIds: sanitizeSelectionForLoadedLeague(league, rawSelection, requiredNonConferenceGames),
+    requiredNonConferenceGames: 0,
+    nonConferenceOpponentIds: [],
   };
 
   league.schedule = normalizeScheduleState(league.schedule);
+  if (!league.schedule) {
+    buildScheduleForLeague(league);
+  }
+
   if (league.schedule?.totalDays) {
     league.currentDay = Math.min(league.currentDay, league.schedule.totalDays);
   } else {
     league.currentDay = 0;
   }
 
+  league.status = "in_season";
   return league;
 }
 
@@ -1787,8 +1464,8 @@ function getLeagueSummary(league) {
     totalConferences: league.conferences.list.length,
     userTeamId: league.userTeamId,
     userTeamName: league.teams.byId[league.userTeamId].name,
-    requiredUserNonConferenceGames: league.userPreseason.requiredNonConferenceGames,
-    userSelectedNonConferenceGames: league.userPreseason.nonConferenceOpponentIds.length,
+    requiredUserNonConferenceGames: 0,
+    userSelectedNonConferenceGames: 0,
     scheduleGenerated: Boolean(league.schedule),
     totalScheduledGames: league.schedule?.games?.length || 0,
   };
@@ -1798,7 +1475,9 @@ module.exports = {
   DEFAULT_TOTAL_REGULAR_SEASON_GAMES,
   LEAGUE_SAVE_FORMAT,
   LEAGUE_SAVE_VERSION,
+  DEFAULT_COLLEGE_CONFERENCE_IDS,
   buildLeagueCatalog,
+  listCareerTeamOptions,
   createD1League,
   listUserNonConferenceOptions,
   getPreseasonSchedulingBoard,
@@ -1806,6 +1485,7 @@ module.exports = {
   autoFillUserNonConferenceOpponents,
   generateSeasonSchedule,
   getUserSchedule,
+  getUserRoster,
   advanceToNextUserGame,
   getUserCompletedGames,
   getConferenceStandings,
@@ -1813,3 +1493,6 @@ module.exports = {
   saveLeagueState,
   loadLeagueState,
 };
+// Intentionally empty: league engine consolidated in part001.js.
+// Intentionally empty: league engine consolidated in part001.js.
+// Intentionally empty: league engine consolidated in part001.js.

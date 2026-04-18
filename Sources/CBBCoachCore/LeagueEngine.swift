@@ -21,6 +21,21 @@ public struct NonConferenceOption: Codable, Equatable, Sendable {
     public var selected: Bool?
 }
 
+public struct CareerTeamOption: Codable, Equatable, Sendable {
+    public var teamId: String
+    public var teamName: String
+    public var conferenceId: String
+    public var conferenceName: String
+}
+
+public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
+    public var name: String
+    public var position: String
+    public var year: String
+    public var overall: Int
+    public var isStarter: Bool
+}
+
 public struct PreseasonBoardOption: Codable, Equatable, Sendable {
     public var teamId: String
     public var teamName: String
@@ -121,6 +136,15 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
     return LeagueState(handle: handle)
 }
 
+public func listCareerTeamOptions() -> [CareerTeamOption] {
+    do {
+        let raw = try JSRuntime.shared.invoke(moduleId: leagueEngineModule, fn: "listCareerTeamOptions", args: [])
+        return try fromJSONValue(raw, as: [CareerTeamOption].self)
+    } catch {
+        fatalError("listCareerTeamOptions failed: \(error)")
+    }
+}
+
 public func listUserNonConferenceOptions(_ league: LeagueState) -> [NonConferenceOption] {
     do {
         let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "listUserNonConferenceOptions", handle: league.handle, restArgs: [])
@@ -174,6 +198,15 @@ public func getUserSchedule(_ league: LeagueState) -> [UserGameSummary] {
         return try fromJSONValue(raw, as: [UserGameSummary].self)
     } catch {
         fatalError("getUserSchedule failed: \(error)")
+    }
+}
+
+public func getUserRoster(_ league: LeagueState) -> [UserRosterPlayerSummary] {
+    do {
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "getUserRoster", handle: league.handle, restArgs: [])
+        return try fromJSONValue(raw, as: [UserRosterPlayerSummary].self)
+    } catch {
+        fatalError("getUserRoster failed: \(error)")
     }
 }
 

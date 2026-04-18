@@ -10,12 +10,23 @@ struct ContentView: View {
     @AppStorage("coachOffense") private var coachOffenseRaw: String = OffensiveFormation.motion.rawValue
     @AppStorage("coachDefense") private var coachDefenseRaw: String = DefenseScheme.manToMan.rawValue
     @AppStorage("coachArchetype") private var coachArchetypeRaw: String = CoachArchetype.recruiting.rawValue
-    @AppStorage("coachTeam") private var coachTeam: String = "Duke"
+    @AppStorage("coachCareerTeam") private var coachCareerTeam: String = ""
 
     var body: some View {
         Group {
             if coachCreationComplete, let profile = loadedProfile {
-                SimulatorHubView(profile: profile, onCreateNewCoach: resetCoachCreation)
+                if coachCareerTeam.isEmpty {
+                    CareerTeamSelectionView { selectedTeam in
+                        coachCareerTeam = selectedTeam
+                    }
+                } else {
+                    CollegeLeagueHomeView(
+                        profile: profile,
+                        teamName: coachCareerTeam,
+                        onChooseDifferentTeam: { coachCareerTeam = "" },
+                        onCreateNewCoach: resetCoachCreation
+                    )
+                }
             } else {
                 CoachCreationFlowView(onComplete: saveProfile)
             }
@@ -29,8 +40,7 @@ struct ContentView: View {
             let defense = DefenseScheme(rawValue: coachDefenseRaw),
             let archetype = CoachArchetype(rawValue: coachArchetypeRaw),
             !coachFirstName.isEmpty,
-            !coachLastName.isEmpty,
-            !coachTeam.isEmpty
+            !coachLastName.isEmpty
         else {
             return nil
         }
@@ -42,8 +52,7 @@ struct ContentView: View {
             archetype: archetype,
             pace: pace,
             offense: offense,
-            defense: defense,
-            teamName: coachTeam
+            defense: defense
         )
     }
 
@@ -55,11 +64,11 @@ struct ContentView: View {
         coachOffenseRaw = profile.offense.rawValue
         coachDefenseRaw = profile.defense.rawValue
         coachArchetypeRaw = profile.archetype.rawValue
-        coachTeam = profile.teamName
         coachCreationComplete = true
     }
 
     private func resetCoachCreation() {
+        coachCareerTeam = ""
         coachCreationComplete = false
     }
 }
@@ -82,10 +91,18 @@ private struct CoachCreationFlowView: View {
                     }
                 case .style(let identity, let archetype):
                     CoachStyleStepView(identity: identity) { style in
-                        path.append(.team(identity, archetype, style))
+                        onComplete(
+                            CoachCreationProfile(
+                                firstName: identity.firstName,
+                                lastName: identity.lastName,
+                                age: identity.age,
+                                archetype: archetype,
+                                pace: style.pace,
+                                offense: style.offense,
+                                defense: style.defense
+                            )
+                        )
                     }
-                case .team(let identity, let archetype, let style):
-                    CoachTeamStepView(identity: identity, archetype: archetype, style: style, onComplete: onComplete)
                 }
             }
         }
@@ -95,7 +112,6 @@ private struct CoachCreationFlowView: View {
 private enum CoachCreationStep: Hashable {
     case archetype(CoachIdentitySelection)
     case style(CoachIdentitySelection, CoachArchetype)
-    case team(CoachIdentitySelection, CoachArchetype, CoachStyleSelection)
 }
 
 private struct CoachCreationProfile {
@@ -106,7 +122,6 @@ private struct CoachCreationProfile {
     let pace: PaceProfile
     let offense: OffensiveFormation
     let defense: DefenseScheme
-    let teamName: String
 
     var fullName: String {
         "\(firstName) \(lastName)"
@@ -148,7 +163,7 @@ private struct CoachIdentityStepView: View {
     var body: some View {
         OnboardingStepScaffold(
             title: "Create Your Coach",
-            subtitle: "Step 1 of 4",
+            subtitle: "Step 1 of 3",
             navTitle: "Coach Setup",
             nextLabel: "Next: Archetype",
             nextDisabled: !isValid,
@@ -202,7 +217,7 @@ private struct CoachArchetypeStepView: View {
     var body: some View {
         OnboardingStepScaffold(
             title: "Choose Your Archetype",
-            subtitle: "Step 2 of 4",
+            subtitle: "Step 2 of 3",
             navTitle: "Coach Setup",
             nextLabel: "Next: Style",
             nextDisabled: false,
@@ -242,9 +257,9 @@ private struct CoachStyleStepView: View {
     var body: some View {
         OnboardingStepScaffold(
             title: "Define Your Style",
-            subtitle: "Step 3 of 4",
+            subtitle: "Step 3 of 3",
             navTitle: "Coach Setup",
-            nextLabel: "Next: Team",
+            nextLabel: "Finish Coach",
             nextDisabled: false,
             onNext: {
                 onNext(
@@ -289,80 +304,74 @@ private struct CoachStyleStepView: View {
     }
 }
 
-private struct CoachTeamStepView: View {
-    let identity: CoachIdentitySelection
-    let archetype: CoachArchetype
-    let style: CoachStyleSelection
-    let onComplete: (CoachCreationProfile) -> Void
+private struct CareerTeamSelectionView: View {
+    let onTeamSelected: (String) -> Void
 
-    @State private var selectedTeam: String = featuredTeams[0]
+    @State private var teams: [CareerTeamOption] = []
+    @State private var selectedTeamId: String?
 
     var body: some View {
-        OnboardingStepScaffold(
-            title: "Choose Your Program",
-            subtitle: "Step 4 of 4",
-            navTitle: "Coach Setup",
-            nextLabel: "Start Career",
-            nextDisabled: false,
-            onNext: {
-                onComplete(
-                    CoachCreationProfile(
-                        firstName: identity.firstName,
-                        lastName: identity.lastName,
-                        age: identity.age,
-                        archetype: archetype,
-                        pace: style.pace,
-                        offense: style.offense,
-                        defense: style.defense,
-                        teamName: selectedTeam
-                    )
-                )
-            }
-        ) {
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(Self.featuredTeams, id: \.self) { team in
-                    Button {
-                        selectedTeam = team
-                    } label: {
-                        HStack {
-                            Text(team)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if selectedTeam == team {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.orange)
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Choose Your Program")
+                    .font(.title2.weight(.black))
+                Text("Pick any team in the ACC, SEC, Big Ten, Big 12, or Big East.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(teams, id: \.teamId) { team in
+                            Button {
+                                selectedTeamId = team.teamId
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(team.teamName)
+                                            .font(.subheadline.weight(.semibold))
+                                        Text(team.conferenceName)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if selectedTeamId == team.teamId {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.orange)
+                                    }
+                                }
+                                .padding(12)
+                                .background(selectedTeamId == team.teamId ? Color.orange.opacity(0.1) : Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(selectedTeamId == team.teamId ? Color.orange.opacity(0.5) : Color.black.opacity(0.08), lineWidth: 1)
+                                )
                             }
+                            .buttonStyle(.plain)
                         }
-                        .padding(12)
-                        .background(selectedTeam == team ? Color.orange.opacity(0.1) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(selectedTeam == team ? Color.orange.opacity(0.5) : Color.black.opacity(0.08), lineWidth: 1)
-                        )
                     }
-                    .buttonStyle(.plain)
+                }
+
+                Button("Start With Selected Team") {
+                    guard
+                        let selectedTeamId,
+                        let selected = teams.first(where: { $0.teamId == selectedTeamId })
+                    else { return }
+                    onTeamSelected(selected.teamName)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(selectedTeamId == nil)
+            }
+            .padding(16)
+            .navigationTitle("Team Selection")
+            .onAppear {
+                if teams.isEmpty {
+                    teams = listCareerTeamOptions()
+                    selectedTeamId = teams.first?.teamId
                 }
             }
-            .padding(18)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
-
-    private static let featuredTeams: [String] = [
-        "Duke",
-        "North Carolina",
-        "UConn",
-        "Kansas",
-        "Kentucky",
-        "UCLA",
-        "Gonzaga",
-        "Villanova",
-        "Michigan State",
-        "Baylor"
-    ]
 }
 
 struct SingleSelectDropdown<Option: Hashable>: View {
@@ -496,12 +505,16 @@ private struct OnboardingStepScaffold<Content: View>: View {
     }
 }
 
-private struct SimulatorHubView: View {
+private struct CollegeLeagueHomeView: View {
     let profile: CoachCreationProfile
+    let teamName: String
+    let onChooseDifferentTeam: () -> Void
     let onCreateNewCoach: () -> Void
 
-    @State private var gameSummary: String = "Tap simulate to run a game"
-    @State private var leagueSummary: String = ""
+    @State private var league: LeagueState?
+    @State private var statusText: String = "Creating league..."
+    @State private var roster: [UserRosterPlayerSummary] = []
+    @State private var schedule: [UserGameSummary] = []
 
     var body: some View {
         NavigationStack {
@@ -509,28 +522,53 @@ private struct SimulatorHubView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Coach \(profile.fullName)")
                         .font(.largeTitle.bold())
-                    Text("\(profile.teamName) | \(profile.archetype.label) Archetype | Pace: \(profile.pace.label)")
+                    Text("\(teamName) | \(profile.archetype.label) Archetype | Pace: \(profile.pace.label)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
-                Text(gameSummary)
-                    .font(.headline)
+                Text(statusText)
+                    .font(.subheadline)
 
-                if !leagueSummary.isEmpty {
-                    Text(leagueSummary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                GroupBox("Roster") {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(roster, id: \.name) { player in
+                                HStack {
+                                    Text("\(player.isStarter ? "⭐" : "•") \(player.name)")
+                                        .font(.subheadline)
+                                    Spacer()
+                                    Text("\(player.position) \(player.year) OVR \(player.overall)")
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 170)
                 }
 
-                HStack(spacing: 12) {
-                    Button("Simulate Game") {
-                        runGame()
+                GroupBox("Schedule") {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(schedule.prefix(18), id: \.gameId) { game in
+                                let marker = game.completed == true ? "✓" : "•"
+                                Text("\(marker) Day \(game.day ?? 0): \(game.isHome == true ? "vs" : "@") \(game.opponentName ?? "Unknown")")
+                                    .font(.subheadline)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 220)
+                }
+
+                HStack(spacing: 10) {
+                    Button("Sim Next User Game") {
+                        playNextGame()
                     }
                     .buttonStyle(.borderedProminent)
 
-                    Button("Start \(profile.teamName) League") {
-                        runLeague()
+                    Button("Choose Team") {
+                        onChooseDifferentTeam()
                     }
                     .buttonStyle(.bordered)
                 }
@@ -544,50 +582,42 @@ private struct SimulatorHubView: View {
                 Spacer()
             }
             .padding(20)
-            .navigationTitle("Simulator")
+            .navigationTitle("College League")
+            .onAppear {
+                if league == nil {
+                    createLeague()
+                }
+            }
         }
     }
 
-    private func makeLineup(prefix: String, three: Int, mid: Int, layup: Int, random: inout SeededRandom) -> [Player] {
-        (0..<5).map { i in
-            var p = createPlayer()
-            p.bio.name = "\(prefix) Player \(i + 1)"
-            p.bio.position = [.pg, .sg, .sf, .pf, .c][i]
-            p.shooting.threePointShooting = clamp(three + i - 2, min: 35, max: 99)
-            p.shooting.midrangeShot = clamp(mid + i - 2, min: 35, max: 99)
-            p.shooting.layups = clamp(layup + i - 2, min: 35, max: 99)
-            p.skills.shotIQ = clamp(65 + i * 3, min: 35, max: 99)
-            p.defense.perimeterDefense = clamp(62 + i * 2, min: 35, max: 99)
-            p.defense.shotContest = clamp(60 + i * 3, min: 35, max: 99)
-            return p
-        }
-    }
-
-    private func runGame() {
-        var random = SeededRandom(seed: hashString("ios-sim-\(profile.teamName)-\(profile.fullName)"))
-        let homePlayers = makeLineup(prefix: profile.teamName, three: 74, mid: 70, layup: 72, random: &random)
-        let awayPlayers = makeLineup(prefix: "Rival", three: 71, mid: 68, layup: 73, random: &random)
-
-        let home = createTeam(options: CreateTeamOptions(name: profile.teamName, players: homePlayers), random: &random)
-        let away = createTeam(options: CreateTeamOptions(name: "Away State", players: awayPlayers), random: &random)
-
-        let result = simulateGame(homeTeam: home, awayTeam: away, random: &random)
-        gameSummary = "\(result.away.name) \(result.away.score) - \(result.home.name) \(result.home.score)"
-    }
-
-    private func runLeague() {
+    private func createLeague() {
         do {
-            var options = CreateLeagueOptions(userTeamName: profile.teamName, seed: "ios-league-\(profile.fullName)")
+            var options = CreateLeagueOptions(userTeamName: teamName, seed: "ios-league-\(profile.fullName)-\(teamName)")
             options.userHeadCoachSkills = profile.archetype.initialSkills
-            var league = try createD1League(options: options)
-            autoFillUserNonConferenceOpponents(&league)
-            generateSeasonSchedule(&league)
-            _ = advanceToNextUserGame(&league)
-            let summary = getLeagueSummary(league)
-            leagueSummary = "\(summary.userTeamName): \(summary.totalScheduledGames) games scheduled"
+            let created = try createD1League(options: options)
+            league = created
+            roster = getUserRoster(created)
+            schedule = getUserSchedule(created)
+            let summary = getLeagueSummary(created)
+            statusText = "\(summary.userTeamName): \(summary.totalScheduledGames) total games generated"
         } catch {
-            leagueSummary = "League error: \(error.localizedDescription)"
+            statusText = "League error: \(error.localizedDescription)"
         }
+    }
+
+    private func playNextGame() {
+        guard var currentLeague = league else { return }
+        guard let result = advanceToNextUserGame(&currentLeague) else { return }
+        league = currentLeague
+        schedule = getUserSchedule(currentLeague)
+        if result.done == true {
+            statusText = "Season complete."
+            return
+        }
+        let userScore = result.score?.numberValue(for: "user")?.roundedInt ?? 0
+        let oppScore = result.score?.numberValue(for: "opponent")?.roundedInt ?? 0
+        statusText = "Day \(result.day ?? 0): \(result.opponentName ?? "Unknown") \(userScore)-\(oppScore) (\(result.won == true ? "W" : "L"))"
     }
 }
 
@@ -715,6 +745,21 @@ private extension DefenseScheme {
         case .zone131: "1-3-1 Zone"
         case .packLine: "Pack Line"
         }
+    }
+}
+
+private extension JSONValue {
+    func numberValue(for key: String) -> Double? {
+        guard case let .object(values) = self, let value = values[key], case let .number(number) = value else {
+            return nil
+        }
+        return number
+    }
+}
+
+private extension Double {
+    var roundedInt: Int {
+        Int(self.rounded())
     }
 }
 
