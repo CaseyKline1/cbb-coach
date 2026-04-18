@@ -10,15 +10,16 @@ const CLOSE_GAME_MARGIN = 6;
 const CLUTCH_RATING_IMPACT = 0.08;
 const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0;
 const CONTESTED_SHOOTING_FOUL_BASE_CHANCE = 0.15;
-const PASS_DELIVERY_COMPLETION_EDGE_BONUS = 0.4;
-const LAYUP_MAKE_EDGE_BONUS = 0.28;
-const DUNK_MAKE_EDGE_BONUS = 0.38;
+const PASS_DELIVERY_COMPLETION_EDGE_BONUS = 0.52;
+const LAYUP_MAKE_EDGE_BONUS = 0.2;
+const DUNK_MAKE_EDGE_BONUS = 0.25;
 const MIDRANGE_MAKE_EDGE_PENALTY = 0.34;
 const HOOK_MAKE_EDGE_BONUS = 0.08;
 const FADEAWAY_MAKE_EDGE_PENALTY = 0.06;
 const THREE_POINT_MAKE_EDGE_PENALTY = 0.4;
 const THREE_POINT_CONTESTED_EXTRA_PENALTY = 0.12;
 const THREE_POINT_SUCCESS_PROBABILITY_PENALTY = 0.12;
+const GLOBAL_SHOT_MAKE_PROBABILITY_PENALTY = 0.04;
 
 const OffensiveSpot = Object.freeze({
   MIDDLE_PAINT: "middle_paint",
@@ -1126,7 +1127,7 @@ function choosePlayType({ offenseTeam, ballHandler, random = Math.random }) {
     [
       {
         value: "dribble_drive",
-        weight: Math.max(1, drive) * teamDriveBias,
+        weight: Math.max(1, drive) * teamDriveBias * 1.32,
       },
       {
         value: "post_up",
@@ -1140,7 +1141,8 @@ function choosePlayType({ offenseTeam, ballHandler, random = Math.random }) {
             pickAndRoll * 0.62 + drive * 0.22 + (100 - shootVsPass) * 0.16,
           ) *
           teamPickAndRollBias *
-          pickFormationBoost,
+          pickFormationBoost *
+          0.97,
       },
       {
         value: "pick_and_pop",
@@ -1150,11 +1152,12 @@ function choosePlayType({ offenseTeam, ballHandler, random = Math.random }) {
             pickAndPop * 0.62 + passAroundProfile * 0.2 + (100 - shootVsPass) * 0.18,
           ) *
           teamPickAndPopBias *
-          pickFormationBoost,
+          pickFormationBoost *
+          0.42,
       },
       {
         value: "pass_around_for_shot",
-        weight: Math.max(1, passAround) * teamPassAroundBias * passAroundFormationBoost,
+        weight: Math.max(1, passAround) * teamPassAroundBias * passAroundFormationBoost * 0.93,
       },
     ],
     random,
@@ -1557,6 +1560,7 @@ function resolveShot({
   if (isThreePointShot) {
     madeProbability = clamp(madeProbability - THREE_POINT_SUCCESS_PROBABILITY_PENALTY, 0.02, 0.9);
   }
+  madeProbability = clamp(madeProbability - GLOBAL_SHOT_MAKE_PROBABILITY_PENALTY, 0.02, 0.9);
 
   let made = random() < madeProbability;
   if (isShootingFoul) {
@@ -2681,9 +2685,9 @@ function resolveFastBreakWindow({
 
   if (phase === 1) {
     const pushChance = clamp(
-      0.03 + (sourceType === "steal" ? 0.08 : 0) + pushIntent * 0.75 + headStart * 0.3,
-      0.005,
-      0.58,
+      0.08 + (sourceType === "steal" ? 0.12 : 0) + pushIntent * 0.9 + headStart * 0.35,
+      0.02,
+      0.82,
     );
 
     if (random() >= pushChance) {
@@ -2817,11 +2821,11 @@ function resolveFastBreakWindow({
 
   const leadDefender = pickTransitionPointDefender(defenseLineup, random);
   const secondaryWindow = clamp(
-    0.18 + pushIntent * 0.7 - defenseRecoveryIntent * 0.45 - headStart * 0.2 + sourceBoost * 0.45,
+    0.26 + pushIntent * 0.8 - defenseRecoveryIntent * 0.4 - headStart * 0.15 + sourceBoost * 0.55,
     0,
-    0.72,
+    0.84,
   );
-  const attackChance = clamp(0.32 + secondaryWindow * 0.6, 0.08, 0.84);
+  const attackChance = clamp(0.44 + secondaryWindow * 0.58, 0.14, 0.9);
   const attackSecondary = random() < attackChance && secondaryWindow >= 0.12;
 
   const runner = transition.runner || pickTransitionRunner(offenseLineup, random);
