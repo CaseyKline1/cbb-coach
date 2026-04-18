@@ -2374,26 +2374,13 @@ function resolveActionChunk(state, random = Math.random) {
     while (!actionDone && !possessionChanged) {
       const canStillPass = passesCompleted < maxPasses;
       const activeScrambleBonus = scrambleBonus;
-      const isInitialTouch = passesCompleted === 0;
       const shotQuality = clamp(openBeforeCatch * 0.85 + activeScrambleBonus * 0.4, 0.1, 1.05);
-      const shouldShootBase = shouldTakeShotThisAction({
+      const shouldShoot = shouldTakeShotThisAction({
         state,
         shooter: currentHandler,
         shotQuality,
         random,
       });
-      // Give the initial guard touch a true quick-shot read before the first swing pass.
-      const firstTouchShotChance = isInitialTouch
-        ? clamp(
-            0.15 +
-              clamp((getRating(currentHandler, "skills.shotIQ") - 55) / 260, -0.06, 0.16) +
-              clamp((getRating(currentHandler, "tendencies.shootVsPass") - 48) / 260, -0.1, 0.2) +
-              clamp((shotQuality - 0.35) * 0.5, -0.08, 0.22),
-            0.08,
-            0.55,
-          )
-        : 0;
-      const shouldShoot = shouldShootBase || (isInitialTouch && random() < firstTouchShotChance);
 
       if (shouldShoot || !canStillPass) {
         if (!shouldShoot && !resolveLateClockBailout({
