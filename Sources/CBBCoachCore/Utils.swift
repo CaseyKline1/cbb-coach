@@ -1,12 +1,12 @@
 import Foundation
 
 @inlinable
-func clamp<T: Comparable>(_ value: T, min lower: T, max upper: T) -> T {
+public func clamp<T: Comparable>(_ value: T, min lower: T, max upper: T) -> T {
     Swift.max(lower, Swift.min(value, upper))
 }
 
 @inlinable
-func asInt(_ value: Double) -> Int {
+public func asInt(_ value: Double) -> Int {
     Int(value.rounded())
 }
 
