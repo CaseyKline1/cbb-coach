@@ -1125,7 +1125,7 @@ function resolveShot({
       defenseRatings: [
         "defense.shotContest",
         "defense.perimeterDefense",
-        "athleticism.lateralQuickness",
+        "defense.lateralQuickness",
       ],
       foulDraw: "shooting.drawFoul",
       basePoints: 2,
@@ -1138,7 +1138,7 @@ function resolveShot({
       defenseRatings: [
         "defense.shotContest",
         "defense.perimeterDefense",
-        "athleticism.lateralQuickness",
+        "defense.lateralQuickness",
       ],
       foulDraw: "shooting.drawFoul",
       basePoints: 2,
@@ -1192,7 +1192,7 @@ function resolveShot({
       defenseRatings: [
         "defense.shotContest",
         "defense.perimeterDefense",
-        "athleticism.lateralQuickness",
+        "defense.lateralQuickness",
       ],
       foulDraw: "shooting.drawFoul",
       basePoints: 2,
