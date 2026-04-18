@@ -1701,7 +1701,7 @@ function chooseDriveFinishType(shooter, random = Math.random) {
     getRating(shooter, "shooting.dunks") +
     getRating(shooter, "athleticism.vertical") * 0.5;
 
-  if (shotIQ >= 70) {
+  if (shotIQ >= 50) {
     return layupQuality >= dunkQuality ? "layup" : "dunk";
   }
 
@@ -1967,15 +1967,26 @@ function resolveLooseBallRecovery({
   }
 
   const averageHustle = average(candidates.map((entry) => getRating(entry.player, "skills.hustle")));
+  const averageBurst = average(candidates.map((entry) => getRating(entry.player, "athleticism.burst")));
+  const averageHands = average(candidates.map((entry) => getRating(entry.player, "skills.hands")));
   const recoveredBy = pickWeighted(
     candidates.map((entry) => {
       const hustle = getRating(entry.player, "skills.hustle");
+      const burst = getRating(entry.player, "athleticism.burst");
+      const hands = getRating(entry.player, "skills.hands");
       const hustleEdge = (hustle - averageHustle) / 22;
+      const burstEdge = (burst - averageBurst) / 24;
+      const handsEdge = (hands - averageHands) / 28;
       const hustleMultiplier = clamp(1 + hustleEdge * 1.85, 0.25, 3.8);
+      const burstMultiplier = clamp(1 + burstEdge * 0.42, 0.75, 1.35);
+      const handsMultiplier = clamp(1 + handsEdge * 0.28, 0.8, 1.22);
       const proximityMultiplier = clamp(1.45 - entry.distance / (radius + 0.35), 0.25, 1.3);
       return {
         value: entry,
-        weight: Math.max(0.15, proximityMultiplier * hustleMultiplier),
+        weight: Math.max(
+          0.15,
+          proximityMultiplier * hustleMultiplier * burstMultiplier * handsMultiplier,
+        ),
       };
     }),
     random,
