@@ -1077,7 +1077,7 @@ function simulateScheduledGame(league, game, options = {}) {
         ? game.awayTeamId
         : null;
 
-  const includeDetailedArtifacts = userInvolved;
+  const includePlayByPlay = userInvolved;
 
   return {
     homeScore: detailedResult.home.score,
@@ -1085,9 +1085,9 @@ function simulateScheduledGame(league, game, options = {}) {
     winnerTeamId,
     quickSim: false,
     wentToOvertime: detailedResult.playByPlay.some((event) => event.type === "overtime_start"),
-    ...(includeDetailedArtifacts
+    boxScore: detailedResult.boxScore,
+    ...(includePlayByPlay
       ? {
-          boxScore: detailedResult.boxScore,
           playByPlay: detailedResult.playByPlay,
         }
       : {}),
@@ -1836,7 +1836,11 @@ function advanceToNextUserGame(league, options = {}) {
     return { done: true, message: "Season complete for user team." };
   }
 
-  simulateThroughDay(league, pending.day, options);
+  const simOptions = {
+    ...options,
+    simulateCpuWithDetailedEngine: options.simulateCpuWithDetailedEngine !== false,
+  };
+  simulateThroughDay(league, pending.day, simOptions);
 
   const game = league.schedule.byId[pending.gameId];
   const opponentTeamId = game.homeTeamId === league.userTeamId ? game.awayTeamId : game.homeTeamId;
