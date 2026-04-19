@@ -1239,6 +1239,34 @@ function normalizeRotationMinutes(value, fallback) {
   return clamp(Math.round(parsed * 2) / 2, 0, 40);
 }
 
+function normalizeRotationSlotMinutes(starterValue, backupValue, fallbackStarter, fallbackBackup, hasBackup = true) {
+  const starterRaw = Number(starterValue);
+  const backupRaw = Number(backupValue);
+  const hasStarter = Number.isFinite(starterRaw);
+  const hasBackupValue = Number.isFinite(backupRaw);
+
+  if (!hasBackup) {
+    return {
+      starterMinutes: normalizeRotationMinutes(starterRaw, fallbackStarter),
+      backupMinutes: 0,
+    };
+  }
+
+  if (!hasStarter && hasBackupValue) {
+    const backupMinutes = normalizeRotationMinutes(backupRaw, fallbackBackup);
+    return {
+      starterMinutes: normalizeRotationMinutes(40 - backupMinutes, fallbackStarter),
+      backupMinutes,
+    };
+  }
+
+  const starterMinutes = normalizeRotationMinutes(starterRaw, fallbackStarter);
+  return {
+    starterMinutes,
+    backupMinutes: normalizeRotationMinutes(40 - starterMinutes, fallbackBackup),
+  };
+}
+
 function findPlayerByIndex(players, index) {
   if (!Array.isArray(players)) return null;
   const parsed = Number(index);
@@ -1323,18 +1351,20 @@ function inferUserRotationSlots(league) {
     const fallbackStarterMinutes = starter ? (lineupSet.has(starter) ? 30 : 24) : 24;
     const fallbackBackupMinutes = backup ? 40 - fallbackStarterMinutes : 0;
 
-    const starterMinutes = normalizeRotationMinutes(rawStarter, fallbackStarterMinutes);
-    const backupMinutes = normalizeRotationMinutes(
+    const normalizedMinutes = normalizeRotationSlotMinutes(
+      rawStarter,
       rawBackup,
-      backup ? Math.max(0, 40 - starterMinutes) : 0,
+      fallbackStarterMinutes,
+      fallbackBackupMinutes,
+      Boolean(backup),
     );
 
     slots.push({
       position: slotPosition,
       starterIndex: starterIndex >= 0 ? starterIndex : null,
       backupIndex: backupIndex >= 0 ? backupIndex : null,
-      starterMinutes,
-      backupMinutes,
+      starterMinutes: normalizedMinutes.starterMinutes,
+      backupMinutes: normalizedMinutes.backupMinutes,
     });
   });
 
@@ -1357,12 +1387,19 @@ function setUserRotation(league, rawSlots = []) {
   const merged = ROTATION_SLOTS.map((position, index) => {
     const incoming = requested.find((entry) => String(entry?.position || "").toUpperCase() === position) || {};
     const base = defaultSlots[index] || {};
+    const normalizedMinutes = normalizeRotationSlotMinutes(
+      incoming.starterMinutes,
+      incoming.backupMinutes,
+      base.starterMinutes ?? 30,
+      base.backupMinutes ?? 10,
+      true,
+    );
     return {
       position,
       starterIndex: incoming.starterIndex ?? base.starterIndex ?? null,
       backupIndex: incoming.backupIndex ?? base.backupIndex ?? null,
-      starterMinutes: normalizeRotationMinutes(incoming.starterMinutes, base.starterMinutes ?? 30),
-      backupMinutes: normalizeRotationMinutes(incoming.backupMinutes, base.backupMinutes ?? 10),
+      starterMinutes: normalizedMinutes.starterMinutes,
+      backupMinutes: normalizedMinutes.backupMinutes,
     };
   });
 

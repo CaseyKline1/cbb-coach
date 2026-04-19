@@ -923,6 +923,7 @@ private struct RotationSettingsView: View {
     let onSave: ([UserRotationSlot]) -> Void
 
     @State private var editedSlots: [UserRotationSlot] = []
+    @State private var isApplyingIncomingSlots: Bool = false
     @State private var statusText: String = "Adjust your preferred starters, backups, and minutes."
 
     var body: some View {
@@ -947,7 +948,7 @@ private struct RotationSettingsView: View {
                                 label: "Starter Minutes",
                                 value: Binding(
                                     get: { editedSlots[index].starterMinutes },
-                                    set: { editedSlots[index].starterMinutes = $0 }
+                                    set: { setStarterMinutes(at: index, to: $0) }
                                 ),
                                 step: 1
                             )
@@ -964,7 +965,7 @@ private struct RotationSettingsView: View {
                                 label: "Backup Minutes",
                                 value: Binding(
                                     get: { editedSlots[index].backupMinutes },
-                                    set: { editedSlots[index].backupMinutes = $0 }
+                                    set: { setBackupMinutes(at: index, to: $0) }
                                 ),
                                 step: 1
                             )
@@ -975,33 +976,71 @@ private struct RotationSettingsView: View {
                 Text(statusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                Button("Save Rotation") {
-                    editedSlots = normalized(editedSlots)
-                    onSave(editedSlots)
-                    statusText = "Rotation saved."
-                }
-                .buttonStyle(.borderedProminent)
             }
             .padding(16)
         }
         .navigationTitle("Rotation")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            editedSlots = normalized(slots)
+            applyIncomingSlots(slots)
         }
         .onChange(of: slots) { _, updated in
-            editedSlots = normalized(updated)
+            applyIncomingSlots(updated)
         }
+        .onChange(of: editedSlots) { _, updated in
+            if isApplyingIncomingSlots { return }
+            let normalizedUpdated = normalized(updated)
+            if !areSlotsEqual(updated, normalizedUpdated) {
+                editedSlots = normalizedUpdated
+                return
+            }
+            onSave(normalizedUpdated)
+            statusText = "Rotation auto-saved."
+        }
+    }
+
+    private func applyIncomingSlots(_ source: [UserRotationSlot]) {
+        isApplyingIncomingSlots = true
+        editedSlots = normalized(source)
+        isApplyingIncomingSlots = false
+    }
+
+    private func areSlotsEqual(_ lhs: [UserRotationSlot], _ rhs: [UserRotationSlot]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        for index in lhs.indices {
+            let left = lhs[index]
+            let right = rhs[index]
+            if left.position != right.position { return false }
+            if left.starterIndex != right.starterIndex { return false }
+            if left.backupIndex != right.backupIndex { return false }
+            if left.starterMinutes != right.starterMinutes { return false }
+            if left.backupMinutes != right.backupMinutes { return false }
+        }
+        return true
     }
 
     private func normalized(_ source: [UserRotationSlot]) -> [UserRotationSlot] {
         source.map { slot in
             var normalizedSlot = slot
-            normalizedSlot.starterMinutes = clampMinutes(slot.starterMinutes)
-            normalizedSlot.backupMinutes = clampMinutes(slot.backupMinutes)
+            let starterMinutes = clampMinutes(slot.starterMinutes)
+            normalizedSlot.starterMinutes = starterMinutes
+            normalizedSlot.backupMinutes = clampMinutes(40 - starterMinutes)
             return normalizedSlot
         }
+    }
+
+    private func setStarterMinutes(at index: Int, to value: Double) {
+        guard editedSlots.indices.contains(index) else { return }
+        let starterMinutes = clampMinutes(value)
+        editedSlots[index].starterMinutes = starterMinutes
+        editedSlots[index].backupMinutes = clampMinutes(40 - starterMinutes)
+    }
+
+    private func setBackupMinutes(at index: Int, to value: Double) {
+        guard editedSlots.indices.contains(index) else { return }
+        let backupMinutes = clampMinutes(value)
+        editedSlots[index].backupMinutes = backupMinutes
+        editedSlots[index].starterMinutes = clampMinutes(40 - backupMinutes)
     }
 
     private func clampMinutes(_ value: Double) -> Double {
