@@ -111,6 +111,10 @@ public struct Player: Codable, Equatable, Sendable {
         public var energy: Double = 100
         public var clutchTime: Bool = false
         public var fouledOut: Bool = false
+        public var homeCourtMultiplier: Double = 1
+        public var possessionRole: String?
+        public var offensiveCoachingModifier: Double = 1
+        public var defensiveCoachingModifier: Double = 1
     }
 
     public var bio = Bio()

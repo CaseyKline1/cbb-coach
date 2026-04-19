@@ -51,6 +51,34 @@ func simulateGameSmoke() {
     #expect(!result.playByPlay.isEmpty)
 }
 
+@Test("Native resolveInteraction favors stronger offensive profile")
+func resolveInteractionNative() {
+    var random = SeededRandom(seed: 99)
+    var offense = createPlayer()
+    offense.shooting.threePointShooting = 88
+    offense.shooting.midrangeShot = 82
+    offense.skills.shotIQ = 84
+    offense.athleticism.speed = 80
+    offense.condition.energy = 96
+
+    var defense = createPlayer()
+    defense.defense.perimeterDefense = 58
+    defense.defense.lateralQuickness = 60
+    defense.skills.clutch = 45
+    defense.condition.energy = 90
+
+    let result = resolveInteraction(
+        offensePlayer: offense,
+        defensePlayer: defense,
+        offenseRatings: ["shooting.threePointShooting", "skills.shotIQ", "athleticism.speed"],
+        defenseRatings: ["defense.perimeterDefense", "defense.lateralQuickness", "skills.hands"],
+        random: &random
+    )
+
+    #expect(result.offenseScore > result.defenseScore)
+    #expect(result.edge > 0)
+}
+
 @Test("Can create, schedule, and advance league state")
 func leagueFlowSmoke() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "tests"))
