@@ -438,7 +438,7 @@ function simulateHalf(state, random = Math.random) {
 
 function simulateGame(homeTeam, awayTeam, options = {}) {
   const random = options.random || Math.random;
-  const state = createInitialGameState(homeTeam, awayTeam, random);
+  const state = createInitialGameState(homeTeam, awayTeam, random, options);
 
   simulateHalf(state, random);
 

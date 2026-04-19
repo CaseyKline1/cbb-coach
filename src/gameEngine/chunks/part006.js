@@ -262,7 +262,8 @@ function applyPendingAssistIfEligible(state, offenseTeamId, shooter, shot) {
   shot.assister = pending.passer;
 }
 
-function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
+function createInitialGameState(homeTeam, awayTeam, random = Math.random, options = {}) {
+  const neutralSite = options.gameSiteType === "neutral" || options.neutralSite === true;
   const homeLineup = getDefaultLineup(homeTeam);
   const awayLineup = getDefaultLineup(awayTeam);
   const teams = [
@@ -271,6 +272,7 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
       players: homeTeam.players?.length ? homeTeam.players : homeLineup,
       lineup: homeLineup,
       score: 0,
+      isHomeTeam: !neutralSite,
       timeoutsRemaining: Number.isFinite(homeTeam.timeouts) ? homeTeam.timeouts : 4,
     }),
     initializeTeamFormationState({
@@ -278,6 +280,7 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
       players: awayTeam.players?.length ? awayTeam.players : awayLineup,
       lineup: awayLineup,
       score: 0,
+      isHomeTeam: false,
       timeoutsRemaining: Number.isFinite(awayTeam.timeouts) ? awayTeam.timeouts : 4,
     }),
   ];
@@ -288,6 +291,7 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
 
   const state = {
     teams,
+    gameSiteType: neutralSite ? "neutral" : "home",
     boxScore: initializeBoxScoreTracker(teams),
     possessionTeamId: random() < 0.5 ? 0 : 1,
     gameClockRemaining: HALF_SECONDS,

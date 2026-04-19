@@ -446,6 +446,20 @@ function gamePairKey(teamAId, teamBId) {
   return [teamAId, teamBId].sort().join("::");
 }
 
+function normalizeGameSiteType(game = {}) {
+  if (typeof game.siteType === "string" && game.siteType.toLowerCase() === "neutral") return "neutral";
+  if (game.neutralSite === true) return "neutral";
+  return "home";
+}
+
+function isNeutralSiteGame(game = {}) {
+  return normalizeGameSiteType(game) === "neutral";
+}
+
+function gameHasHomeTeam(game = {}) {
+  return !isNeutralSiteGame(game);
+}
+
 function ensureDay(context, day) {
   if (!context.busyTeamsByDay.has(day)) {
     context.busyTeamsByDay.set(day, new Set());
@@ -465,8 +479,10 @@ function addScheduledGame(context, game) {
   busy.add(game.awayTeamId);
   context.gamesByDay.get(game.day).push(game.id);
   context.games.push(game);
-  context.homeGamesByTeam.set(game.homeTeamId, (context.homeGamesByTeam.get(game.homeTeamId) || 0) + 1);
-  context.awayGamesByTeam.set(game.awayTeamId, (context.awayGamesByTeam.get(game.awayTeamId) || 0) + 1);
+  if (gameHasHomeTeam(game)) {
+    context.homeGamesByTeam.set(game.homeTeamId, (context.homeGamesByTeam.get(game.homeTeamId) || 0) + 1);
+    context.awayGamesByTeam.set(game.awayTeamId, (context.awayGamesByTeam.get(game.awayTeamId) || 0) + 1);
+  }
   return true;
 }
 
@@ -530,6 +546,8 @@ function scheduleNonConferenceGames({
       day,
       homeTeamId,
       awayTeamId,
+      siteType: "home",
+      neutralSite: false,
       type: "non_conference",
       conferenceId: null,
       lockedByUser: false,
@@ -670,6 +688,8 @@ function scheduleConferenceGames({
       day,
       homeTeamId,
       awayTeamId,
+      siteType: "home",
+      neutralSite: false,
       type: "conference",
       conferenceId: conference.id,
       lockedByUser: false,
@@ -919,12 +939,14 @@ function cloneTeamForSimulation(teamModel) {
   return cloned;
 }
 
-function quickSimGame(homeTeamState, awayTeamState, random = Math.random) {
+function quickSimGame(homeTeamState, awayTeamState, options = {}, random = Math.random) {
   const homeStrength = homeTeamState.overall;
   const awayStrength = awayTeamState.overall;
+  const siteType = options.siteType === "neutral" ? "neutral" : "home";
+  const homeCourtEdge = siteType === "neutral" ? 0 : 2.1;
 
-  const homeMean = 68 + (homeStrength - awayStrength) * 0.52 + 2.1;
-  const awayMean = 68 + (awayStrength - homeStrength) * 0.52 - 2.1;
+  const homeMean = 68 + (homeStrength - awayStrength) * 0.52 + homeCourtEdge;
+  const awayMean = 68 + (awayStrength - homeStrength) * 0.52 - homeCourtEdge;
 
   let homeScore = Math.round(homeMean + normalRandom(random) * 10.5);
   let awayScore = Math.round(awayMean + normalRandom(random) * 10.5);
@@ -978,11 +1000,16 @@ function applyCompletedGameResult(league, game, result) {
   }
 
   if (game.homeTeamId === league.userTeamId || game.awayTeamId === league.userTeamId) {
+    const isHome = gameHasHomeTeam(game) ? game.homeTeamId === league.userTeamId : null;
     league.userGameHistory.push({
       gameId: game.id,
       day: game.day,
+      siteType: normalizeGameSiteType(game),
+      neutralSite: isNeutralSiteGame(game),
+      homeTeamId: game.homeTeamId,
+      awayTeamId: game.awayTeamId,
       opponentTeamId: game.homeTeamId === league.userTeamId ? game.awayTeamId : game.homeTeamId,
-      isHome: game.homeTeamId === league.userTeamId,
+      isHome,
       result,
     });
   }
@@ -996,15 +1023,20 @@ function simulateScheduledGame(league, game, options = {}) {
   const awayTeamState = league.teams.byId[game.awayTeamId];
   const userInvolved = game.homeTeamId === league.userTeamId || game.awayTeamId === league.userTeamId;
   const useDetailedEngine = userInvolved || options.simulateCpuWithDetailedEngine === true;
+  const gameSiteType = normalizeGameSiteType(game);
 
   if (!useDetailedEngine) {
-    return quickSimGame(homeTeamState, awayTeamState, random);
+    return quickSimGame(homeTeamState, awayTeamState, { siteType: gameSiteType }, random);
   }
 
   const homeTeamClone = cloneTeamForSimulation(homeTeamState.teamModel);
   const awayTeamClone = cloneTeamForSimulation(awayTeamState.teamModel);
 
-  const detailedResult = simulateGame(homeTeamClone, awayTeamClone, { random });
+  const detailedResult = simulateGame(homeTeamClone, awayTeamClone, {
+    random,
+    gameSiteType,
+    neutralSite: gameSiteType === "neutral",
+  });
   const winnerTeamId =
     detailedResult.home.score > detailedResult.away.score
       ? game.homeTeamId
@@ -1306,11 +1338,14 @@ function getUserSchedule(league) {
     .map((game) => {
       const opponentTeamId = game.homeTeamId === userTeamId ? game.awayTeamId : game.homeTeamId;
       const opponent = league.teams.byId[opponentTeamId];
+      const siteType = normalizeGameSiteType(game);
       return {
         gameId: game.id,
         day: game.day,
         type: game.type,
-        isHome: game.homeTeamId === userTeamId,
+        siteType,
+        neutralSite: siteType === "neutral",
+        isHome: siteType === "neutral" ? null : game.homeTeamId === userTeamId,
         opponentTeamId,
         opponentName: opponent.name,
         completed: game.completed,
@@ -1743,10 +1778,12 @@ function advanceToNextUserGame(league, options = {}) {
   const game = league.schedule.byId[pending.gameId];
   const opponentTeamId = game.homeTeamId === league.userTeamId ? game.awayTeamId : game.homeTeamId;
   const opponent = league.teams.byId[opponentTeamId];
-  const userIsHome = game.homeTeamId === league.userTeamId;
+  const gameSiteType = normalizeGameSiteType(game);
+  const userIsHome = gameSiteType === "neutral" ? null : game.homeTeamId === league.userTeamId;
+  const userIsDesignatedHome = game.homeTeamId === league.userTeamId;
 
-  const userScore = userIsHome ? game.result.homeScore : game.result.awayScore;
-  const opponentScore = userIsHome ? game.result.awayScore : game.result.homeScore;
+  const userScore = userIsDesignatedHome ? game.result.homeScore : game.result.awayScore;
+  const opponentScore = userIsDesignatedHome ? game.result.awayScore : game.result.homeScore;
 
   return {
     done: false,
@@ -1754,6 +1791,8 @@ function advanceToNextUserGame(league, options = {}) {
     gameId: game.id,
     opponentTeamId,
     opponentName: opponent.name,
+    siteType: gameSiteType,
+    neutralSite: gameSiteType === "neutral",
     isHome: userIsHome,
     score: {
       user: userScore,
@@ -1771,8 +1810,12 @@ function getUserCompletedGames(league) {
   return league.userGameHistory
     .map((entry) => {
       const opponent = league.teams.byId[entry.opponentTeamId];
-      const userScore = entry.isHome ? entry.result.homeScore : entry.result.awayScore;
-      const opponentScore = entry.isHome ? entry.result.awayScore : entry.result.homeScore;
+      const userIsDesignatedHome =
+        typeof entry.isHome === "boolean"
+          ? entry.isHome
+          : entry.homeTeamId === league.userTeamId;
+      const userScore = userIsDesignatedHome ? entry.result.homeScore : entry.result.awayScore;
+      const opponentScore = userIsDesignatedHome ? entry.result.awayScore : entry.result.homeScore;
       return {
         ...entry,
         opponentName: opponent.name,
@@ -2074,12 +2117,17 @@ function normalizeScheduleState(rawSchedule) {
   if (!rawSchedule || !Array.isArray(rawSchedule.games)) return null;
 
   const games = rawSchedule.games
-    .map((game) => ({
-      ...game,
-      day: Math.max(1, Math.round(asNumber(game.day, 1))),
-      completed: Boolean(game.completed),
-      result: game.result || null,
-    }))
+    .map((game) => {
+      const siteType = normalizeGameSiteType(game);
+      return {
+        ...game,
+        siteType,
+        neutralSite: siteType === "neutral",
+        day: Math.max(1, Math.round(asNumber(game.day, 1))),
+        completed: Boolean(game.completed),
+        result: game.result || null,
+      };
+    })
     .sort((a, b) => {
       if (a.day !== b.day) return a.day - b.day;
       if (a.homeTeamId !== b.homeTeamId) return String(a.homeTeamId).localeCompare(String(b.homeTeamId));

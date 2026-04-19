@@ -90,6 +90,8 @@ public struct UserGameSummary: Codable, Equatable, Sendable {
     public var gameId: String?
     public var day: Int?
     public var type: String?
+    public var siteType: String?
+    public var neutralSite: Bool?
     public var isHome: Bool?
     public var opponentTeamId: String?
     public var opponentName: String?
