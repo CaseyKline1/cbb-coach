@@ -431,6 +431,12 @@ function rankLineupCandidates(state, teamId) {
   const team = state.teams[teamId];
   const roster = getTeamRoster(team);
   const targetMinutes = getTargetMinutesMap(state, teamId);
+  const regulationSeconds = HALF_SECONDS * REGULATION_HALVES;
+  const elapsedGameSeconds = getElapsedGameSeconds(state);
+  const progress = clamp(elapsedGameSeconds / regulationSeconds, 0, 1.5);
+  const closingWindow = isClutchTimeActive(state) || progress >= 0.92;
+  const rotationWeight = closingWindow ? 1.85 : progress < 0.7 ? 4.35 : progress < 0.9 ? 3.6 : 2.4;
+
   return roster
     .filter((player) => !isPlayerFouledOut(state, teamId, player))
     .map((player) => {
@@ -438,9 +444,9 @@ function rankLineupCandidates(state, teamId) {
       const skill = getPlayerOverallSkill(player);
       const minutesPlayed = getPlayerMinutesPlayed(state, teamId, player);
       const target = targetMinutes.get(player) ?? 0;
-      const rotationNeed = clamp(target - minutesPlayed, -12, 20);
-      // Keep fatigue and talent primary, but push minute targets enough to be meaningfully followed.
-      const score = skill * 0.58 + energy * 0.29 + rotationNeed * 2.55;
+      const rotationNeed = clamp(target - minutesPlayed, -14, 24);
+      // Push minute-target catch-up strongly before late-game closing lineups.
+      const score = skill * 0.56 + energy * 0.27 + rotationNeed * rotationWeight;
       return {
         player,
         score,

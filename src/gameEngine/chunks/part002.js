@@ -5,6 +5,8 @@
 
 function runDeadBallSubstitutions(state, reason = "dead_ball") {
   const elapsedGameSeconds = getElapsedGameSeconds(state);
+  const regulationSeconds = HALF_SECONDS * REGULATION_HALVES;
+  const closingWindow = isClutchTimeActive(state) || elapsedGameSeconds >= regulationSeconds - 3 * 60;
 
   state.teams.forEach((team, teamId) => {
     if (!Array.isArray(team.lineup) || team.lineup.length !== 5) return;
@@ -48,7 +50,7 @@ function runDeadBallSubstitutions(state, reason = "dead_ball") {
       return;
     }
 
-    const maxSwaps = 2;
+    const maxSwaps = closingWindow ? 1 : elapsedGameSeconds < regulationSeconds * 0.75 ? 3 : 2;
     let swaps = 0;
     const next = [...current];
     let bench = ranked.filter((entry) => !next.includes(entry.player));
@@ -77,13 +79,16 @@ function runDeadBallSubstitutions(state, reason = "dead_ball") {
 
       const betterBy = (inCandidate.score ?? 0) - (outCandidate.score ?? 0);
       const fatigueUpgrade =
-        (outCandidate.energy ?? getPlayerEnergy(outCandidate.player)) < 42 &&
-        inCandidate.energy > (outCandidate.energy ?? getPlayerEnergy(outCandidate.player)) + 8;
+        (outCandidate.energy ?? getPlayerEnergy(outCandidate.player)) < (closingWindow ? 42 : 48) &&
+        inCandidate.energy > (outCandidate.energy ?? getPlayerEnergy(outCandidate.player)) + (closingWindow ? 8 : 5);
+      const outNeed = outCandidate.rotationNeed ?? 0;
+      const inNeed = inCandidate.rotationNeed ?? 0;
       const rotationUpgrade =
-        (inCandidate.rotationNeed ?? 0) > 1.2 &&
-        ((outCandidate.minutesPlayed ?? 0) - (outCandidate.target ?? 0) > 0.75);
+        inNeed > (closingWindow ? 1.6 : 0.8) &&
+        ((outCandidate.minutesPlayed ?? 0) - (outCandidate.target ?? 0) > (closingWindow ? 0.9 : 0.2));
+      const rotationCatchupPush = !closingWindow && inNeed > 2.6 && inNeed - outNeed > 1.8;
 
-      if (!(betterBy > 6 || fatigueUpgrade || rotationUpgrade)) break;
+      if (!(betterBy > (closingWindow ? 7 : 3.5) || fatigueUpgrade || rotationUpgrade || rotationCatchupPush)) break;
 
       next[outCandidate.idx] = inCandidate.player;
       swaps += 1;
