@@ -427,7 +427,7 @@ function resolvePossessionEndAfterShot({
   recordFieldGoalAttempt(state, offenseTeamId, shooter, shotType, shot.made);
 
   if (shot.made) {
-    offense.score += shot.points;
+    addTeamPoints(state, offenseTeamId, shot.points);
     addPlayerStat(state, offenseTeamId, shooter, "points", shot.points);
     if (shot.assister) {
       const contestedPenalty = shot.contested ? 0.52 : 1;

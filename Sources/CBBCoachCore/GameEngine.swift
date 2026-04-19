@@ -47,6 +47,7 @@ public struct PlayerBoxScore: Codable, Equatable, Sendable {
     public var blocks: Int
     public var turnovers: Int
     public var fouls: Int
+    public var plusMinus: Int?
     public var energy: Double?
 }
 

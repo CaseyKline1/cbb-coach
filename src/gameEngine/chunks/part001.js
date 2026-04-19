@@ -250,6 +250,7 @@ function createEmptyPlayerBoxScore(player) {
     blocks: 0,
     turnovers: 0,
     fouls: 0,
+    plusMinus: 0,
   };
 }
 
@@ -324,6 +325,23 @@ function recordRebound(state, teamId, rebounder, isOffensive) {
   addPlayerStat(state, teamId, rebounder, "rebounds", 1);
   if (isOffensive) addPlayerStat(state, teamId, rebounder, "offensiveRebounds", 1);
   else addPlayerStat(state, teamId, rebounder, "defensiveRebounds", 1);
+}
+
+function addTeamPoints(state, offenseTeamId, points) {
+  const amount = Number(points);
+  if (!Number.isFinite(amount) || amount === 0) return;
+
+  const defenseTeamId = offenseTeamId === 0 ? 1 : 0;
+  const offense = state.teams?.[offenseTeamId];
+  const defense = state.teams?.[defenseTeamId];
+
+  if (offense) offense.score = (Number(offense.score) || 0) + amount;
+  if (Array.isArray(offense?.lineup)) {
+    offense.lineup.forEach((player) => addPlayerStat(state, offenseTeamId, player, "plusMinus", amount));
+  }
+  if (Array.isArray(defense?.lineup)) {
+    defense.lineup.forEach((player) => addPlayerStat(state, defenseTeamId, player, "plusMinus", -amount));
+  }
 }
 
 function getPlayerEnergy(player) {

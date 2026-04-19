@@ -1,5 +1,5 @@
       addPlayerStat(state, offenseTeamId, shooter, "points", bonus);
-      offense.score += bonus;
+      addTeamPoints(state, offenseTeamId, bonus);
       recoverAllPlayers(state, FREE_THROW_BREAK_RECOVERY);
       foulDetail = ` + ${bonus} FT`;
     }
@@ -23,7 +23,7 @@
     const ftMade = resolveFreeThrows(shooter, shot.foulShotsAwarded, random);
     recordFreeThrows(state, offenseTeamId, shooter, shot.foulShotsAwarded, ftMade);
     addPlayerStat(state, offenseTeamId, shooter, "points", ftMade);
-    offense.score += ftMade;
+    addTeamPoints(state, offenseTeamId, ftMade);
     recoverAllPlayers(state, FREE_THROW_BREAK_RECOVERY);
     pushEvent(state, {
       type: "shooting_foul",
