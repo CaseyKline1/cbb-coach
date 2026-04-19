@@ -314,23 +314,38 @@ private struct LeagueStore {
 }
 
 private struct LoadedD1Data {
-    static let shared: D1Snapshot = {
-        let url = Bundle.module.url(forResource: "d1-conferences.2026", withExtension: "json", subdirectory: "js")
-        guard let url else {
-            fatalError("Missing bundled D1 conference data")
+    static let sharedResult: Result<D1Snapshot, Error> = Result {
+        try loadSnapshot()
+    }
+
+    static func get() throws -> D1Snapshot {
+        try sharedResult.get()
+    }
+
+    private static func loadSnapshot() throws -> D1Snapshot {
+        let bundles = [Bundle.module, Bundle.main]
+        let resourceName = "d1-conferences.2026"
+        let resourceExtension = "json"
+        let candidateURL = bundles.compactMap { bundle in
+            bundle.url(forResource: resourceName, withExtension: resourceExtension, subdirectory: "js")
+            ?? bundle.url(forResource: resourceName, withExtension: resourceExtension)
+        }.first
+
+        guard let url = candidateURL else {
+            throw NSError(
+                domain: "CBBCoachCore",
+                code: 1000,
+                userInfo: [NSLocalizedDescriptionKey: "Missing bundled D1 conference data."]
+            )
         }
-        guard let data = try? Data(contentsOf: url) else {
-            fatalError("Failed reading D1 conference data")
-        }
-        guard let decoded = try? JSONDecoder().decode(D1Snapshot.self, from: data) else {
-            fatalError("Failed decoding D1 conference data")
-        }
-        return decoded
-    }()
+
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(D1Snapshot.self, from: data)
+    }
 }
 
 public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
-    let dataset = LoadedD1Data.shared
+    let dataset = try LoadedD1Data.get()
     let allTeams = dataset.conferences.flatMap { conference in
         conference.teams.map { (conference, $0) }
     }
@@ -430,7 +445,10 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
 }
 
 public func listCareerTeamOptions() -> [CareerTeamOption] {
-    LoadedD1Data.shared.conferences
+    guard let dataset = try? LoadedD1Data.get() else {
+        return []
+    }
+    return dataset.conferences
         .flatMap { conference in
             conference.teams.map {
                 CareerTeamOption(teamId: $0.id, teamName: $0.name, conferenceId: conference.id, conferenceName: conference.name)
