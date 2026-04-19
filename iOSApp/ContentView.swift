@@ -767,6 +767,9 @@ private struct RosterRatingsView: View {
     let roster: [UserRosterPlayerSummary]
     @State private var sortColumn: String = "overall"
     @State private var isAscending: Bool = false
+    private let headerVerticalPadding: CGFloat = 3
+    private let rowVerticalPadding: CGFloat = 2
+    private let minimumRowHeight: CGFloat = 20
 
     private let preferredAttributeOrder: [String] = [
         "potential", "speed", "agility", "burst", "strength", "vertical", "stamina", "durability",
@@ -794,7 +797,7 @@ private struct RosterRatingsView: View {
     }
 
     var body: some View {
-        ScrollView([.horizontal, .vertical]) {
+        ScrollView([.horizontal, .vertical], showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 headerRow
                 ForEach(Array(sortedRoster.enumerated()), id: \.offset) { _, player in
@@ -811,36 +814,37 @@ private struct RosterRatingsView: View {
 
     private var headerRow: some View {
         HStack(spacing: 0) {
-            sortableHeader("ST", id: "isStarter", width: 40)
-            sortableHeader("NAME", id: "name", width: 180)
-            sortableHeader("POS", id: "position", width: 54)
-            sortableHeader("YR", id: "year", width: 48)
-            sortableHeader("OVR", id: "overall", width: 54)
+            sortableHeader("ST", id: "isStarter", width: 30)
+            sortableHeader("PLYR", id: "name", width: 132, alignment: .leading)
+            sortableHeader("POS", id: "position", width: 42)
+            sortableHeader("YR", id: "year", width: 30)
+            sortableHeader("OVR", id: "overall", width: 38)
             ForEach(attributeColumns, id: \.self) { column in
-                sortableHeader(attributeLabel(column), id: column, width: 68)
+                sortableHeader(attributeLabel(column), id: column, width: 44)
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, headerVerticalPadding)
         .background(Color(.tertiarySystemBackground))
     }
 
     private func dataRow(_ player: UserRosterPlayerSummary) -> some View {
         HStack(spacing: 0) {
-            textCell(player.isStarter ? "★" : "", width: 40, alignment: .center)
-            textCell(player.name, width: 180, alignment: .leading)
-            textCell(player.position, width: 54, alignment: .center)
-            textCell(player.year, width: 48, alignment: .center)
-            textCell("\(player.overall)", width: 54, alignment: .center)
+            textCell(player.isStarter ? "★" : "", width: 30, alignment: .center)
+            textCell(player.name, width: 132, alignment: .leading)
+            textCell(player.position, width: 42, alignment: .center)
+            textCell(player.year, width: 30, alignment: .center)
+            textCell("\(player.overall)", width: 38, alignment: .center)
             ForEach(attributeColumns, id: \.self) { key in
                 let value = player.attributes?[key] ?? 0
-                textCell("\(value)", width: 68, alignment: .center)
+                textCell("\(value)", width: 44, alignment: .center)
             }
         }
-        .font(.caption.monospacedDigit())
-        .padding(.vertical, 4)
+        .font(.caption2.monospacedDigit())
+        .frame(minHeight: minimumRowHeight)
+        .padding(.vertical, rowVerticalPadding)
     }
 
-    private func sortableHeader(_ title: String, id: String, width: CGFloat) -> some View {
+    private func sortableHeader(_ title: String, id: String, width: CGFloat, alignment: Alignment = .center) -> some View {
         Button {
             if sortColumn == id {
                 isAscending.toggle()
@@ -849,16 +853,17 @@ private struct RosterRatingsView: View {
                 isAscending = false
             }
         } label: {
-            HStack(spacing: 3) {
+            HStack(spacing: 2) {
                 Text(title)
                     .font(.caption2.weight(.bold))
+                    .foregroundStyle(sortColumn == id ? .primary : .secondary)
                 if sortColumn == id {
-                    Image(systemName: isAscending ? "arrow.up" : "arrow.down")
-                        .font(.caption2.weight(.bold))
+                    Image(systemName: isAscending ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.primary)
                 }
             }
-            .foregroundStyle(.primary)
-            .frame(width: width, alignment: .center)
+            .frame(width: width, alignment: alignment)
         }
         .buttonStyle(.plain)
     }
@@ -895,31 +900,47 @@ private struct RosterRatingsView: View {
     private func attributeLabel(_ key: String) -> String {
         switch key {
         case "potential": "POT"
+        case "speed": "SPD"
+        case "agility": "AGI"
+        case "burst": "BST"
+        case "strength": "STR"
+        case "vertical": "VERT"
+        case "stamina": "STA"
+        case "durability": "DUR"
+        case "layups": "LAY"
+        case "dunks": "DNK"
         case "threePointShooting": "3PT"
         case "midrangeShot": "MID"
         case "closeShot": "CLS"
-        case "cornerThrees": "3CNR"
-        case "upTopThrees": "3TOP"
+        case "cornerThrees": "C3"
+        case "upTopThrees": "U3"
         case "drawFoul": "DRF"
+        case "freeThrows": "FT"
         case "postControl": "POST"
         case "postFadeaways": "FADE"
         case "postHooks": "HOOK"
-        case "ballHandling": "HANDLE"
-        case "passingAccuracy": "PASSA"
-        case "passingVision": "PASSV"
-        case "passingIQ": "PASSIQ"
-        case "shotIQ": "SHOTIQ"
+        case "ballHandling": "BH"
+        case "ballSafety": "BSAF"
+        case "passingAccuracy": "PACC"
+        case "passingVision": "PVIS"
+        case "passingIQ": "PIQ"
+        case "shotIQ": "SIQ"
         case "offballOffense": "OFFB"
+        case "hands": "HND"
+        case "hustle": "HUS"
+        case "clutch": "CLT"
         case "perimeterDefense": "PERD"
         case "postDefense": "POSTD"
         case "shotBlocking": "BLK"
-        case "shotContest": "CONTEST"
+        case "shotContest": "SCON"
+        case "steals": "STL"
         case "lateralQuickness": "LATQ"
         case "offballDefense": "OFFD"
-        case "passPerception": "PERCEP"
-        case "defensiveControl": "DEFCTL"
+        case "passPerception": "PERC"
+        case "defensiveControl": "DCTL"
         case "offensiveRebounding": "OREB"
         case "defensiveRebound": "DREB"
+        case "boxouts": "BOX"
         case "tendencyThreePoint": "T3"
         case "tendencyMidrange": "TMID"
         case "tendencyInside": "TIN"
@@ -929,8 +950,22 @@ private struct RosterRatingsView: View {
         case "tendencyPickAndPop": "TPNP"
         case "tendencyShootVsPass": "TSVP"
         default:
-            key.replacingOccurrences(of: "tendency", with: "T").uppercased()
+            compactFallbackLabel(for: key)
         }
+    }
+
+    private func compactFallbackLabel(for key: String) -> String {
+        let condensed = key.replacingOccurrences(of: "tendency", with: "T")
+        var result = ""
+        for character in condensed {
+            if character.isUppercase || character.isNumber {
+                result.append(character)
+            }
+        }
+        if result.isEmpty {
+            result = condensed.uppercased()
+        }
+        return String(result.prefix(4))
     }
 }
 
