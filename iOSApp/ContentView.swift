@@ -1134,10 +1134,18 @@ private struct PlayerStatsRow: Hashable {
     var threeAttemptsPerGame: Double { perGame(threeAttempts) }
     var ftMadePerGame: Double { perGame(ftMade) }
     var ftAttemptsPerGame: Double { perGame(ftAttempts) }
+    var fgPercentage: Double { percentage(made: fgMade, attempts: fgAttempts) }
+    var threePercentage: Double { percentage(made: threeMade, attempts: threeAttempts) }
+    var ftPercentage: Double { percentage(made: ftMade, attempts: ftAttempts) }
 
     private func perGame(_ value: Int) -> Double {
         guard games > 0 else { return 0 }
         return Double(value) / Double(games)
+    }
+
+    private func percentage(made: Int, attempts: Int) -> Double {
+        guard attempts > 0 else { return 0 }
+        return (Double(made) / Double(attempts)) * 100
     }
 }
 
@@ -1202,9 +1210,9 @@ private struct PlayerStatsView: View {
             .init(id: "steals", title: "STL", width: 48),
             .init(id: "blocks", title: "BLK", width: 48),
             .init(id: "turnovers", title: "TO", width: 48),
-            .init(id: "fg", title: "FG", width: 78),
-            .init(id: "three", title: "3PT", width: 78),
-            .init(id: "ft", title: "FT", width: 78),
+            .init(id: "fg", title: "FG%", width: 64),
+            .init(id: "three", title: "3PT%", width: 64),
+            .init(id: "ft", title: "FT%", width: 64),
         ]
     }
 
@@ -1229,9 +1237,9 @@ private struct PlayerStatsView: View {
                     AppTableTextCell(text: format(row.stealsPerGame), width: 48)
                     AppTableTextCell(text: format(row.blocksPerGame), width: 48)
                     AppTableTextCell(text: format(row.turnoversPerGame), width: 48)
-                    AppTableTextCell(text: "\(format(row.fgMadePerGame))-\(format(row.fgAttemptsPerGame))", width: 78)
-                    AppTableTextCell(text: "\(format(row.threeMadePerGame))-\(format(row.threeAttemptsPerGame))", width: 78)
-                    AppTableTextCell(text: "\(format(row.ftMadePerGame))-\(format(row.ftAttemptsPerGame))", width: 78)
+                    AppTableTextCell(text: formatPercentage(row.fgPercentage, attempts: row.fgAttempts), width: 64)
+                    AppTableTextCell(text: formatPercentage(row.threePercentage, attempts: row.threeAttempts), width: 64)
+                    AppTableTextCell(text: formatPercentage(row.ftPercentage, attempts: row.ftAttempts), width: 64)
                 }
             }
         }
@@ -1268,11 +1276,11 @@ private struct PlayerStatsView: View {
         case "turnovers":
             return numeric(lhs.turnoversPerGame, rhs.turnoversPerGame)
         case "fg":
-            return numeric(lhs.fgMadePerGame, rhs.fgMadePerGame)
+            return numeric(lhs.fgPercentage, rhs.fgPercentage)
         case "three":
-            return numeric(lhs.threeMadePerGame, rhs.threeMadePerGame)
+            return numeric(lhs.threePercentage, rhs.threePercentage)
         case "ft":
-            return numeric(lhs.ftMadePerGame, rhs.ftMadePerGame)
+            return numeric(lhs.ftPercentage, rhs.ftPercentage)
         default:
             return .orderedSame
         }
@@ -1290,6 +1298,11 @@ private struct PlayerStatsView: View {
 
     private func format(_ value: Double) -> String {
         String(format: "%.1f", value)
+    }
+
+    private func formatPercentage(_ value: Double, attempts: Int) -> String {
+        guard attempts > 0 else { return "--" }
+        return String(format: "%.1f%%", value)
     }
 }
 
