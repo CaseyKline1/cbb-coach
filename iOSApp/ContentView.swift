@@ -611,7 +611,11 @@ private struct CollegeLeagueHomeView: View {
             .navigationDestination(for: LeagueMenuDestination.self) { destination in
                 switch destination {
                 case .roster:
-                    RosterRatingsView(roster: roster)
+                    RosterRatingsView(
+                        roster: roster,
+                        schedule: schedule,
+                        userTeamName: summary?.userTeamName ?? teamName
+                    )
                 case .schedule:
                     ScheduleListView(schedule: schedule, userTeamName: summary?.userTeamName ?? teamName)
                 case .playerStats:
@@ -765,6 +769,8 @@ private struct MenuRow: View {
 
 private struct RosterRatingsView: View {
     let roster: [UserRosterPlayerSummary]
+    let schedule: [UserGameSummary]
+    let userTeamName: String
     @State private var sortColumn: String = "overall"
     @State private var isAscending: Bool = false
 
@@ -824,7 +830,22 @@ private struct RosterRatingsView: View {
             ) { player in
                 HStack(spacing: 0) {
                     AppTableTextCell(text: player.isStarter ? "★" : "", width: 30)
-                    AppTableTextCell(text: player.name, width: 132, alignment: .leading)
+                    NavigationLink {
+                        PlayerCardDetailView(
+                            player: player,
+                            schedule: schedule,
+                            userTeamName: userTeamName
+                        )
+                    } label: {
+                        AppTableTextCell(
+                            text: player.name,
+                            width: 132,
+                            alignment: .leading,
+                            font: .caption.monospacedDigit().weight(.semibold),
+                            foreground: .blue
+                        )
+                    }
+                    .buttonStyle(.plain)
                     AppTableTextCell(text: player.position, width: 42)
                     AppTableTextCell(text: player.year, width: 30)
                     AppTableTextCell(text: "\(player.overall)", width: 38)
@@ -940,6 +961,365 @@ private struct RosterRatingsView: View {
             result = condensed.uppercased()
         }
         return String(result.prefix(4))
+    }
+}
+
+private struct PlayerCareerTotals: Hashable {
+    let games: Int
+    let minutes: Double
+    let points: Int
+    let rebounds: Int
+    let assists: Int
+    let steals: Int
+    let blocks: Int
+    let turnovers: Int
+    let fgMade: Int
+    let fgAttempts: Int
+    let threeMade: Int
+    let threeAttempts: Int
+    let ftMade: Int
+    let ftAttempts: Int
+
+    static let zero = PlayerCareerTotals(
+        games: 0,
+        minutes: 0,
+        points: 0,
+        rebounds: 0,
+        assists: 0,
+        steals: 0,
+        blocks: 0,
+        turnovers: 0,
+        fgMade: 0,
+        fgAttempts: 0,
+        threeMade: 0,
+        threeAttempts: 0,
+        ftMade: 0,
+        ftAttempts: 0
+    )
+
+    var pointsPerGame: Double { games > 0 ? Double(points) / Double(games) : 0 }
+    var reboundsPerGame: Double { games > 0 ? Double(rebounds) / Double(games) : 0 }
+    var assistsPerGame: Double { games > 0 ? Double(assists) / Double(games) : 0 }
+    var fgPct: Double { fgAttempts > 0 ? Double(fgMade) / Double(fgAttempts) : 0 }
+    var threePct: Double { threeAttempts > 0 ? Double(threeMade) / Double(threeAttempts) : 0 }
+    var ftPct: Double { ftAttempts > 0 ? Double(ftMade) / Double(ftAttempts) : 0 }
+}
+
+private struct PlayerCardDetailView: View {
+    let player: UserRosterPlayerSummary
+    let schedule: [UserGameSummary]
+    let userTeamName: String
+
+    private var sortedRatings: [(key: String, value: Int)] {
+        (player.attributes ?? [:])
+            .map { ($0.key, $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+                return lhs.0 < rhs.0
+            }
+    }
+
+    private var ratingRows: [(id: AnyHashable, data: (label: String, value: Int))] {
+        sortedRatings.map {
+            (
+                id: AnyHashable($0.key),
+                data: (label: ratingLabel($0.key), value: $0.value)
+            )
+        }
+    }
+
+    private var topTraits: [String] {
+        let attributes = player.attributes ?? [:]
+        let scored: [(name: String, score: Double)] = [
+            (
+                "Sharpshooter",
+                score(
+                    attributes["threePointShooting"],
+                    attributes["cornerThrees"],
+                    attributes["upTopThrees"],
+                    attributes["tendencyThreePoint"]
+                )
+            ),
+            (
+                "Playmaker",
+                score(
+                    attributes["passingVision"],
+                    attributes["passingIQ"],
+                    attributes["passingAccuracy"],
+                    attributes["shotIQ"]
+                )
+            ),
+            (
+                "Rim Protector",
+                score(
+                    attributes["shotBlocking"],
+                    attributes["shotContest"],
+                    attributes["vertical"],
+                    attributes["postDefense"]
+                )
+            ),
+            (
+                "Lockdown Defender",
+                score(
+                    attributes["perimeterDefense"],
+                    attributes["lateralQuickness"],
+                    attributes["offballDefense"],
+                    attributes["steals"]
+                )
+            ),
+            (
+                "Glass Cleaner",
+                score(
+                    attributes["offensiveRebounding"],
+                    attributes["defensiveRebound"],
+                    attributes["boxouts"],
+                    attributes["strength"]
+                )
+            ),
+            (
+                "Slasher",
+                score(
+                    attributes["layups"],
+                    attributes["burst"],
+                    attributes["ballHandling"],
+                    attributes["tendencyDrive"]
+                )
+            ),
+            (
+                "Post Scorer",
+                score(
+                    attributes["postControl"],
+                    attributes["postHooks"],
+                    attributes["postFadeaways"],
+                    attributes["tendencyPost"]
+                )
+            ),
+            (
+                "Floor General",
+                score(
+                    attributes["ballHandling"],
+                    attributes["passingVision"],
+                    attributes["passingIQ"],
+                    attributes["tendencyShootVsPass"].map { 100 - $0 }
+                )
+            ),
+        ]
+        return scored
+            .filter { $0.score >= 68 }
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score { return lhs.score > rhs.score }
+                return lhs.name < rhs.name
+            }
+            .prefix(4)
+            .map(\.name)
+    }
+
+    private var careerTotals: PlayerCareerTotals {
+        var totals = PlayerCareerTotals.zero
+
+        for game in schedule where game.completed == true {
+            guard
+                let line = findPlayerLine(in: game)
+            else { continue }
+
+            totals = PlayerCareerTotals(
+                games: totals.games + 1,
+                minutes: totals.minutes + line.minutes,
+                points: totals.points + line.points,
+                rebounds: totals.rebounds + line.rebounds,
+                assists: totals.assists + line.assists,
+                steals: totals.steals + line.steals,
+                blocks: totals.blocks + line.blocks,
+                turnovers: totals.turnovers + line.turnovers,
+                fgMade: totals.fgMade + line.fgMade,
+                fgAttempts: totals.fgAttempts + line.fgAttempts,
+                threeMade: totals.threeMade + line.threeMade,
+                threeAttempts: totals.threeAttempts + line.threeAttempts,
+                ftMade: totals.ftMade + line.ftMade,
+                ftAttempts: totals.ftAttempts + line.ftAttempts
+            )
+        }
+        return totals
+    }
+
+    private var careerRows: [(id: AnyHashable, data: (label: String, value: String))] {
+        let totals = careerTotals
+        return [
+            (id: AnyHashable("gp"), data: ("GP", "\(totals.games)")),
+            (id: AnyHashable("min"), data: ("MIN", format(totals.minutes))),
+            (id: AnyHashable("pts"), data: ("PTS", "\(totals.points)")),
+            (id: AnyHashable("reb"), data: ("REB", "\(totals.rebounds)")),
+            (id: AnyHashable("ast"), data: ("AST", "\(totals.assists)")),
+            (id: AnyHashable("stl"), data: ("STL", "\(totals.steals)")),
+            (id: AnyHashable("blk"), data: ("BLK", "\(totals.blocks)")),
+            (id: AnyHashable("to"), data: ("TO", "\(totals.turnovers)")),
+            (id: AnyHashable("fg"), data: ("FG%", pct(totals.fgPct))),
+            (id: AnyHashable("three"), data: ("3PT%", pct(totals.threePct))),
+            (id: AnyHashable("ft"), data: ("FT%", pct(totals.ftPct))),
+            (id: AnyHashable("ppg"), data: ("PPG", format(totals.pointsPerGame))),
+            (id: AnyHashable("rpg"), data: ("RPG", format(totals.reboundsPerGame))),
+            (id: AnyHashable("apg"), data: ("APG", format(totals.assistsPerGame))),
+        ]
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                GroupBox("Player") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(player.name)
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(.primary)
+                        Text("\(player.position) • \(player.year) • OVR \(player.overall)\(player.isStarter ? " • Starter" : "")")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                GroupBox("Traits") {
+                    if topTraits.isEmpty {
+                        Text("No standout traits yet.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(topTraits, id: \.self) { trait in
+                                Text(trait)
+                                    .font(.caption.monospacedDigit().weight(.semibold))
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                    }
+                }
+
+                GroupBox("Ratings") {
+                    let columns: [AppTableColumn<String>] = [
+                        .init(id: "rating", title: "RATING", width: 180, alignment: .leading),
+                        .init(id: "value", title: "VALUE", width: 60),
+                    ]
+                    AppTable(columns: columns, rows: ratingRows) { row in
+                        HStack(spacing: 0) {
+                            AppTableTextCell(
+                                text: row.label,
+                                width: 180,
+                                alignment: .leading,
+                                font: .caption.monospacedDigit()
+                            )
+                            AppTableTextCell(
+                                text: "\(row.value)",
+                                width: 60,
+                                font: .caption.monospacedDigit().weight(.semibold)
+                            )
+                        }
+                    }
+                }
+
+                GroupBox("Career Stats") {
+                    let columns: [AppTableColumn<String>] = [
+                        .init(id: "stat", title: "STAT", width: 90, alignment: .leading),
+                        .init(id: "value", title: "VALUE", width: 80),
+                    ]
+                    AppTable(columns: columns, rows: careerRows) { row in
+                        HStack(spacing: 0) {
+                            AppTableTextCell(text: row.label, width: 90, alignment: .leading, font: .caption.monospacedDigit())
+                            AppTableTextCell(text: row.value, width: 80, font: .caption.monospacedDigit().weight(.semibold))
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .navigationTitle("Player Card")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func findPlayerLine(in game: UserGameSummary) -> ParsedPlayerBoxScore? {
+        guard
+            let resultObj = game.result?.objectDictionary,
+            let teamBoxes = resultObj["boxScore"]?.arrayValues
+        else { return nil }
+
+        guard let userTeamBox = teamBoxes.first(where: { box in
+            box.objectDictionary?["name"]?.stringValue == userTeamName
+        }) else { return nil }
+
+        let players = userTeamBox.objectDictionary?["players"]?.arrayValues ?? []
+        return players
+            .compactMap(ParsedPlayerBoxScore.init(value:))
+            .first(where: { line in
+                line.playerName == player.name && line.position == player.position
+            })
+    }
+
+    private func ratingLabel(_ key: String) -> String {
+        switch key {
+        case "potential": "Potential"
+        case "speed": "Speed"
+        case "agility": "Agility"
+        case "burst": "Burst"
+        case "strength": "Strength"
+        case "vertical": "Vertical"
+        case "stamina": "Stamina"
+        case "durability": "Durability"
+        case "layups": "Layups"
+        case "dunks": "Dunks"
+        case "closeShot": "Close Shot"
+        case "midrangeShot": "Midrange Shot"
+        case "threePointShooting": "Three Point"
+        case "cornerThrees": "Corner Threes"
+        case "upTopThrees": "Above-the-Break 3"
+        case "drawFoul": "Draw Foul"
+        case "freeThrows": "Free Throws"
+        case "postControl": "Post Control"
+        case "postFadeaways": "Post Fadeaways"
+        case "postHooks": "Post Hooks"
+        case "ballHandling": "Ball Handling"
+        case "ballSafety": "Ball Safety"
+        case "passingAccuracy": "Passing Accuracy"
+        case "passingVision": "Passing Vision"
+        case "passingIQ": "Passing IQ"
+        case "shotIQ": "Shot IQ"
+        case "offballOffense": "Off-Ball Offense"
+        case "hands": "Hands"
+        case "hustle": "Hustle"
+        case "clutch": "Clutch"
+        case "perimeterDefense": "Perimeter Defense"
+        case "postDefense": "Post Defense"
+        case "shotBlocking": "Shot Blocking"
+        case "shotContest": "Shot Contest"
+        case "steals": "Steals"
+        case "lateralQuickness": "Lateral Quickness"
+        case "offballDefense": "Off-Ball Defense"
+        case "passPerception": "Pass Perception"
+        case "defensiveControl": "Defensive Control"
+        case "offensiveRebounding": "Offensive Rebounding"
+        case "defensiveRebound": "Defensive Rebound"
+        case "boxouts": "Boxouts"
+        case "tendencyPost": "Tendency: Post"
+        case "tendencyInside": "Tendency: Inside"
+        case "tendencyMidrange": "Tendency: Midrange"
+        case "tendencyThreePoint": "Tendency: Three"
+        case "tendencyDrive": "Tendency: Drive"
+        case "tendencyPickAndRoll": "Tendency: Pick & Roll"
+        case "tendencyPickAndPop": "Tendency: Pick & Pop"
+        case "tendencyShootVsPass": "Tendency: Shoot vs Pass"
+        default:
+            key
+        }
+    }
+
+    private func score(_ values: Int?...) -> Double {
+        let valid = values.compactMap { $0 }
+        guard !valid.isEmpty else { return 0 }
+        return Double(valid.reduce(0, +)) / Double(valid.count)
+    }
+
+    private func format(_ value: Double) -> String {
+        String(format: "%.1f", value)
+    }
+
+    private func pct(_ value: Double) -> String {
+        String(format: "%.1f%%", value * 100)
     }
 }
 
