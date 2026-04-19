@@ -515,6 +515,8 @@ private struct CollegeLeagueHomeView: View {
     @State private var statusText: String = "Creating league..."
     @State private var roster: [UserRosterPlayerSummary] = []
     @State private var schedule: [UserGameSummary] = []
+    @State private var rotationSlots: [UserRotationSlot] = []
+    @State private var coachingStaff: UserCoachingStaffSummary?
     @State private var summary: LeagueSummary?
     @State private var conferenceStandings: [String: [ConferenceStanding]] = [:]
 
@@ -553,6 +555,11 @@ private struct CollegeLeagueHomeView: View {
                             }
                             .buttonStyle(.plain)
 
+                            NavigationLink(value: LeagueMenuDestination.rotation) {
+                                MenuRow(title: "Rotation", subtitle: "Set preferred starters, backups, and minute targets")
+                            }
+                            .buttonStyle(.plain)
+
                             NavigationLink(value: LeagueMenuDestination.playerStats) {
                                 MenuRow(title: "Player Stats", subtitle: "Per-game averages from completed games")
                             }
@@ -560,6 +567,11 @@ private struct CollegeLeagueHomeView: View {
 
                             NavigationLink(value: LeagueMenuDestination.standings) {
                                 MenuRow(title: "Standings", subtitle: "Conference records and point differentials")
+                            }
+                            .buttonStyle(.plain)
+
+                            NavigationLink(value: LeagueMenuDestination.coachingStaff) {
+                                MenuRow(title: "Coaching Staff", subtitle: "View coach traits and set assistant focus")
                             }
                             .buttonStyle(.plain)
                         }
@@ -618,12 +630,27 @@ private struct CollegeLeagueHomeView: View {
                     )
                 case .schedule:
                     ScheduleListView(schedule: schedule, userTeamName: summary?.userTeamName ?? teamName)
+                case .rotation:
+                    RotationSettingsView(
+                        roster: roster,
+                        slots: rotationSlots,
+                        onSave: { updated in
+                            saveRotation(updated)
+                        }
+                    )
                 case .playerStats:
                     PlayerStatsView(schedule: schedule, userTeamName: summary?.userTeamName ?? teamName)
                 case .standings:
                     ConferenceStandingsView(
                         standingsByConference: conferenceStandings,
                         preferredConferenceId: userConferenceId
+                    )
+                case .coachingStaff:
+                    CoachingStaffView(
+                        staff: coachingStaff,
+                        onSetAssistantFocus: { index, focus in
+                            saveAssistantFocus(assistantIndex: index, focus: focus)
+                        }
                     )
                 case .boxScore(let gameId):
                     if let game = schedule.first(where: { $0.gameId == gameId }) {
@@ -668,6 +695,8 @@ private struct CollegeLeagueHomeView: View {
             league = created
             roster = getUserRoster(created)
             schedule = getUserSchedule(created)
+            rotationSlots = getUserRotation(created)
+            coachingStaff = getUserCoachingStaff(created)
             let leagueSummary = getLeagueSummary(created)
             summary = leagueSummary
             conferenceStandings = fetchConferenceStandings(created)
@@ -683,6 +712,8 @@ private struct CollegeLeagueHomeView: View {
         league = currentLeague
         roster = getUserRoster(currentLeague)
         schedule = getUserSchedule(currentLeague)
+        rotationSlots = getUserRotation(currentLeague)
+        coachingStaff = getUserCoachingStaff(currentLeague)
         summary = getLeagueSummary(currentLeague)
         conferenceStandings = fetchConferenceStandings(currentLeague)
         if result.done == true {
@@ -714,13 +745,29 @@ private struct CollegeLeagueHomeView: View {
         }
         return result
     }
+
+    private func saveRotation(_ updated: [UserRotationSlot]) {
+        guard var currentLeague = league else { return }
+        rotationSlots = setUserRotation(&currentLeague, slots: updated)
+        league = currentLeague
+        roster = getUserRoster(currentLeague)
+    }
+
+    private func saveAssistantFocus(assistantIndex: Int, focus: AssistantFocus) {
+        guard var currentLeague = league else { return }
+        setUserAssistantFocus(&currentLeague, assistantIndex: assistantIndex, focus: focus)
+        league = currentLeague
+        coachingStaff = getUserCoachingStaff(currentLeague)
+    }
 }
 
 private enum LeagueMenuDestination: Hashable {
     case roster
     case schedule
+    case rotation
     case playerStats
     case standings
+    case coachingStaff
     case boxScore(String)
 }
 
@@ -764,6 +811,267 @@ private struct MenuRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 6)
+    }
+}
+
+private struct CoachingStaffView: View {
+    let staff: UserCoachingStaffSummary?
+    let onSetAssistantFocus: (Int, AssistantFocus) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Assistant focus affects organization priorities. Game Prep selection also marks the lead scout for opponent prep.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let staff {
+                    GroupBox("Head Coach") {
+                        CoachTraitRowView(
+                            title: "Head Coach",
+                            subtitle: "Program Leader",
+                            coach: staff.headCoach
+                        )
+                    }
+
+                    GroupBox("Assistants") {
+                        VStack(spacing: 12) {
+                            ForEach(Array(staff.assistants.enumerated()), id: \.offset) { index, assistant in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    CoachTraitRowView(
+                                        title: "Assistant \(index + 1)",
+                                        subtitle: assistant.focus?.label ?? AssistantFocus.recruiting.label,
+                                        coach: assistant
+                                    )
+                                    SingleSelectDropdown(
+                                        label: "Focus",
+                                        selection: Binding(
+                                            get: { assistant.focus ?? .recruiting },
+                                            set: { onSetAssistantFocus(index, $0) }
+                                        ),
+                                        options: AssistantFocus.allCases,
+                                        optionLabel: \.label
+                                    )
+                                }
+
+                                if index < staff.assistants.count - 1 {
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text("No coaching staff available yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(16)
+        }
+        .navigationTitle("Coaching Staff")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct CoachTraitRowView: View {
+    let title: String
+    let subtitle: String
+    let coach: Coach
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                TraitPill(title: "Recruiting", value: coach.skills.recruiting)
+                TraitPill(title: "Development", value: coach.skills.playerDevelopment)
+                TraitPill(title: "Game Prep", value: coach.gamePrepTrait)
+                TraitPill(title: "Scouting", value: coach.skills.scouting)
+            }
+        }
+    }
+}
+
+private struct TraitPill: View {
+    let title: String
+    let value: Int
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("\(value)")
+                .font(.caption.monospacedDigit().weight(.bold))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(Color(.tertiarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct RotationSettingsView: View {
+    let roster: [UserRosterPlayerSummary]
+    let slots: [UserRotationSlot]
+    let onSave: ([UserRotationSlot]) -> Void
+
+    @State private var editedSlots: [UserRotationSlot] = []
+    @State private var statusText: String = "Adjust your preferred starters, backups, and minutes."
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Targets are for a full game and used with fatigue-based subs.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(Array(editedSlots.enumerated()), id: \.element.id) { index, slot in
+                    GroupBox(slot.position) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            RotationPlayerPicker(
+                                label: "Starter",
+                                roster: roster,
+                                selectedIndex: Binding(
+                                    get: { editedSlots[index].starterIndex },
+                                    set: { editedSlots[index].starterIndex = $0 }
+                                )
+                            )
+                            RotationMinuteControl(
+                                label: "Starter Minutes",
+                                value: Binding(
+                                    get: { editedSlots[index].starterMinutes },
+                                    set: { editedSlots[index].starterMinutes = $0 }
+                                ),
+                                step: 1
+                            )
+
+                            RotationPlayerPicker(
+                                label: "Backup",
+                                roster: roster,
+                                selectedIndex: Binding(
+                                    get: { editedSlots[index].backupIndex },
+                                    set: { editedSlots[index].backupIndex = $0 }
+                                )
+                            )
+                            RotationMinuteControl(
+                                label: "Backup Minutes",
+                                value: Binding(
+                                    get: { editedSlots[index].backupMinutes },
+                                    set: { editedSlots[index].backupMinutes = $0 }
+                                ),
+                                step: 1
+                            )
+                        }
+                    }
+                }
+
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button("Save Rotation") {
+                    editedSlots = normalized(editedSlots)
+                    onSave(editedSlots)
+                    statusText = "Rotation saved."
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(16)
+        }
+        .navigationTitle("Rotation")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            editedSlots = normalized(slots)
+        }
+        .onChange(of: slots) { _, updated in
+            editedSlots = normalized(updated)
+        }
+    }
+
+    private func normalized(_ source: [UserRotationSlot]) -> [UserRotationSlot] {
+        source.map { slot in
+            var normalizedSlot = slot
+            normalizedSlot.starterMinutes = clampMinutes(slot.starterMinutes)
+            normalizedSlot.backupMinutes = clampMinutes(slot.backupMinutes)
+            return normalizedSlot
+        }
+    }
+
+    private func clampMinutes(_ value: Double) -> Double {
+        min(40, max(0, (value * 2).rounded() / 2))
+    }
+}
+
+private struct RotationPlayerPicker: View {
+    let label: String
+    let roster: [UserRosterPlayerSummary]
+    @Binding var selectedIndex: Int?
+
+    var body: some View {
+        SingleSelectDropdown(
+            label: label,
+            selection: Binding<Int>(
+                get: { selectedIndex ?? -1 },
+                set: { selectedIndex = $0 >= 0 ? $0 : nil }
+            ),
+            options: [-1] + roster.map(\.playerIndex),
+            optionLabel: { index in
+                if index < 0 { return "Auto" }
+                guard let player = roster.first(where: { $0.playerIndex == index }) else { return "Auto" }
+                return "\(player.name) (\(player.position))"
+            }
+        )
+    }
+}
+
+private struct RotationMinuteControl: View {
+    let label: String
+    @Binding var value: Double
+    let step: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                Button(action: decrement) {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Decrease \(label)")
+
+                Text("\(Int(value.rounded()))")
+                    .font(.body.monospacedDigit().weight(.semibold))
+                    .frame(width: 36)
+
+                Button(action: increment) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Increase \(label)")
+            }
+        }
+    }
+
+    private func decrement() {
+        value = min(40, max(0, value - step))
+    }
+
+    private func increment() {
+        value = min(40, max(0, value + step))
     }
 }
 
@@ -1958,6 +2266,23 @@ private extension DefenseScheme {
         case .zone131: "1-3-1 Zone"
         case .packLine: "Pack Line"
         }
+    }
+}
+
+private extension AssistantFocus {
+    var label: String {
+        switch self {
+        case .recruiting: "Recruiting"
+        case .development: "Development"
+        case .gamePrep: "Game Prep"
+        case .scouting: "Scouting"
+        }
+    }
+}
+
+private extension Coach {
+    var gamePrepTrait: Int {
+        Int(((Double(skills.offensiveCoaching) + Double(skills.defensiveCoaching)) / 2.0).rounded())
     }
 }
 

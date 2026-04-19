@@ -439,7 +439,8 @@ function rankLineupCandidates(state, teamId) {
       const minutesPlayed = getPlayerMinutesPlayed(state, teamId, player);
       const target = targetMinutes.get(player) ?? 0;
       const rotationNeed = clamp(target - minutesPlayed, -12, 20);
-      const score = skill * 0.62 + energy * 0.3 + rotationNeed * 1.9;
+      // Keep fatigue and talent primary, but push minute targets enough to be meaningfully followed.
+      const score = skill * 0.58 + energy * 0.29 + rotationNeed * 2.55;
       return {
         player,
         score,
@@ -530,8 +531,8 @@ function runDeadBallSubstitutions(state, reason = "dead_ball") {
         (outCandidate.energy ?? getPlayerEnergy(outCandidate.player)) < 42 &&
         inCandidate.energy > (outCandidate.energy ?? getPlayerEnergy(outCandidate.player)) + 8;
       const rotationUpgrade =
-        (inCandidate.rotationNeed ?? 0) > 2.5 &&
-        ((outCandidate.minutesPlayed ?? 0) - (outCandidate.target ?? 0) > 1.5);
+        (inCandidate.rotationNeed ?? 0) > 1.2 &&
+        ((outCandidate.minutesPlayed ?? 0) - (outCandidate.target ?? 0) > 0.75);
 
       if (!(betterBy > 6 || fatigueUpgrade || rotationUpgrade)) break;
 

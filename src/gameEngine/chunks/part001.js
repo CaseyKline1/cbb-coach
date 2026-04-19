@@ -439,7 +439,8 @@ function rankLineupCandidates(state, teamId) {
       const minutesPlayed = getPlayerMinutesPlayed(state, teamId, player);
       const target = targetMinutes.get(player) ?? 0;
       const rotationNeed = clamp(target - minutesPlayed, -12, 20);
-      const score = skill * 0.62 + energy * 0.3 + rotationNeed * 1.9;
+      // Keep fatigue and talent primary, but push minute targets enough to be meaningfully followed.
+      const score = skill * 0.58 + energy * 0.29 + rotationNeed * 2.55;
       return {
         player,
         score,

@@ -34,6 +34,7 @@ const TEAM_OVR_CONFERENCE_BONUS = Object.freeze({
 });
 
 const POSITION_TEMPLATE = Object.freeze(["PG", "SG", "SF", "PF", "C", "CG", "Wing", "F", "Big", "PG"]);
+const ROTATION_SLOTS = Object.freeze(["PG", "SG", "SF", "PF", "C"]);
 
 const POSITION_OFFSETS = Object.freeze({
   PG: { shooting: 1, passing: 10, defendingPerimeter: 5, rebounding: -6, inside: -4 },
@@ -1232,6 +1233,188 @@ function buildPlayerAttributeSummary(player = {}) {
   };
 }
 
+function normalizeRotationMinutes(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return clamp(Math.round(parsed * 2) / 2, 0, 40);
+}
+
+function findPlayerByIndex(players, index) {
+  if (!Array.isArray(players)) return null;
+  const parsed = Number(index);
+  if (!Number.isFinite(parsed)) return null;
+  const rounded = Math.round(parsed);
+  if (rounded < 0 || rounded >= players.length) return null;
+  return players[rounded] || null;
+}
+
+function findRotationPlayerByPosition(players, position, excluding = new Set()) {
+  if (!Array.isArray(players) || !position) return null;
+  const normalized = String(position).trim().toUpperCase();
+  if (!normalized) return null;
+  const exact = players.find((player) =>
+    String(player?.bio?.position || "").trim().toUpperCase() === normalized && !excluding.has(player),
+  );
+  if (exact) return exact;
+
+  if (normalized === "PG") {
+    return players.find((player) => {
+      const pos = String(player?.bio?.position || "").trim().toUpperCase();
+      return (pos === "CG" || pos === "SG") && !excluding.has(player);
+    }) || null;
+  }
+
+  if (normalized === "SG") {
+    return players.find((player) => {
+      const pos = String(player?.bio?.position || "").trim().toUpperCase();
+      return (pos === "CG" || pos === "WING" || pos === "SF") && !excluding.has(player);
+    }) || null;
+  }
+
+  if (normalized === "SF") {
+    return players.find((player) => {
+      const pos = String(player?.bio?.position || "").trim().toUpperCase();
+      return (pos === "WING" || pos === "F" || pos === "SG" || pos === "PF") && !excluding.has(player);
+    }) || null;
+  }
+
+  if (normalized === "PF") {
+    return players.find((player) => {
+      const pos = String(player?.bio?.position || "").trim().toUpperCase();
+      return (pos === "F" || pos === "BIG" || pos === "C" || pos === "SF") && !excluding.has(player);
+    }) || null;
+  }
+
+  if (normalized === "C") {
+    return players.find((player) => {
+      const pos = String(player?.bio?.position || "").trim().toUpperCase();
+      return (pos === "BIG" || pos === "PF" || pos === "F") && !excluding.has(player);
+    }) || null;
+  }
+
+  return null;
+}
+
+function inferUserRotationSlots(league) {
+  const userTeam = league?.teams?.byId?.[league?.userTeamId];
+  const players = Array.isArray(userTeam?.teamModel?.players) ? userTeam.teamModel.players : [];
+  const lineup = Array.isArray(userTeam?.teamModel?.lineup) ? userTeam.teamModel.lineup : [];
+  const lineupSet = new Set(lineup);
+  const minuteTargets = userTeam?.teamModel?.rotation?.minuteTargets || {};
+
+  const slots = [];
+  ROTATION_SLOTS.forEach((slotPosition) => {
+    const starter = lineup.find(
+      (player) => String(player?.bio?.position || "").trim().toUpperCase() === slotPosition,
+    ) || findRotationPlayerByPosition(players, slotPosition);
+
+    const excluded = new Set();
+    if (starter) excluded.add(starter);
+    const backup = findRotationPlayerByPosition(players, slotPosition, excluded);
+
+    const starterIndex = starter ? players.indexOf(starter) : -1;
+    const backupIndex = backup ? players.indexOf(backup) : -1;
+
+    const starterName = starter?.bio?.name || "";
+    const backupName = backup?.bio?.name || "";
+    const rawStarter = Number(minuteTargets[starterName]);
+    const rawBackup = Number(minuteTargets[backupName]);
+
+    const fallbackStarterMinutes = starter ? (lineupSet.has(starter) ? 30 : 24) : 24;
+    const fallbackBackupMinutes = backup ? 40 - fallbackStarterMinutes : 0;
+
+    const starterMinutes = normalizeRotationMinutes(rawStarter, fallbackStarterMinutes);
+    const backupMinutes = normalizeRotationMinutes(
+      rawBackup,
+      backup ? Math.max(0, 40 - starterMinutes) : 0,
+    );
+
+    slots.push({
+      position: slotPosition,
+      starterIndex: starterIndex >= 0 ? starterIndex : null,
+      backupIndex: backupIndex >= 0 ? backupIndex : null,
+      starterMinutes,
+      backupMinutes,
+    });
+  });
+
+  return slots;
+}
+
+function getUserRotation(league) {
+  return inferUserRotationSlots(league);
+}
+
+function setUserRotation(league, rawSlots = []) {
+  const userTeam = league?.teams?.byId?.[league?.userTeamId];
+  if (!userTeam?.teamModel) return [];
+
+  const players = Array.isArray(userTeam.teamModel.players) ? userTeam.teamModel.players : [];
+  if (!players.length) return [];
+
+  const requested = Array.isArray(rawSlots) ? rawSlots : [];
+  const defaultSlots = inferUserRotationSlots(league);
+  const merged = ROTATION_SLOTS.map((position, index) => {
+    const incoming = requested.find((entry) => String(entry?.position || "").toUpperCase() === position) || {};
+    const base = defaultSlots[index] || {};
+    return {
+      position,
+      starterIndex: incoming.starterIndex ?? base.starterIndex ?? null,
+      backupIndex: incoming.backupIndex ?? base.backupIndex ?? null,
+      starterMinutes: normalizeRotationMinutes(incoming.starterMinutes, base.starterMinutes ?? 30),
+      backupMinutes: normalizeRotationMinutes(incoming.backupMinutes, base.backupMinutes ?? 10),
+    };
+  });
+
+  const selectedStarters = [];
+  const selectedStarterSet = new Set();
+  const minuteTargets = {};
+
+  merged.forEach((slot) => {
+    let starter = findPlayerByIndex(players, slot.starterIndex);
+    if (!starter || selectedStarterSet.has(starter)) {
+      starter =
+        findRotationPlayerByPosition(players, slot.position, selectedStarterSet) ||
+        players.find((player) => !selectedStarterSet.has(player)) ||
+        null;
+    }
+    if (!starter) return;
+
+    selectedStarters.push(starter);
+    selectedStarterSet.add(starter);
+
+    let backup = findPlayerByIndex(players, slot.backupIndex);
+    if (!backup || backup === starter) {
+      backup =
+        findRotationPlayerByPosition(players, slot.position, new Set([starter])) ||
+        players.find((player) => player !== starter) ||
+        null;
+    }
+
+    const starterName = starter?.bio?.name;
+    const backupName = backup?.bio?.name;
+    if (starterName) {
+      minuteTargets[starterName] =
+        (minuteTargets[starterName] || 0) + normalizeRotationMinutes(slot.starterMinutes, 30);
+    }
+    if (backupName) {
+      minuteTargets[backupName] =
+        (minuteTargets[backupName] || 0) + normalizeRotationMinutes(slot.backupMinutes, 10);
+    }
+  });
+
+  const fallbackLineup = players
+    .filter((player) => !selectedStarterSet.has(player))
+    .slice(0, 5 - selectedStarters.length);
+  userTeam.teamModel.lineup = [...selectedStarters, ...fallbackLineup].slice(0, 5);
+  userTeam.teamModel.rotation = {
+    ...(userTeam.teamModel.rotation || {}),
+    minuteTargets,
+  };
+
+  return inferUserRotationSlots(league);
+}
+
 function getUserRoster(league) {
   const userTeam = league?.teams?.byId?.[league?.userTeamId];
   const players = Array.isArray(userTeam?.teamModel?.players) ? userTeam.teamModel.players : [];
@@ -1239,9 +1422,10 @@ function getUserRoster(league) {
   const lineupKeys = new Set(lineup.map((player) => `${player?.bio?.name || ""}|${player?.bio?.position || ""}`));
 
   return players
-    .map((player) => {
+    .map((player, index) => {
       const key = `${player?.bio?.name || ""}|${player?.bio?.position || ""}`;
       return {
+        playerIndex: index,
         name: player?.bio?.name || "Unknown",
         position: player?.bio?.position || "",
         year: player?.bio?.year || "",
@@ -1255,6 +1439,94 @@ function getUserRoster(league) {
       if (a.overall !== b.overall) return b.overall - a.overall;
       return a.name.localeCompare(b.name);
     });
+}
+
+function normalizeUserCoachingStaff(league) {
+  const userTeam = league?.teams?.byId?.[league?.userTeamId];
+  const teamModel = userTeam?.teamModel;
+  if (!teamModel || typeof teamModel !== "object") {
+    return null;
+  }
+
+  let staff = teamModel.coachingStaff;
+  if (!staff || typeof staff !== "object") {
+    const coaches = Array.isArray(teamModel.coaches) ? teamModel.coaches : [];
+    const headCoach = coaches[0] || null;
+    const assistants = coaches.slice(1);
+    if (!headCoach) return null;
+    staff = {
+      headCoach,
+      assistants,
+      gamePrepAssistantIndex: null,
+    };
+  }
+
+  const normalizedAssistants = Array.isArray(staff.assistants)
+    ? staff.assistants.map((assistant) => ({
+        ...assistant,
+        focus: typeof assistant?.focus === "string" && assistant.focus.trim() ? assistant.focus.trim() : "recruiting",
+      }))
+    : [];
+
+  const numericGamePrepIndex = Number(staff.gamePrepAssistantIndex);
+  const focusGamePrepIndex = normalizedAssistants.findIndex((assistant) => assistant.focus === "game_prep");
+  const resolvedGamePrepAssistantIndex =
+    Number.isInteger(numericGamePrepIndex) && numericGamePrepIndex >= 0 && numericGamePrepIndex < normalizedAssistants.length
+      ? numericGamePrepIndex
+      : focusGamePrepIndex >= 0
+        ? focusGamePrepIndex
+        : null;
+
+  const normalized = {
+    headCoach: staff.headCoach || null,
+    assistants: normalizedAssistants,
+    gamePrepAssistantIndex: resolvedGamePrepAssistantIndex,
+  };
+
+  if (!normalized.headCoach) return null;
+
+  teamModel.coachingStaff = normalized;
+  teamModel.coaches = [normalized.headCoach, ...normalized.assistants];
+  return normalized;
+}
+
+function getUserCoachingStaff(league) {
+  const staff = normalizeUserCoachingStaff(league);
+  if (!staff) {
+    throw new Error("User team is missing coaching staff.");
+  }
+  return cloneDeep(staff);
+}
+
+function setUserAssistantFocus(league, assistantIndex, focus) {
+  const staff = normalizeUserCoachingStaff(league);
+  if (!staff) {
+    throw new Error("User team is missing coaching staff.");
+  }
+
+  const index = Math.round(asNumber(assistantIndex, -1));
+  if (index < 0 || index >= staff.assistants.length) {
+    throw new Error("Assistant index out of range.");
+  }
+
+  const normalizedFocus = String(focus || "").trim().toLowerCase();
+  const allowedFocuses = new Set(["recruiting", "development", "game_prep", "scouting"]);
+  if (!allowedFocuses.has(normalizedFocus)) {
+    throw new Error("Invalid assistant focus.");
+  }
+
+  staff.assistants[index] = {
+    ...staff.assistants[index],
+    focus: normalizedFocus,
+  };
+
+  const gamePrepIndex = staff.assistants.findIndex((assistant) => assistant?.focus === "game_prep");
+  staff.gamePrepAssistantIndex = gamePrepIndex >= 0 ? gamePrepIndex : null;
+
+  const userTeam = league.teams.byId[league.userTeamId];
+  userTeam.teamModel.coachingStaff = staff;
+  userTeam.teamModel.coaches = [staff.headCoach, ...staff.assistants];
+  return cloneDeep(staff);
 }
 
 function advanceToNextUserGame(league, options = {}) {
@@ -1543,6 +1815,10 @@ module.exports = {
   generateSeasonSchedule,
   getUserSchedule,
   getUserRoster,
+  getUserCoachingStaff,
+  setUserAssistantFocus,
+  getUserRotation,
+  setUserRotation,
   advanceToNextUserGame,
   getUserCompletedGames,
   getConferenceStandings,

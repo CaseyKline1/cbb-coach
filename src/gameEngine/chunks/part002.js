@@ -80,8 +80,8 @@ function runDeadBallSubstitutions(state, reason = "dead_ball") {
         (outCandidate.energy ?? getPlayerEnergy(outCandidate.player)) < 42 &&
         inCandidate.energy > (outCandidate.energy ?? getPlayerEnergy(outCandidate.player)) + 8;
       const rotationUpgrade =
-        (inCandidate.rotationNeed ?? 0) > 2.5 &&
-        ((outCandidate.minutesPlayed ?? 0) - (outCandidate.target ?? 0) > 1.5);
+        (inCandidate.rotationNeed ?? 0) > 1.2 &&
+        ((outCandidate.minutesPlayed ?? 0) - (outCandidate.target ?? 0) > 0.75);
 
       if (!(betterBy > 6 || fatigueUpgrade || rotationUpgrade)) break;
 

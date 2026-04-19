@@ -29,12 +29,23 @@ public struct CareerTeamOption: Codable, Equatable, Sendable {
 }
 
 public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
+    public var playerIndex: Int
     public var name: String
     public var position: String
     public var year: String
     public var overall: Int
     public var isStarter: Bool
     public var attributes: [String: Int]?
+}
+
+public struct UserRotationSlot: Codable, Equatable, Sendable, Identifiable {
+    public var position: String
+    public var starterIndex: Int?
+    public var backupIndex: Int?
+    public var starterMinutes: Double
+    public var backupMinutes: Double
+
+    public var id: String { position }
 }
 
 public struct PreseasonBoardOption: Codable, Equatable, Sendable {
@@ -111,6 +122,12 @@ public struct LeagueSummary: Codable, Equatable, Sendable {
     public var userSelectedNonConferenceGames: Int
     public var scheduleGenerated: Bool
     public var totalScheduledGames: Int
+}
+
+public struct UserCoachingStaffSummary: Codable, Equatable, Sendable {
+    public var headCoach: Coach
+    public var assistants: [Coach]
+    public var gamePrepAssistantIndex: Int?
 }
 
 public struct CreateLeagueOptions: Codable, Equatable, Sendable {
@@ -208,6 +225,46 @@ public func getUserRoster(_ league: LeagueState) -> [UserRosterPlayerSummary] {
         return try fromJSONValue(raw, as: [UserRosterPlayerSummary].self)
     } catch {
         fatalError("getUserRoster failed: \(error)")
+    }
+}
+
+public func getUserRotation(_ league: LeagueState) -> [UserRotationSlot] {
+    do {
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "getUserRotation", handle: league.handle, restArgs: [])
+        return try fromJSONValue(raw, as: [UserRotationSlot].self)
+    } catch {
+        fatalError("getUserRotation failed: \(error)")
+    }
+}
+
+public func setUserRotation(_ league: inout LeagueState, slots: [UserRotationSlot]) -> [UserRotationSlot] {
+    do {
+        let raw = try JSRuntime.shared.invokeHandleMutable(moduleId: leagueEngineModule, fn: "setUserRotation", handle: league.handle, restArgs: [try toJSONValue(slots)])
+        return try fromJSONValue(raw, as: [UserRotationSlot].self)
+    } catch {
+        fatalError("setUserRotation failed: \(error)")
+    }
+}
+
+public func getUserCoachingStaff(_ league: LeagueState) -> UserCoachingStaffSummary {
+    do {
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "getUserCoachingStaff", handle: league.handle, restArgs: [])
+        return try fromJSONValue(raw, as: UserCoachingStaffSummary.self)
+    } catch {
+        fatalError("getUserCoachingStaff failed: \(error)")
+    }
+}
+
+public func setUserAssistantFocus(_ league: inout LeagueState, assistantIndex: Int, focus: AssistantFocus) {
+    do {
+        _ = try JSRuntime.shared.invokeHandleMutable(
+            moduleId: leagueEngineModule,
+            fn: "setUserAssistantFocus",
+            handle: league.handle,
+            restArgs: [.number(Double(assistantIndex)), .string(focus.rawValue)]
+        )
+    } catch {
+        fatalError("setUserAssistantFocus failed: \(error)")
     }
 }
 
