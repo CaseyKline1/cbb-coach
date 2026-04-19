@@ -40,7 +40,7 @@ autoFillUserNonConferenceOpponents(&league)
 generateSeasonSchedule(&league)
 
 if let nextGame = advanceToNextUserGame(&league) {
-    print("Next completed user game: Day \(nextGame.day ?? 0) vs \(nextGame.opponentName ?? "Unknown")")
+    print("Next completed user game: Game \(nextGame.day ?? 0) vs \(nextGame.opponentName ?? "Unknown")")
 }
 
 let summary = getLeagueSummary(league)

@@ -28,7 +28,7 @@ for (let i = 0; i < 5; i += 1) {
   const advance = advanceToNextUserGame(league);
   if (advance.done) break;
   const result = `${advance.won ? "W" : "L"} ${advance.score.user}-${advance.score.opponent}`;
-  console.log(`Game ${i + 1}: Day ${advance.day} ${advance.isHome ? "vs" : "at"} ${advance.opponentName} (${result})`);
+  console.log(`Game ${i + 1}: ${advance.isHome ? "vs" : "at"} ${advance.opponentName} (${result})`);
 }
 
 const completed = getUserCompletedGames(league);

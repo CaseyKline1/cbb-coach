@@ -534,7 +534,7 @@ private struct CollegeLeagueHomeView: View {
 
                     if let summary {
                         HStack(spacing: 14) {
-                            StatChip(title: "Day", value: "\(summary.currentDay)")
+                            StatChip(title: "Game", value: "\(summary.currentDay)")
                             StatChip(title: "Games", value: "\(summary.totalScheduledGames)")
                             StatChip(title: "Record", value: userRecordText)
                         }
@@ -582,7 +582,7 @@ private struct CollegeLeagueHomeView: View {
                             NavigationLink(value: LeagueMenuDestination.boxScore(lastPlayed.gameId ?? "")) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text("Day \(lastPlayed.day ?? 0): \(lastPlayed.isHome == true ? "vs" : "@") \(lastPlayed.opponentName ?? "Unknown")")
+                                        Text("Game \(gameNumber(for: lastPlayed)): \(lastPlayed.isHome == true ? "vs" : "@") \(lastPlayed.opponentName ?? "Unknown")")
                                             .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(.primary)
                                         Text(resultSummaryText(for: lastPlayed))
@@ -677,10 +677,29 @@ private struct CollegeLeagueHomeView: View {
         return "\(wins)-\(max(0, completedGames.count - wins))"
     }
 
+    private var orderedSchedule: [UserGameSummary] {
+        schedule.sorted {
+            let lhsDay = $0.day ?? Int.max
+            let rhsDay = $1.day ?? Int.max
+            if lhsDay != rhsDay {
+                return lhsDay < rhsDay
+            }
+            return ($0.gameId ?? "") < ($1.gameId ?? "")
+        }
+    }
+
     private var latestCompletedGame: UserGameSummary? {
-        schedule
-            .filter { $0.completed == true && $0.gameId != nil }
-            .max { ($0.day ?? 0) < ($1.day ?? 0) }
+        orderedSchedule.last { $0.completed == true && $0.gameId != nil }
+    }
+
+    private func gameNumber(for game: UserGameSummary) -> Int {
+        if let gameId = game.gameId, let index = orderedSchedule.firstIndex(where: { $0.gameId == gameId }) {
+            return index + 1
+        }
+        if let index = orderedSchedule.firstIndex(of: game) {
+            return index + 1
+        }
+        return max(1, game.day ?? 1)
     }
 
     private var userConferenceId: String? {
@@ -723,7 +742,8 @@ private struct CollegeLeagueHomeView: View {
         }
         let userScore = result.score?.numberValue(for: "user")?.roundedInt ?? 0
         let oppScore = result.score?.numberValue(for: "opponent")?.roundedInt ?? 0
-        statusText = "Day \(result.day ?? 0): \(result.opponentName ?? "Unknown") \(userScore)-\(oppScore) (\(result.won == true ? "W" : "L"))"
+        let gameLabel = gameNumber(for: result)
+        statusText = "Game \(gameLabel): \(result.opponentName ?? "Unknown") \(userScore)-\(oppScore) (\(result.won == true ? "W" : "L"))"
     }
 
     private func resultSummaryText(for game: UserGameSummary) -> String {
@@ -1672,22 +1692,25 @@ private struct ScheduleListView: View {
     let schedule: [UserGameSummary]
     let userTeamName: String
 
-    private var groupedByDay: [(Int, [UserGameSummary])] {
-        Dictionary(grouping: schedule) { $0.day ?? 0 }
-            .map { (key: $0.key, value: $0.value.sorted { ($0.gameId ?? "") < ($1.gameId ?? "") }) }
-            .sorted { $0.key < $1.key }
+    private var orderedGames: [UserGameSummary] {
+        schedule.sorted {
+            let lhsDay = $0.day ?? Int.max
+            let rhsDay = $1.day ?? Int.max
+            if lhsDay != rhsDay {
+                return lhsDay < rhsDay
+            }
+            return ($0.gameId ?? "") < ($1.gameId ?? "")
+        }
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                ForEach(groupedByDay, id: \.0) { day, games in
+                ForEach(Array(orderedGames.enumerated()), id: \.offset) { index, game in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Day \(day)")
+                        Text("Game \(index + 1)")
                             .font(.headline)
-                        ForEach(Array(games.enumerated()), id: \.offset) { _, game in
-                            scheduleRow(game)
-                        }
+                        scheduleRow(game)
                     }
                 }
             }
