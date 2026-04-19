@@ -51,11 +51,11 @@ final class JSRuntime: @unchecked Sendable {
 
     #if canImport(JavaScriptCore)
     private func evaluateBootstrap(in context: JSContext) {
-        let playerSource = loadResourceText(name: "player", ext: "js", subdir: "js")
-        let coachSource = loadResourceText(name: "coach", ext: "js", subdir: "js")
-        let gameEngineSource = loadResourceText(name: "gameEngine.bundle", ext: "js", subdir: "js")
-        let leagueEngineSource = loadResourceText(name: "leagueEngine.bundle", ext: "js", subdir: "js")
-        let d1Snapshot = loadResourceText(name: "d1-conferences.2026", ext: "json", subdir: "js")
+        let playerSource = loadResourceText(name: "player", ext: "js")
+        let coachSource = loadResourceText(name: "coach", ext: "js")
+        let gameEngineSource = loadResourceText(name: "gameEngine.bundle", ext: "js")
+        let leagueEngineSource = loadResourceText(name: "leagueEngine.bundle", ext: "js")
+        let d1Snapshot = loadResourceText(name: "d1-conferences.2026", ext: "json")
 
         let bootstrap = """
         (function() {
@@ -263,10 +263,11 @@ final class JSRuntime: @unchecked Sendable {
         context.evaluateScript(bootstrap)
     }
 
-    private func loadResourceText(name: String, ext: String, subdir: String) -> String {
+    private func loadResourceText(name: String, ext: String, subdir: String? = nil) -> String {
         guard let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: subdir),
               let text = try? String(contentsOf: url, encoding: .utf8) else {
-            fatalError("Missing resource \(subdir)/\(name).\(ext)")
+            let location = subdir.map { "\($0)/\(name).\(ext)" } ?? "\(name).\(ext)"
+            fatalError("Missing resource \(location)")
         }
         return text
     }
