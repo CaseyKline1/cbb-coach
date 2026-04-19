@@ -33,6 +33,100 @@ const TEAM_OVR_CONFERENCE_BONUS = Object.freeze({
   sec: 6,
 });
 
+const TEAM_PRESTIGE_RECENT_BY_CONFERENCE = Object.freeze({
+  acc: 76,
+  sec: 76,
+  "big-ten": 75,
+  "big-12": 77,
+  "big-east": 73,
+  "american-athletic": 66,
+  mwc: 66,
+  "atlantic-10": 64,
+  "west-coast": 63,
+  mvc: 60,
+});
+
+const TEAM_PRESTIGE_HISTORICAL_BY_NAME = Object.freeze({
+  arizona: 90,
+  arkansas: 83,
+  baylor: 80,
+  cincinnati: 78,
+  connecticut: 95,
+  creighton: 72,
+  dayton: 70,
+  duke: 99,
+  florida: 86,
+  georgetown: 85,
+  gonzaga: 84,
+  houston: 83,
+  illinois: 79,
+  indiana: 95,
+  iowa: 70,
+  iowastate: 73,
+  kansas: 99,
+  kansasstate: 76,
+  kentucky: 99,
+  louisville: 91,
+  maryland: 83,
+  memphis: 80,
+  michigan: 88,
+  michiganstate: 91,
+  ncstate: 83,
+  northcarolina: 99,
+  notredame: 70,
+  ohiostate: 84,
+  oklahoma: 76,
+  oregon: 72,
+  providence: 71,
+  purdue: 86,
+  saintjohns: 78,
+  sandiegostate: 70,
+  setonhall: 73,
+  syracuse: 88,
+  tennessee: 77,
+  texas: 84,
+  texasam: 74,
+  ucla: 99,
+  usc: 79,
+  villanova: 93,
+  virginia: 82,
+  wakeforest: 76,
+  westvirginia: 77,
+  wisconsin: 80,
+  xavier: 76,
+});
+
+const TEAM_PRESTIGE_RECENT_BY_NAME = Object.freeze({
+  alabama: 89,
+  arizona: 88,
+  auburn: 86,
+  baylor: 90,
+  creighton: 82,
+  duke: 95,
+  floridaatlantic: 79,
+  gonzaga: 92,
+  houston: 96,
+  illinois: 83,
+  iowastate: 87,
+  kansas: 94,
+  kentucky: 87,
+  marquette: 86,
+  michiganstate: 84,
+  northcarolina: 92,
+  purdue: 95,
+  saintmarys: 82,
+  sandiegostate: 83,
+  tennessee: 89,
+  texasam: 80,
+  texastech: 82,
+  ucla: 78,
+  uconn: 96,
+  connecticut: 96,
+  villanova: 76,
+  virginia: 79,
+  wisconsin: 78,
+});
+
 const POSITION_TEMPLATE = Object.freeze(["PG", "SG", "SF", "PF", "C", "CG", "Wing", "F", "Big", "PG"]);
 const ROTATION_SLOTS = Object.freeze(["PG", "SG", "SF", "PF", "C"]);
 
@@ -131,6 +225,37 @@ function canonicalName(value) {
     .trim();
 }
 
+function getDeterministicJitter(seedKey, spread) {
+  const width = Math.max(0, Math.round(asNumber(spread, 0)));
+  if (width <= 0) return 0;
+  const bucketCount = width * 2 + 1;
+  return (hashString(seedKey) % bucketCount) - width;
+}
+
+function estimateHistoricalProgramPrestige(teamName) {
+  const key = canonicalName(teamName);
+  if (Object.prototype.hasOwnProperty.call(TEAM_PRESTIGE_HISTORICAL_BY_NAME, key)) {
+    return TEAM_PRESTIGE_HISTORICAL_BY_NAME[key];
+  }
+  const baseline = 43;
+  return clamp(baseline + getDeterministicJitter(`historical:${key}`, 12), 20, 82);
+}
+
+function estimateRecentProgramPrestige(teamName, conferenceId) {
+  const key = canonicalName(teamName);
+  if (Object.prototype.hasOwnProperty.call(TEAM_PRESTIGE_RECENT_BY_NAME, key)) {
+    return TEAM_PRESTIGE_RECENT_BY_NAME[key];
+  }
+  const conferenceBase = asNumber(TEAM_PRESTIGE_RECENT_BY_CONFERENCE[conferenceId], 60);
+  return clamp(conferenceBase + getDeterministicJitter(`recent:${conferenceId}:${key}`, 9), 25, 96);
+}
+
+function computeTeamPrestige(teamName, conferenceId) {
+  const historical = estimateHistoricalProgramPrestige(teamName);
+  const recent = estimateRecentProgramPrestige(teamName, conferenceId);
+  return clamp(Math.round(historical * 0.7 + recent * 0.3), 1, 99);
+}
+
 function randomInt(min, maxInclusive, random = Math.random) {
   return Math.floor(random() * (maxInclusive - min + 1)) + min;
 }
@@ -160,6 +285,7 @@ function buildConferenceCatalogFromSnapshot(snapshot, totalGames, allowedConfere
       const teams = (conference.teams || []).map((team) => ({
         id: team.id || slugify(`${normalizedConferenceName}-${team.name}`),
         name: decodeHtmlEntities(team.name),
+        teamPrestige: computeTeamPrestige(team.name, conference.id),
       }));
 
       return {
@@ -948,13 +1074,14 @@ function buildConferenceStandings(league, conferenceId) {
     });
 }
 
-function createTeamState({ teamId, teamName, conferenceId, teamModel, overall }) {
+function createTeamState({ teamId, teamName, conferenceId, teamModel, overall, teamPrestige }) {
   return {
     id: teamId,
     name: teamName,
     conferenceId,
     teamModel,
     overall,
+    teamPrestige: clamp(Math.round(asNumber(teamPrestige, computeTeamPrestige(teamName, conferenceId))), 1, 99),
     record: {
       games: 0,
       wins: 0,
@@ -993,6 +1120,7 @@ function listCareerTeamOptions(options = {}) {
       .map((team) => ({
         teamId: team.id,
         teamName: team.name,
+        teamPrestige: team.teamPrestige,
         conferenceId: conference.id,
         conferenceName: conference.name,
       })));
@@ -1034,6 +1162,7 @@ function createD1League(options = {}) {
         conferenceId: conference.id,
         teamModel: rosterBundle.team,
         overall: rosterBundle.overall,
+        teamPrestige: team.teamPrestige,
       });
 
       teamStateById[team.id] = teamState;
@@ -1042,6 +1171,7 @@ function createD1League(options = {}) {
         name: team.name,
         conferenceId: conference.id,
         overall: teamState.overall,
+        teamPrestige: teamState.teamPrestige,
       });
     }
   }
@@ -1658,6 +1788,276 @@ function getConferenceStandings(league, conferenceId) {
   return buildConferenceStandings(league, conferenceId);
 }
 
+function asRatio(value, fallback = 0.5) {
+  const numeric = asNumber(value, fallback);
+  if (numeric <= 1) return clamp(numeric, 0, 1);
+  return clamp(numeric / 100, 0, 1);
+}
+
+function normalizeVector(values, fallback = 0.5) {
+  const numeric = values.map((value) => asNumber(value, fallback));
+  const min = Math.min(...numeric);
+  const max = Math.max(...numeric);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || Math.abs(max - min) < 0.000001) {
+    return numeric.map(() => fallback);
+  }
+  return numeric.map((value) => (value - min) / (max - min));
+}
+
+function calculateCoachQuality(teamState) {
+  const staff = teamState?.teamModel?.coachingStaff;
+  if (!staff || typeof staff !== "object") return 50;
+  const head = staff.headCoach || {};
+  const assistants = Array.isArray(staff.assistants) ? staff.assistants : [];
+  const coachList = [head, ...assistants];
+  if (!coachList.length) return 50;
+
+  const coachSkillValue = (coach) => {
+    const skills = coach?.skills || {};
+    const values = [
+      asNumber(skills.offensiveCoaching, 50),
+      asNumber(skills.defensiveCoaching, 50),
+      asNumber(skills.playerDevelopment, 50),
+      asNumber(skills.recruiting, 50),
+      asNumber(skills.scouting, 50),
+      asNumber(skills.potential, 50),
+    ];
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  };
+
+  const headQuality = coachSkillValue(head);
+  const assistantQuality = assistants.length
+    ? assistants.reduce((sum, assistant) => sum + coachSkillValue(assistant), 0) / assistants.length
+    : headQuality;
+
+  return clamp(Math.round(headQuality * 0.7 + assistantQuality * 0.3), 1, 100);
+}
+
+function derivePrestige(teamState, conferenceId) {
+  const explicitPrestige =
+    asNumber(teamState?.teamPrestige, NaN) ||
+    asNumber(teamState?.prestige, NaN) ||
+    asNumber(teamState?.programPrestige, NaN) ||
+    asNumber(teamState?.teamModel?.prestige, NaN);
+  if (Number.isFinite(explicitPrestige)) {
+    return clamp(explicitPrestige, 0, 100);
+  }
+
+  const conferencePrestige = {
+    acc: 78,
+    sec: 76,
+    "big-ten": 77,
+    "big-12": 79,
+    "big-east": 74,
+  };
+  const conferenceBase = asNumber(conferencePrestige[conferenceId], 65);
+  const overall = asNumber(teamState?.overall, 65);
+  return clamp(conferenceBase * 0.7 + overall * 0.3, 0, 100);
+}
+
+function deriveLastYearResult(teamState, fallbackOverall) {
+  const directRatioCandidates = [
+    teamState?.lastYearResult,
+    teamState?.lastSeasonResult,
+    teamState?.previousSeason?.winPct,
+    teamState?.lastSeason?.winPct,
+    teamState?.history?.lastYearWinPct,
+  ];
+  for (const candidate of directRatioCandidates) {
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric)) {
+      return asRatio(numeric, 0.5);
+    }
+  }
+
+  const recordCandidates = [
+    teamState?.previousSeason,
+    teamState?.lastSeason,
+    teamState?.history?.lastYear,
+    { wins: teamState?.lastYearWins, losses: teamState?.lastYearLosses },
+    { wins: teamState?.previousSeasonWins, losses: teamState?.previousSeasonLosses },
+  ];
+  for (const candidate of recordCandidates) {
+    const wins = asNumber(candidate?.wins, NaN);
+    const losses = asNumber(candidate?.losses, NaN);
+    if (Number.isFinite(wins) && Number.isFinite(losses) && wins + losses > 0) {
+      return clamp(wins / (wins + losses), 0, 1);
+    }
+  }
+
+  return clamp(0.35 + asNumber(fallbackOverall, 65) / 200, 0, 1);
+}
+
+function computePreseasonFade(gamesPlayed) {
+  const games = Math.max(0, Math.round(asNumber(gamesPlayed, 0)));
+  const baseline = 0.80;
+  const floor = 0.12;
+  const decay = Math.exp(-games / 24);
+  return clamp(floor + (baseline - floor) * decay, floor, baseline);
+}
+
+function getRankings(league, options = {}) {
+  const topN = clamp(Math.round(asNumber(options.topN, 25)), 1, 200);
+  const teamList = Array.isArray(league?.teams?.list) ? league.teams.list : [];
+  const teamById = league?.teams?.byId || {};
+  if (!teamList.length) {
+    return {
+      topN,
+      seasonProgress: 0,
+      preseasonWeight: 1,
+      inSeasonWeight: 0,
+      rankings: [],
+    };
+  }
+
+  const completedGames = Array.isArray(league?.schedule?.games)
+    ? league.schedule.games.filter((game) => game?.completed && game?.result)
+    : [];
+
+  const gamesByTeam = {};
+  completedGames.forEach((game) => {
+    if (!gamesByTeam[game.homeTeamId]) gamesByTeam[game.homeTeamId] = [];
+    if (!gamesByTeam[game.awayTeamId]) gamesByTeam[game.awayTeamId] = [];
+    gamesByTeam[game.homeTeamId].push(game);
+    gamesByTeam[game.awayTeamId].push(game);
+  });
+
+  const winPctByTeam = {};
+  teamList.forEach((team) => {
+    const state = teamById[team.id];
+    const wins = asNumber(state?.record?.wins, 0);
+    const losses = asNumber(state?.record?.losses, 0);
+    const games = wins + losses;
+    winPctByTeam[team.id] = games > 0 ? wins / games : 0.5;
+  });
+
+  const metrics = teamList.map((team) => {
+    const state = teamById[team.id] || {};
+    const record = state.record || {};
+    const wins = asNumber(record.wins, 0);
+    const losses = asNumber(record.losses, 0);
+    const gamesPlayed = Math.max(0, wins + losses);
+    const pointsFor = asNumber(record.pointsFor, 0);
+    const pointsAgainst = asNumber(record.pointsAgainst, 0);
+    const pointDiffPerGame = gamesPlayed > 0 ? (pointsFor - pointsAgainst) / gamesPlayed : 0;
+
+    const teamGames = gamesByTeam[team.id] || [];
+    let sosAccumulator = 0;
+    let qualityWins = 0;
+    for (const game of teamGames) {
+      const opponentId = game.homeTeamId === team.id ? game.awayTeamId : game.homeTeamId;
+      const opponentWinPct = asNumber(winPctByTeam[opponentId], 0.5);
+      sosAccumulator += opponentWinPct;
+
+      const homeScore = asNumber(game?.result?.homeScore, 0);
+      const awayScore = asNumber(game?.result?.awayScore, 0);
+      const won = game.homeTeamId === team.id ? homeScore > awayScore : awayScore > homeScore;
+      if (won && opponentWinPct >= 0.60) {
+        qualityWins += 1;
+      }
+    }
+
+    const playerSkill = clamp(asNumber(state.overall, asNumber(team.overall, 65)), 1, 100);
+    const prestige = derivePrestige(state, state.conferenceId || team.conferenceId);
+    const lastYearResult = deriveLastYearResult(state, playerSkill);
+    const coachQuality = calculateCoachQuality(state);
+    const winPct = gamesPlayed > 0 ? wins / gamesPlayed : 0.5;
+    const strengthOfSchedule = teamGames.length > 0 ? sosAccumulator / teamGames.length : 0.5;
+    const qualityWinRate = gamesPlayed > 0 ? qualityWins / gamesPlayed : 0;
+
+    return {
+      teamId: team.id,
+      teamName: state.name || team.name || "Unknown",
+      conferenceId: state.conferenceId || team.conferenceId || "",
+      wins,
+      losses,
+      gamesPlayed,
+      recordText: `${wins}-${losses}`,
+      pointDiffPerGame,
+      winPct,
+      strengthOfSchedule,
+      qualityWinRate,
+      playerSkill,
+      prestige,
+      lastYearResult,
+      coachQuality,
+    };
+  });
+
+  const preseasonPlayer = normalizeVector(metrics.map((team) => team.playerSkill), 0.5);
+  const preseasonPrestige = normalizeVector(metrics.map((team) => team.prestige), 0.5);
+  const preseasonLastYear = normalizeVector(metrics.map((team) => team.lastYearResult), 0.5);
+  const preseasonCoach = normalizeVector(metrics.map((team) => team.coachQuality), 0.5);
+
+  const inSeasonWinPct = normalizeVector(metrics.map((team) => team.winPct), 0.5);
+  const inSeasonDiff = normalizeVector(metrics.map((team) => team.pointDiffPerGame), 0.5);
+  const inSeasonSos = normalizeVector(metrics.map((team) => team.strengthOfSchedule), 0.5);
+  const inSeasonQuality = normalizeVector(metrics.map((team) => team.qualityWinRate), 0.5);
+
+  const maxGamesPlayed = Math.max(...metrics.map((team) => team.gamesPlayed), 0);
+  const seasonTarget = Math.max(1, asNumber(league?.settings?.totalRegularSeasonGames, DEFAULT_TOTAL_REGULAR_SEASON_GAMES));
+  const seasonProgress = clamp(maxGamesPlayed / seasonTarget, 0, 1);
+  const preseasonWeight = computePreseasonFade(maxGamesPlayed);
+  const inSeasonWeight = 1 - preseasonWeight;
+
+  const ranked = metrics.map((team, index) => {
+    const preseasonScore =
+      preseasonPlayer[index] * 0.45 +
+      preseasonPrestige[index] * 0.20 +
+      preseasonLastYear[index] * 0.20 +
+      preseasonCoach[index] * 0.15;
+
+    const inSeasonScore =
+      inSeasonWinPct[index] * 0.50 +
+      inSeasonDiff[index] * 0.20 +
+      inSeasonSos[index] * 0.20 +
+      inSeasonQuality[index] * 0.10;
+
+    const compositeScore = preseasonScore * preseasonWeight + inSeasonScore * inSeasonWeight;
+
+    return {
+      ...team,
+      preseasonScore,
+      inSeasonScore,
+      compositeScore,
+    };
+  })
+    .sort((a, b) => {
+      if (b.compositeScore !== a.compositeScore) return b.compositeScore - a.compositeScore;
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      if (b.pointDiffPerGame !== a.pointDiffPerGame) return b.pointDiffPerGame - a.pointDiffPerGame;
+      return a.teamName.localeCompare(b.teamName);
+    })
+    .map((entry, index) => ({
+      rank: index + 1,
+      teamId: entry.teamId,
+      teamName: entry.teamName,
+      conferenceId: entry.conferenceId,
+      record: entry.recordText,
+      wins: entry.wins,
+      losses: entry.losses,
+      gamesPlayed: entry.gamesPlayed,
+      pointDifferentialPerGame: entry.pointDiffPerGame,
+      strengthOfSchedule: entry.strengthOfSchedule,
+      qualityWinRate: entry.qualityWinRate,
+      playerSkill: entry.playerSkill,
+      prestige: entry.prestige,
+      lastYearResult: entry.lastYearResult,
+      coachQuality: entry.coachQuality,
+      preseasonScore: entry.preseasonScore,
+      inSeasonScore: entry.inSeasonScore,
+      compositeScore: entry.compositeScore,
+    }));
+
+  return {
+    topN,
+    seasonProgress,
+    preseasonWeight,
+    inSeasonWeight,
+    rankings: ranked.slice(0, topN),
+  };
+}
+
 function normalizeTeamRecord(rawRecord = {}) {
   return {
     games: Math.max(0, Math.round(asNumber(rawRecord.games, 0))),
@@ -1750,9 +2150,43 @@ function hydrateLoadedLeagueState(rawLeague) {
       targetConferenceGames: Math.max(0, Math.round(asNumber(teamState.targetConferenceGames, 0))),
       targetNonConferenceGames: Math.max(0, Math.round(asNumber(teamState.targetNonConferenceGames, 0))),
       overall: Math.round(asNumber(teamState.overall, estimateTeamOverall(teamState.teamModel.players))),
+      teamPrestige: clamp(
+        Math.round(
+          asNumber(
+            teamState.teamPrestige,
+            computeTeamPrestige(teamState.name || teamId, teamState.conferenceId)
+          )
+        ),
+        1,
+        99
+      ),
     };
   });
   league.teams.byId = teamStateById;
+  league.conferences.list = league.conferences.list.map((conference) => ({
+    ...conference,
+    teams: Array.isArray(conference.teams)
+      ? conference.teams.map((team) => {
+          const state = team?.id ? teamStateById[team.id] : null;
+          const teamName = state?.name || team?.name || "";
+          return {
+            ...team,
+            name: teamName,
+            teamPrestige: clamp(
+              Math.round(
+                asNumber(
+                  team?.teamPrestige,
+                  state?.teamPrestige ?? computeTeamPrestige(teamName, conference.id)
+                )
+              ),
+              1,
+              99
+            ),
+          };
+        })
+      : [],
+  }));
+  league.conferences.byId = Object.fromEntries(league.conferences.list.map((conference) => [conference.id, conference]));
 
   const teamList =
     Array.isArray(league.teams.list) && league.teams.list.length
@@ -1762,6 +2196,7 @@ function hydrateLoadedLeagueState(rawLeague) {
           name: teamState.name,
           conferenceId: teamState.conferenceId,
           overall: teamState.overall,
+          teamPrestige: teamState.teamPrestige,
         }));
   league.teams.list = teamList
     .filter((team) => team && team.id && teamStateById[team.id])
@@ -1770,6 +2205,7 @@ function hydrateLoadedLeagueState(rawLeague) {
       name: teamStateById[team.id].name,
       conferenceId: teamStateById[team.id].conferenceId,
       overall: teamStateById[team.id].overall,
+      teamPrestige: teamStateById[team.id].teamPrestige,
     }));
 
   league.version = Math.round(asNumber(league.version, 1));
@@ -1892,6 +2328,7 @@ module.exports = {
   advanceToNextUserGame,
   getUserCompletedGames,
   getConferenceStandings,
+  getRankings,
   getLeagueSummary,
   saveLeagueState,
   loadLeagueState,
