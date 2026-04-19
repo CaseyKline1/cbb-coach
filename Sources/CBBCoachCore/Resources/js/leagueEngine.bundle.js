@@ -142,6 +142,18 @@ const POSITION_OFFSETS = Object.freeze({
   Big: { shooting: -3, passing: -3, defendingPerimeter: -4, rebounding: 9, inside: 9 },
 });
 
+const POSITION_SIZE_PROFILE = Object.freeze({
+  PG: { minHeight: 71, maxHeight: 76, minWeight: 165, maxWeight: 205, minWingspanDelta: 2, maxWingspanDelta: 5 },
+  SG: { minHeight: 73, maxHeight: 78, minWeight: 175, maxWeight: 215, minWingspanDelta: 2, maxWingspanDelta: 6 },
+  SF: { minHeight: 76, maxHeight: 81, minWeight: 195, maxWeight: 235, minWingspanDelta: 2, maxWingspanDelta: 7 },
+  PF: { minHeight: 78, maxHeight: 83, minWeight: 210, maxWeight: 255, minWingspanDelta: 2, maxWingspanDelta: 7 },
+  C: { minHeight: 81, maxHeight: 86, minWeight: 225, maxWeight: 280, minWingspanDelta: 3, maxWingspanDelta: 8 },
+  CG: { minHeight: 72, maxHeight: 78, minWeight: 170, maxWeight: 210, minWingspanDelta: 2, maxWingspanDelta: 6 },
+  Wing: { minHeight: 75, maxHeight: 81, minWeight: 185, maxWeight: 230, minWingspanDelta: 2, maxWingspanDelta: 7 },
+  F: { minHeight: 77, maxHeight: 83, minWeight: 205, maxWeight: 250, minWingspanDelta: 2, maxWingspanDelta: 7 },
+  Big: { minHeight: 80, maxHeight: 85, minWeight: 220, maxWeight: 275, minWingspanDelta: 3, maxWingspanDelta: 8 },
+});
+
 const FIRST_NAME_POOL = Object.freeze([
   "Jalen", "Marcus", "Eli", "Noah", "Ty", "Jordan", "Malik", "Darius", "Caleb", "Cameron",
   "Xavier", "Aiden", "Isaiah", "Liam", "Mason", "Jayden", "Trent", "Damon", "Riley", "Kaden",
@@ -258,6 +270,26 @@ function computeTeamPrestige(teamName, conferenceId) {
 
 function randomInt(min, maxInclusive, random = Math.random) {
   return Math.floor(random() * (maxInclusive - min + 1)) + min;
+}
+
+function formatInchesAsFeetDashInches(totalInches) {
+  const inches = clamp(Math.round(asNumber(totalInches, 0)), 0, 120);
+  const feet = Math.floor(inches / 12);
+  const remainder = inches % 12;
+  return `${feet}-${remainder}`;
+}
+
+function assignPlayerMeasurables(player, random = Math.random) {
+  const position = player?.bio?.position;
+  const profile = POSITION_SIZE_PROFILE[position] || POSITION_SIZE_PROFILE.SF;
+  const heightInches = randomInt(profile.minHeight, profile.maxHeight, random);
+  const wingspanDelta = randomInt(profile.minWingspanDelta, profile.maxWingspanDelta, random);
+  const wingspanInches = heightInches + wingspanDelta;
+  const weight = randomInt(profile.minWeight, profile.maxWeight, random);
+
+  player.size.height = formatInchesAsFeetDashInches(heightInches);
+  player.size.wingspan = formatInchesAsFeetDashInches(wingspanInches);
+  player.size.weight = String(weight);
 }
 
 function getDefaultConferenceGamesTarget(teamCount) {
@@ -415,6 +447,7 @@ function createProgramRoster({ teamName, conferenceId, seed }) {
     const roleBoost = idx < 5 ? randomInt(2, 9, random) : randomInt(-5, 4, random);
     const roleBase = clamp(teamBase + roleBoost, 40, 92);
     applyPlayerRatings(player, roleBase, random);
+    assignPlayerMeasurables(player, random);
     return player;
   });
 
