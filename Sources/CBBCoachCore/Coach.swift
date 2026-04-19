@@ -137,6 +137,7 @@ private let SCHOOL_KEYWORDS_TO_STATE: [String: String] = [
 public struct CreateCoachOptions: Codable, Equatable, Sendable {
     public var role: CoachRole = .assistant
     public var name: String?
+    public var focus: AssistantFocus?
     public var age: Int?
     public var pressAggressiveness: Int?
     public var pace: PaceProfile = .normal
@@ -154,13 +155,21 @@ public struct CreateCoachOptions: Codable, Equatable, Sendable {
 }
 
 public func createCoach(options: CreateCoachOptions = CreateCoachOptions(), random: inout SeededRandom) -> Coach {
-    do {
-        let args = [try toJSONValue(options)]
-        let response = try JSRuntime.shared.invokeWithRandom(moduleId: "./coach", fn: "createCoach", args: args, random: &random)
-        return try fromJSONValue(response.result, as: Coach.self)
-    } catch {
-        fatalError("createCoach failed: \(error)")
-    }
+    let resolvedAlmaMater = chooseAlmaMater(options, random: &random)
+
+    var output = Coach()
+    output.role = options.role
+    output.name = chooseCoachName(options.name, random: &random)
+    output.focus = resolveFocus(role: options.role, requested: options.focus)
+    output.age = clamp(options.age ?? random.int(31, 69), min: 24, max: 80)
+    output.pressAggressiveness = clamp(options.pressAggressiveness ?? random.int(25, 90), min: 1, max: 100)
+    output.pace = options.pace
+    output.defaultOffensiveSet = options.defaultOffensiveSet
+    output.defaultDefensiveSet = options.defaultDefensiveSet
+    output.almaMater = resolvedAlmaMater
+    output.pipelineState = choosePipelineState(options, almaMater: resolvedAlmaMater, random: &random)
+    output.skills = CoachSkills.normalized(from: options.skills, random: &random)
+    return output
 }
 
 public struct CreateCoachingStaffOptions: Codable, Equatable, Sendable {
@@ -178,13 +187,67 @@ public struct CreateCoachingStaffOptions: Codable, Equatable, Sendable {
 }
 
 public func createCoachingStaff(options: CreateCoachingStaffOptions = CreateCoachingStaffOptions(), random: inout SeededRandom) -> CoachingStaff {
-    do {
-        let args = [try toJSONValue(options)]
-        let response = try JSRuntime.shared.invokeWithRandom(moduleId: "./coach", fn: "createCoachingStaff", args: args, random: &random)
-        return try fromJSONValue(response.result, as: CoachingStaff.self)
-    } catch {
-        fatalError("createCoachingStaff failed: \(error)")
+    var headOptions = options.headCoach ?? CreateCoachOptions()
+    headOptions.role = .headCoach
+    headOptions.pace = options.defaultPace
+    headOptions.defaultOffensiveSet = options.defaultOffensiveSet
+    headOptions.defaultDefensiveSet = options.defaultDefensiveSet
+    headOptions.schoolPool = options.schoolPool
+    headOptions.teamName = options.teamName
+    headOptions.pipelineStateWeights = options.pipelineStateWeights
+    let generatedHead = createCoach(options: headOptions, random: &random)
+
+    var assistantSeeds = Array(options.assistants.prefix(4))
+    while assistantSeeds.count < 4 {
+        assistantSeeds.append(CreateCoachOptions())
     }
+
+    let generatedAssistants = assistantSeeds.map { seed -> Coach in
+        var assistantOptions = seed
+        assistantOptions.role = .assistant
+        assistantOptions.pace = options.defaultPace
+        assistantOptions.defaultOffensiveSet = options.defaultOffensiveSet
+        assistantOptions.defaultDefensiveSet = options.defaultDefensiveSet
+        assistantOptions.schoolPool = options.schoolPool
+        assistantOptions.teamName = options.teamName
+        assistantOptions.pipelineStateWeights = options.pipelineStateWeights
+        return createCoach(options: assistantOptions, random: &random)
+    }
+
+    let gamePrepIndex: Int?
+    if let requested = options.gamePrepAssistantIndex, requested >= 0, requested < generatedAssistants.count {
+        gamePrepIndex = requested
+    } else {
+        gamePrepIndex = nil
+    }
+
+    return CoachingStaff(headCoach: generatedHead, assistants: generatedAssistants, gamePrepAssistantIndex: gamePrepIndex)
+}
+
+private let COACH_FIRST_NAME_POOL: [String] = [
+    "Alex", "Jordan", "Taylor", "Chris", "Devin", "Morgan", "Riley", "Cameron", "Hayden", "Avery",
+    "Parker", "Quinn", "Casey", "Logan", "Skyler", "Reese", "Drew", "Rowan", "Blake", "Micah"
+]
+
+private let COACH_LAST_NAME_POOL: [String] = [
+    "Anderson", "Bennett", "Collins", "Diaz", "Evans", "Fisher", "Graham", "Howard", "Irving", "James",
+    "Keller", "Lawson", "Morris", "Nguyen", "Owens", "Parker", "Quincy", "Ramirez", "Sullivan", "Turner"
+]
+
+private func resolveFocus(role: CoachRole, requested: AssistantFocus?) -> AssistantFocus? {
+    if let requested {
+        return requested
+    }
+    return role == .assistant ? .recruiting : nil
+}
+
+private func chooseCoachName(_ input: String?, random: inout SeededRandom) -> String {
+    if let value = input?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+        return value
+    }
+    let first = random.choose(COACH_FIRST_NAME_POOL) ?? "Coach"
+    let last = random.choose(COACH_LAST_NAME_POOL) ?? "Staff"
+    return "\(first) \(last)"
 }
 
 private func chooseAlmaMater(_ options: CreateCoachOptions, random: inout SeededRandom) -> String {
@@ -227,7 +290,7 @@ private func choosePipelineState(_ options: CreateCoachOptions, almaMater: Strin
         return inferred
     }
 
-    let weighted = options.pipelineStateWeights.filter { $0.value > 0 }
+    let weighted = options.pipelineStateWeights.filter { $0.value > 0 }.sorted { $0.key < $1.key }
     let total = weighted.reduce(0) { $0 + $1.value }
     guard total > 0 else { return "CA" }
 

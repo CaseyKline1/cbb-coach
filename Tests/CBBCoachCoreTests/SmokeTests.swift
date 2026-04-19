@@ -10,6 +10,29 @@ func createPlayerAndTeam() {
     #expect(team.players.count == 5)
 }
 
+@Test("Coach and staff generation is native and normalized")
+func coachAndStaffGeneration() {
+    var random = SeededRandom(seed: 7)
+
+    var options = CreateCoachOptions()
+    options.role = .assistant
+    options.teamName = "Sample U"
+    options.skills = nil
+    let generated = createCoach(options: options, random: &random)
+    #expect(generated.role == .assistant)
+    #expect(generated.focus == .recruiting)
+    #expect((generated.name ?? "").isEmpty == false)
+    #expect(generated.age >= 24 && generated.age <= 80)
+    #expect(generated.pressAggressiveness >= 1 && generated.pressAggressiveness <= 100)
+
+    var staffOptions = CreateCoachingStaffOptions()
+    staffOptions.teamName = "Sample U"
+    staffOptions.assistants = []
+    let staff = createCoachingStaff(options: staffOptions, random: &random)
+    #expect(staff.assistants.count == 4)
+    #expect(staff.coaches.count == 5)
+}
+
 @Test("Can simulate a complete game")
 func simulateGameSmoke() {
     var random = SeededRandom(seed: 42)

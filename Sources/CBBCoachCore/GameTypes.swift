@@ -138,11 +138,86 @@ public struct CreateTeamOptions: Codable, Equatable, Sendable {
 }
 
 public func createTeam(options: CreateTeamOptions, random: inout SeededRandom) -> Team {
-    do {
-        let args = [try toJSONValue(options)]
-        let response = try JSRuntime.shared.invokeWithRandom(moduleId: "./gameEngine", fn: "createTeam", args: args, random: &random)
-        return try fromJSONValue(response.result, as: Team.self)
-    } catch {
-        fatalError("createTeam failed: \(error)")
+    let resolvedSchoolPool: [String]
+    if let pool = options.schoolPool?.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }).filter({ !$0.isEmpty }), !pool.isEmpty {
+        resolvedSchoolPool = pool
+    } else {
+        let trimmed = options.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        resolvedSchoolPool = trimmed.isEmpty ? [] : [trimmed]
     }
+
+    let normalizedStaff: CoachingStaff
+    if let staff = options.coachingStaff {
+        var createOptions = CreateCoachingStaffOptions()
+        createOptions.headCoach = createCoachSeed(from: staff.headCoach)
+        createOptions.assistants = staff.assistants.map(createCoachSeed(from:))
+        createOptions.gamePrepAssistantIndex = staff.gamePrepAssistantIndex
+        createOptions.schoolPool = resolvedSchoolPool
+        createOptions.teamName = options.name
+        createOptions.defaultPace = options.pace
+        createOptions.defaultOffensiveSet = options.formation
+        createOptions.defaultDefensiveSet = options.defenseScheme
+        if let weights = options.pipelineStateWeights {
+            createOptions.pipelineStateWeights = weights
+        }
+        normalizedStaff = createCoachingStaff(options: createOptions, random: &random)
+    } else if let coaches = options.coaches {
+        var createOptions = CreateCoachingStaffOptions()
+        createOptions.headCoach = coaches.first.map(createCoachSeed(from:))
+        createOptions.assistants = Array(coaches.dropFirst()).map(createCoachSeed(from:))
+        createOptions.schoolPool = resolvedSchoolPool
+        createOptions.teamName = options.name
+        createOptions.defaultPace = options.pace
+        createOptions.defaultOffensiveSet = options.formation
+        createOptions.defaultDefensiveSet = options.defenseScheme
+        if let weights = options.pipelineStateWeights {
+            createOptions.pipelineStateWeights = weights
+        }
+        normalizedStaff = createCoachingStaff(options: createOptions, random: &random)
+    } else {
+        var createOptions = CreateCoachingStaffOptions()
+        createOptions.schoolPool = resolvedSchoolPool
+        createOptions.teamName = options.name
+        createOptions.defaultPace = options.pace
+        createOptions.defaultOffensiveSet = options.formation
+        createOptions.defaultDefensiveSet = options.defenseScheme
+        if let weights = options.pipelineStateWeights {
+            createOptions.pipelineStateWeights = weights
+        }
+        normalizedStaff = createCoachingStaff(options: createOptions, random: &random)
+    }
+
+    let players = options.players.isEmpty ? (options.lineup ?? []) : options.players
+    let lineup = (options.lineup?.isEmpty == false) ? (options.lineup ?? players) : players
+
+    return Team(
+        name: options.name,
+        players: players,
+        lineup: lineup,
+        formation: options.formation,
+        formations: options.formations,
+        defenseScheme: options.defenseScheme,
+        tendencies: options.tendencies,
+        timeouts: options.timeouts,
+        rotation: options.rotation,
+        pace: options.pace,
+        coachingStaff: normalizedStaff
+    )
+}
+
+private func createCoachSeed(from coach: Coach) -> CreateCoachOptions {
+    var seed = CreateCoachOptions()
+    seed.role = coach.role
+    seed.name = coach.name
+    seed.focus = coach.focus
+    seed.age = coach.age
+    seed.pressAggressiveness = coach.pressAggressiveness
+    seed.pace = coach.pace
+    seed.defaultOffensiveSet = coach.defaultOffensiveSet
+    seed.defaultDefensiveSet = coach.defaultDefensiveSet
+    seed.almaMater = coach.almaMater
+    seed.teamName = ""
+    seed.pipelineState = coach.pipelineState
+    seed.skills = coach.skills
+    return seed
 }
