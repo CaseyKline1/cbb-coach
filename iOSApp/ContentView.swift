@@ -876,13 +876,14 @@ private struct RotationSettingsView: View {
     @State private var showExitBalancePrompt: Bool = false
     @State private var draggedSlot: Int? = nil
     @State private var targetedDropSlot: Int? = nil
+    @State private var selectedSlotForSwap: Int? = nil
 
     private let starterPositions = ["PG", "SG", "SF", "PF", "C"]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Drag player names between rows to set starters and bench order. Each row has its own minute target.")
+                Text("Long-press and drag player names between rows, or tap one player then tap another to swap. Each row has its own minute target.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -975,12 +976,13 @@ private struct RotationSettingsView: View {
                         .frame(width: 120)
                     }
                     .padding(.vertical, 6)
-                    .background(targetedDropSlot == slot.slot ? AppTheme.accent.opacity(0.16) : Color.clear)
+                    .background(rowHighlightColor(for: slot.slot))
                     .contentShape(Rectangle())
                     .onDrop(of: [UTType.plainText], isTargeted: dropTargetBinding(for: slot.slot)) { _ in
                         guard let sourceSlot = draggedSlot else { return false }
                         movePlayer(fromSlot: sourceSlot, toSlot: slot.slot)
                         draggedSlot = nil
+                        selectedSlotForSwap = nil
                         targetedDropSlot = nil
                         return true
                     }
@@ -1138,10 +1140,16 @@ private struct RotationSettingsView: View {
             playerLabel = "Unassigned"
         }
 
-        return Text(playerLabel)
-            .font(.caption.monospacedDigit().weight(.semibold))
-            .lineLimit(1)
-            .truncationMode(.tail)
+        return HStack(spacing: 6) {
+            Image(systemName: "line.3.horizontal")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(playerLabel)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1151,10 +1159,14 @@ private struct RotationSettingsView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(AppTheme.cardBorder, lineWidth: 1)
             )
+            .onTapGesture {
+                tapToSwap(slot: slot.slot)
+            }
             .onDrag {
                 draggedSlot = slot.slot
                 return NSItemProvider(object: "\(slot.slot)" as NSString)
             }
+            .accessibilityLabel("\(playerLabel). Drag to reorder or tap to swap.")
     }
 
     private func movePlayer(fromSlot sourceSlot: Int, toSlot destinationSlot: Int) {
@@ -1169,6 +1181,35 @@ private struct RotationSettingsView: View {
         let sourcePlayer = editedSlots[sourceIndex].playerIndex
         editedSlots[sourceIndex].playerIndex = editedSlots[destinationIndex].playerIndex
         editedSlots[destinationIndex].playerIndex = sourcePlayer
+    }
+
+    private func tapToSwap(slot: Int) {
+        if let selected = selectedSlotForSwap {
+            if selected == slot {
+                selectedSlotForSwap = nil
+                statusText = totalIsBalanced(editedSlots)
+                    ? "Minutes balanced at \(Int(targetTotal.rounded())). Back out to save."
+                    : "Total is \(Int(totalMinutes.rounded())) / \(Int(targetTotal.rounded())). You can fix now or let assistants fix when leaving."
+                return
+            }
+            movePlayer(fromSlot: selected, toSlot: slot)
+            selectedSlotForSwap = nil
+            statusText = "Swapped slots \(selected) and \(slot)."
+            return
+        }
+
+        selectedSlotForSwap = slot
+        statusText = "Selected slot \(slot). Tap another player row to swap."
+    }
+
+    private func rowHighlightColor(for slot: Int) -> Color {
+        if targetedDropSlot == slot {
+            return AppTheme.accent.opacity(0.16)
+        }
+        if selectedSlotForSwap == slot {
+            return AppTheme.accent.opacity(0.10)
+        }
+        return .clear
     }
 
     private func dropTargetBinding(for slot: Int) -> Binding<Bool> {
@@ -1468,6 +1509,10 @@ private struct PlayerCareerTotals: Hashable {
     var pointsPerGame: Double { games > 0 ? Double(points) / Double(games) : 0 }
     var reboundsPerGame: Double { games > 0 ? Double(rebounds) / Double(games) : 0 }
     var assistsPerGame: Double { games > 0 ? Double(assists) / Double(games) : 0 }
+    var minutesPerGame: Double { games > 0 ? minutes / Double(games) : 0 }
+    var stealsPerGame: Double { games > 0 ? Double(steals) / Double(games) : 0 }
+    var blocksPerGame: Double { games > 0 ? Double(blocks) / Double(games) : 0 }
+    var turnoversPerGame: Double { games > 0 ? Double(turnovers) / Double(games) : 0 }
     var fgPct: Double { fgAttempts > 0 ? Double(fgMade) / Double(fgAttempts) : 0 }
     var threePct: Double { threeAttempts > 0 ? Double(threeMade) / Double(threeAttempts) : 0 }
     var ftPct: Double { ftAttempts > 0 ? Double(ftMade) / Double(ftAttempts) : 0 }
@@ -1582,52 +1627,47 @@ private struct PlayerCardDetailView: View {
             .map(\.name)
     }
 
-    private var careerTotals: PlayerCareerTotals {
-        var totals = PlayerCareerTotals.zero
-
-        for game in schedule where game.completed == true {
-            guard
-                let line = findPlayerLine(in: game)
-            else { continue }
-
-            totals = PlayerCareerTotals(
-                games: totals.games + 1,
-                minutes: totals.minutes + line.minutes,
-                points: totals.points + line.points,
-                rebounds: totals.rebounds + line.rebounds,
-                assists: totals.assists + line.assists,
-                steals: totals.steals + line.steals,
-                blocks: totals.blocks + line.blocks,
-                turnovers: totals.turnovers + line.turnovers,
-                fgMade: totals.fgMade + line.fgMade,
-                fgAttempts: totals.fgAttempts + line.fgAttempts,
-                threeMade: totals.threeMade + line.threeMade,
-                threeAttempts: totals.threeAttempts + line.threeAttempts,
-                ftMade: totals.ftMade + line.ftMade,
-                ftAttempts: totals.ftAttempts + line.ftAttempts
-            )
-        }
-        return totals
+    private struct CareerYearRow {
+        let year: String
+        let totals: PlayerCareerTotals
     }
 
-    private var careerRows: [(id: AnyHashable, data: (label: String, value: String))] {
-        let totals = careerTotals
-        return [
-            (id: AnyHashable("gp"), data: ("GP", "\(totals.games)")),
-            (id: AnyHashable("min"), data: ("MIN", format(totals.minutes))),
-            (id: AnyHashable("pts"), data: ("PTS", "\(totals.points)")),
-            (id: AnyHashable("reb"), data: ("REB", "\(totals.rebounds)")),
-            (id: AnyHashable("ast"), data: ("AST", "\(totals.assists)")),
-            (id: AnyHashable("stl"), data: ("STL", "\(totals.steals)")),
-            (id: AnyHashable("blk"), data: ("BLK", "\(totals.blocks)")),
-            (id: AnyHashable("to"), data: ("TO", "\(totals.turnovers)")),
-            (id: AnyHashable("fg"), data: ("FG%", pct(totals.fgPct))),
-            (id: AnyHashable("three"), data: ("3PT%", pct(totals.threePct))),
-            (id: AnyHashable("ft"), data: ("FT%", pct(totals.ftPct))),
-            (id: AnyHashable("ppg"), data: ("PPG", format(totals.pointsPerGame))),
-            (id: AnyHashable("rpg"), data: ("RPG", format(totals.reboundsPerGame))),
-            (id: AnyHashable("apg"), data: ("APG", format(totals.assistsPerGame))),
-        ]
+    private var careerRows: [(id: AnyHashable, data: CareerYearRow)] {
+        var totalsByYear: [String: PlayerCareerTotals] = [:]
+        let playerYear = player.year.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "N/A" : player.year
+
+        for game in schedule where game.completed == true {
+            guard let line = findPlayerLine(in: game) else { continue }
+            let current = totalsByYear[playerYear] ?? .zero
+            totalsByYear[playerYear] = PlayerCareerTotals(
+                games: current.games + 1,
+                minutes: current.minutes + line.minutes,
+                points: current.points + line.points,
+                rebounds: current.rebounds + line.rebounds,
+                assists: current.assists + line.assists,
+                steals: current.steals + line.steals,
+                blocks: current.blocks + line.blocks,
+                turnovers: current.turnovers + line.turnovers,
+                fgMade: current.fgMade + line.fgMade,
+                fgAttempts: current.fgAttempts + line.fgAttempts,
+                threeMade: current.threeMade + line.threeMade,
+                threeAttempts: current.threeAttempts + line.threeAttempts,
+                ftMade: current.ftMade + line.ftMade,
+                ftAttempts: current.ftAttempts + line.ftAttempts
+            )
+        }
+
+        return totalsByYear
+            .map { (year: $0.key, totals: $0.value) }
+            .sorted { lhs, rhs in
+                lhs.year.localizedCaseInsensitiveCompare(rhs.year) == .orderedAscending
+            }
+            .map { entry in
+                (
+                    id: AnyHashable(entry.year),
+                    data: CareerYearRow(year: entry.year, totals: entry.totals)
+                )
+            }
     }
 
     var body: some View {
@@ -1688,13 +1728,39 @@ private struct PlayerCardDetailView: View {
                 GameCard {
                     GameSectionHeader(title: "Career Stats")
                     let columns: [AppTableColumn<String>] = [
-                        .init(id: "stat", title: "STAT", width: 90, alignment: .leading),
-                        .init(id: "value", title: "VALUE", width: 80),
+                        .init(id: "year", title: "YEAR", width: 52, alignment: .leading),
+                        .init(id: "games", title: "G", width: 42),
+                        .init(id: "minutes", title: "MIN", width: 52),
+                        .init(id: "points", title: "PTS", width: 52),
+                        .init(id: "rebounds", title: "REB", width: 52),
+                        .init(id: "assists", title: "AST", width: 52),
+                        .init(id: "steals", title: "STL", width: 52),
+                        .init(id: "blocks", title: "BLK", width: 52),
+                        .init(id: "turnovers", title: "TO", width: 52),
+                        .init(id: "fg", title: "FG%", width: 64),
+                        .init(id: "three", title: "3PT%", width: 64),
+                        .init(id: "ft", title: "FT%", width: 64),
+                        .init(id: "ppg", title: "PPG", width: 56),
+                        .init(id: "rpg", title: "RPG", width: 56),
+                        .init(id: "apg", title: "APG", width: 56),
                     ]
                     AppTable(columns: columns, rows: careerRows) { row in
                         HStack(spacing: 0) {
-                            AppTableTextCell(text: row.label, width: 90, alignment: .leading, font: .caption.monospacedDigit())
-                            AppTableTextCell(text: row.value, width: 80, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: row.year, width: 52, alignment: .leading, font: .caption.monospacedDigit())
+                            AppTableTextCell(text: "\(row.totals.games)", width: 42, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.minutesPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.pointsPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.reboundsPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.assistsPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.stealsPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.blocksPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.turnoversPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: pct(row.totals.fgPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: pct(row.totals.threePct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: pct(row.totals.ftPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.pointsPerGame), width: 56, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.reboundsPerGame), width: 56, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.assistsPerGame), width: 56, font: .caption.monospacedDigit().weight(.semibold))
                         }
                     }
                 }
