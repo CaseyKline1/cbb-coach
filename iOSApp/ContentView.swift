@@ -1982,7 +1982,7 @@ private struct BoxScoreDetailView: View {
 
     private func teamSection(_ team: ParsedTeamBoxScore) -> some View {
         let columns: [AppTableColumn<String>] = [
-            .init(id: "player", title: "PLYR", width: 140, alignment: .leading),
+            .init(id: "player", title: "", width: 140, alignment: .leading),
             .init(id: "min", title: "MIN", width: 44),
             .init(id: "pts", title: "PTS", width: 42),
             .init(id: "reb", title: "REB", width: 42),
@@ -2122,7 +2122,7 @@ private struct PlayerStatsView: View {
 
     private var columns: [AppTableColumn<String>] {
         [
-            .init(id: "name", title: "PLYR", width: 170, alignment: .leading),
+            .init(id: "name", title: "", width: 170, alignment: .leading),
             .init(id: "games", title: "G", width: 42),
             .init(id: "points", title: "PTS", width: 48),
             .init(id: "rebounds", title: "REB", width: 48),
