@@ -546,32 +546,32 @@ private struct CollegeLeagueHomeView: View {
                     GroupBox("Team") {
                         VStack(spacing: 8) {
                             NavigationLink(value: LeagueMenuDestination.roster) {
-                                MenuRow(title: "Roster", subtitle: "Sortable table with all ratings & attributes")
+                                MenuRow(title: "Roster")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.schedule) {
-                                MenuRow(title: "Schedule", subtitle: "Full schedule and completed game results")
+                                MenuRow(title: "Schedule")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.rotation) {
-                                MenuRow(title: "Rotation", subtitle: "Set preferred starters, backups, and minute targets")
+                                MenuRow(title: "Rotation")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.playerStats) {
-                                MenuRow(title: "Player Stats", subtitle: "Per-game averages from completed games")
+                                MenuRow(title: "Player Stats")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.standings) {
-                                MenuRow(title: "Standings", subtitle: "Conference records and point differentials")
+                                MenuRow(title: "Standings")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.coachingStaff) {
-                                MenuRow(title: "Coaching Staff", subtitle: "View coach traits and set assistant focus")
+                                MenuRow(title: "Coaching Staff")
                             }
                             .buttonStyle(.plain)
                         }
@@ -794,18 +794,12 @@ private struct StatChip: View {
 
 private struct MenuRow: View {
     let title: String
-    let subtitle: String
 
     var body: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
             Spacer()
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
