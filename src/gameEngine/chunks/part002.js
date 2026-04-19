@@ -3,6 +3,16 @@
     .sort((a, b) => b.score - a.score);
 }
 
+function getDesiredLineupPosition(team, slotIndex, currentPlayer) {
+  const starterPositions = Array.isArray(team?.rotation?.starterPositions) ? team.rotation.starterPositions : [];
+  const saved = String(starterPositions[slotIndex] || "").trim().toUpperCase();
+  if (saved) return saved;
+  const current = String(currentPlayer?.bio?.position || "").trim().toUpperCase();
+  if (current) return current;
+  const fallback = ["PG", "SG", "SF", "PF", "C"][slotIndex];
+  return fallback || "SF";
+}
+
 function runDeadBallSubstitutions(state, reason = "dead_ball") {
   const elapsedGameSeconds = getElapsedGameSeconds(state);
   const regulationSeconds = HALF_SECONDS * REGULATION_HALVES;
@@ -74,8 +84,22 @@ function runDeadBallSubstitutions(state, reason = "dead_ball") {
       if (!bench.length || !onCourt.length) break;
 
       const outCandidate = onCourt[0];
-      const inCandidate = bench[0];
-      if (!outCandidate || !inCandidate) break;
+      if (!outCandidate) break;
+
+      const desiredPosition = getDesiredLineupPosition(team, outCandidate.idx, outCandidate.player);
+      const rankedBenchForRole = bench
+        .map((entry) => {
+          const roleFit = getBenchRoleFitScore(entry.player, desiredPosition);
+          const roleAdjustedScore = (entry.score ?? 0) + roleFit * (closingWindow ? 1.8 : 3.4);
+          return {
+            ...entry,
+            roleFit,
+            roleAdjustedScore,
+          };
+        })
+        .sort((a, b) => b.roleAdjustedScore - a.roleAdjustedScore);
+      const inCandidate = rankedBenchForRole[0];
+      if (!inCandidate) break;
 
       const betterBy = (inCandidate.score ?? 0) - (outCandidate.score ?? 0);
       const fatigueUpgrade =
@@ -87,8 +111,19 @@ function runDeadBallSubstitutions(state, reason = "dead_ball") {
         inNeed > (closingWindow ? 1.6 : 0.8) &&
         ((outCandidate.minutesPlayed ?? 0) - (outCandidate.target ?? 0) > (closingWindow ? 0.9 : 0.2));
       const rotationCatchupPush = !closingWindow && inNeed > 2.6 && inNeed - outNeed > 1.8;
+      const roleFitUpgrade = inCandidate.roleFit > (closingWindow ? 0.78 : 0.72);
 
-      if (!(betterBy > (closingWindow ? 7 : 3.5) || fatigueUpgrade || rotationUpgrade || rotationCatchupPush)) break;
+      if (
+        !(
+          betterBy > (closingWindow ? 7 : 3.5) ||
+          fatigueUpgrade ||
+          rotationUpgrade ||
+          rotationCatchupPush ||
+          roleFitUpgrade
+        )
+      ) {
+        break;
+      }
 
       next[outCandidate.idx] = inCandidate.player;
       swaps += 1;

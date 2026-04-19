@@ -381,6 +381,94 @@ function getPlayerOverallSkill(player) {
   ]);
 }
 
+function getPositionRoleOptions(position) {
+  const normalized = String(position || "").trim().toUpperCase();
+  switch (normalized) {
+    case "PG":
+      return ["PG"];
+    case "SG":
+      return ["SG"];
+    case "SF":
+      return ["SF"];
+    case "PF":
+      return ["PF"];
+    case "C":
+      return ["C"];
+    case "CG":
+      return ["PG", "SG"];
+    case "WING":
+      return ["SG", "SF"];
+    case "F":
+      return ["SF", "PF"];
+    case "BIG":
+      return ["PF", "C"];
+    default:
+      return ["SF"];
+  }
+}
+
+function getRoleDistance(a, b) {
+  const ladder = ["PG", "SG", "SF", "PF", "C"];
+  const ai = ladder.indexOf(a);
+  const bi = ladder.indexOf(b);
+  if (ai < 0 || bi < 0) return 2;
+  return Math.abs(ai - bi);
+}
+
+function getPositionFitScore(player, desiredPosition) {
+  const desired = String(desiredPosition || "").trim().toUpperCase();
+  if (!desired) return 0.6;
+  const playerOptions = getPositionRoleOptions(player?.bio?.position);
+  let best = 0.35;
+  playerOptions.forEach((candidate) => {
+    const distance = getRoleDistance(candidate, desired);
+    const fit = distance === 0 ? 1 : distance === 1 ? 0.78 : distance === 2 ? 0.56 : 0.35;
+    if (fit > best) best = fit;
+  });
+  return clamp(best, 0.2, 1);
+}
+
+function getRoleSkillFitScore(player, desiredPosition) {
+  const guardProfile =
+    average([
+      getBaseRating(player, "skills.ballHandling"),
+      getBaseRating(player, "skills.passingIQ"),
+      getBaseRating(player, "defense.perimeterDefense"),
+      getBaseRating(player, "athleticism.speed"),
+      getBaseRating(player, "athleticism.agility"),
+    ]) / 100;
+  const wingProfile =
+    average([
+      getBaseRating(player, "shooting.threePointShooting"),
+      getBaseRating(player, "shooting.midrangeShot"),
+      getBaseRating(player, "skills.offballOffense"),
+      getBaseRating(player, "defense.perimeterDefense"),
+      getBaseRating(player, "athleticism.agility"),
+    ]) / 100;
+  const bigProfile =
+    average([
+      getBaseRating(player, "shooting.closeShot"),
+      getBaseRating(player, "defense.postDefense"),
+      getBaseRating(player, "rebounding.defensiveRebound"),
+      getBaseRating(player, "athleticism.strength"),
+      getBaseRating(player, "defense.shotBlocking"),
+    ]) / 100;
+
+  const desired = String(desiredPosition || "").trim().toUpperCase();
+  if (desired === "PG") return guardProfile;
+  if (desired === "SG") return guardProfile * 0.62 + wingProfile * 0.38;
+  if (desired === "SF") return wingProfile;
+  if (desired === "PF") return bigProfile * 0.7 + wingProfile * 0.3;
+  if (desired === "C") return bigProfile;
+  return (guardProfile + wingProfile + bigProfile) / 3;
+}
+
+function getBenchRoleFitScore(player, desiredPosition) {
+  const positionFit = getPositionFitScore(player, desiredPosition);
+  const skillFit = getRoleSkillFitScore(player, desiredPosition);
+  return clamp(positionFit * 0.66 + skillFit * 0.34, 0, 1);
+}
+
 function getPlayerMinutesPlayed(state, teamId, player) {
   const line = getPlayerStatsLine(state, teamId, player);
   return line?.minutes || 0;

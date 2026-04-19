@@ -39,13 +39,19 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
 }
 
 public struct UserRotationSlot: Codable, Equatable, Sendable, Identifiable {
-    public var position: String
-    public var starterIndex: Int?
-    public var backupIndex: Int?
-    public var starterMinutes: Double
-    public var backupMinutes: Double
+    public var slot: Int
+    public var playerIndex: Int?
+    public var position: String?
+    public var minutes: Double
 
-    public var id: String { position }
+    public init(slot: Int, playerIndex: Int?, position: String?, minutes: Double) {
+        self.slot = slot
+        self.playerIndex = playerIndex
+        self.position = position
+        self.minutes = minutes
+    }
+
+    public var id: Int { slot }
 }
 
 public struct PreseasonBoardOption: Codable, Equatable, Sendable {

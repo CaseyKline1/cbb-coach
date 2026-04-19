@@ -224,7 +224,7 @@ private struct CoachArchetypeStepView: View {
             onNext: { onNext(selectedArchetype) }
         ) {
             VStack(alignment: .leading, spacing: 16) {
-                SingleSelectDropdown(
+                FilterDropdown(
                     label: "Archetype",
                     selection: $selectedArchetype,
                     options: CoachArchetype.allCases,
@@ -272,21 +272,21 @@ private struct CoachStyleStepView: View {
             }
         ) {
             VStack(alignment: .leading, spacing: 16) {
-                SingleSelectDropdown(
+                FilterDropdown(
                     label: "Tempo",
                     selection: $selectedPace,
                     options: PaceProfile.allCases,
                     optionLabel: \.label
                 )
 
-                SingleSelectDropdown(
+                FilterDropdown(
                     label: "Base Offense",
                     selection: $selectedOffense,
                     options: OffensiveFormation.allCases,
                     optionLabel: \.label
                 )
 
-                SingleSelectDropdown(
+                FilterDropdown(
                     label: "Base Defense",
                     selection: $selectedDefense,
                     options: DefenseScheme.allCases,
@@ -371,84 +371,6 @@ private struct CareerTeamSelectionView: View {
                 }
             }
         }
-    }
-}
-
-struct SingleSelectDropdown<Option: Hashable>: View {
-    let label: String
-    @Binding var selection: Option
-    let options: [Option]
-    let optionLabel: (Option) -> String
-
-    init(
-        label: String,
-        selection: Binding<Option>,
-        options: [Option],
-        optionLabel: @escaping (Option) -> String
-    ) {
-        self.label = label
-        self._selection = selection
-        self.options = options
-        self.optionLabel = optionLabel
-    }
-
-    init(
-        label: String,
-        selection: Binding<Option>,
-        options: [Option],
-        optionLabel: KeyPath<Option, String>
-    ) {
-        self.init(
-            label: label,
-            selection: selection,
-            options: options,
-            optionLabel: { $0[keyPath: optionLabel] }
-        )
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Menu {
-                ForEach(options.indices, id: \.self) { index in
-                    let option = options[index]
-                    Button {
-                        selection = option
-                    } label: {
-                        if option == selection {
-                            Label(optionLabel(option), systemImage: "checkmark")
-                        } else {
-                            Text(optionLabel(option))
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Text(optionLabel(selection))
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Spacer()
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color(.systemBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.14), lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .buttonStyle(.plain)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(label): \(optionLabel(selection))"))
     }
 }
 
@@ -858,7 +780,7 @@ private struct CoachingStaffView: View {
                                         subtitle: "Assistant \(index + 1) · \(assistant.focus?.label ?? AssistantFocus.recruiting.label)",
                                         coach: assistant
                                     )
-                                    SingleSelectDropdown(
+                                    FilterDropdown(
                                         label: "Focus",
                                         selection: Binding(
                                             get: { assistant.focus ?? .recruiting },
@@ -942,48 +864,69 @@ private struct RotationSettingsView: View {
 
     @State private var editedSlots: [UserRotationSlot] = []
     @State private var isApplyingIncomingSlots: Bool = false
-    @State private var statusText: String = "Adjust your preferred starters, backups, and minutes."
+    @State private var statusText: String = "Set starters (1-5), then rank bench (6+). Team minutes are normalized to 200."
+
+    private let starterPositions = ["PG", "SG", "SF", "PF", "C"]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Targets are for a full game and used with fatigue-based subs.")
+                Text("Starters are slots 1-5 with assigned positions. Bench order drives substitution priority and role-fit checks.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 ForEach(Array(editedSlots.enumerated()), id: \.element.id) { index, slot in
-                    GroupBox(slot.position) {
+                    GroupBox {
                         VStack(alignment: .leading, spacing: 10) {
-                            RotationPlayerPicker(
-                                label: "Starter",
-                                roster: roster,
-                                selectedIndex: Binding(
-                                    get: { editedSlots[index].starterIndex },
-                                    set: { editedSlots[index].starterIndex = $0 }
-                                )
-                            )
-                            RotationMinuteControl(
-                                label: "Starter Minutes",
-                                value: Binding(
-                                    get: { editedSlots[index].starterMinutes },
-                                    set: { setStarterMinutes(at: index, to: $0) }
-                                ),
-                                step: 1
-                            )
+                            HStack {
+                                Text(slotTitle(for: index))
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                                HStack(spacing: 8) {
+                                    Button(action: { moveSlot(from: index, delta: -1) }) {
+                                        Image(systemName: "arrow.up.circle.fill")
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(index > 0 ? .secondary : .tertiary)
+                                    .disabled(index == 0)
+                                    .accessibilityLabel("Move up")
+
+                                    Button(action: { moveSlot(from: index, delta: 1) }) {
+                                        Image(systemName: "arrow.down.circle.fill")
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(index < editedSlots.count - 1 ? .secondary : .tertiary)
+                                    .disabled(index >= editedSlots.count - 1)
+                                    .accessibilityLabel("Move down")
+                                }
+                            }
 
                             RotationPlayerPicker(
-                                label: "Backup",
+                                label: "Player",
                                 roster: roster,
                                 selectedIndex: Binding(
-                                    get: { editedSlots[index].backupIndex },
-                                    set: { editedSlots[index].backupIndex = $0 }
+                                    get: { editedSlots[index].playerIndex },
+                                    set: { editedSlots[index].playerIndex = $0 }
                                 )
                             )
+
+                            if index < min(5, editedSlots.count) {
+                                SingleSelectDropdown(
+                                    label: "Starter Position",
+                                    selection: Binding(
+                                        get: { editedSlots[index].position ?? starterPositions[min(index, starterPositions.count - 1)] },
+                                        set: { editedSlots[index].position = $0 }
+                                    ),
+                                    options: starterPositions,
+                                    optionLabel: { $0 }
+                                )
+                            }
+
                             RotationMinuteControl(
-                                label: "Backup Minutes",
+                                label: "Minutes",
                                 value: Binding(
-                                    get: { editedSlots[index].backupMinutes },
-                                    set: { setBackupMinutes(at: index, to: $0) }
+                                    get: { editedSlots[index].minutes },
+                                    set: { editedSlots[index].minutes = $0 }
                                 ),
                                 step: 1
                             )
@@ -991,9 +934,14 @@ private struct RotationSettingsView: View {
                     }
                 }
 
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Total minutes: \(Int(totalMinutes.rounded()))")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(16)
         }
@@ -1028,41 +976,117 @@ private struct RotationSettingsView: View {
         for index in lhs.indices {
             let left = lhs[index]
             let right = rhs[index]
+            if left.slot != right.slot { return false }
+            if left.playerIndex != right.playerIndex { return false }
             if left.position != right.position { return false }
-            if left.starterIndex != right.starterIndex { return false }
-            if left.backupIndex != right.backupIndex { return false }
-            if left.starterMinutes != right.starterMinutes { return false }
-            if left.backupMinutes != right.backupMinutes { return false }
+            if left.minutes != right.minutes { return false }
         }
         return true
     }
 
     private func normalized(_ source: [UserRotationSlot]) -> [UserRotationSlot] {
-        source.map { slot in
-            var normalizedSlot = slot
-            let starterMinutes = clampMinutes(slot.starterMinutes)
-            normalizedSlot.starterMinutes = starterMinutes
-            normalizedSlot.backupMinutes = clampMinutes(40 - starterMinutes)
-            return normalizedSlot
+        let targetCount = max(source.count, roster.count)
+        if targetCount == 0 { return [] }
+
+        var base = source.sorted { $0.slot < $1.slot }
+        if base.count < targetCount {
+            for slot in (base.count + 1)...targetCount {
+                base.append(UserRotationSlot(slot: slot, playerIndex: nil, position: nil, minutes: 0))
+            }
         }
-    }
 
-    private func setStarterMinutes(at index: Int, to value: Double) {
-        guard editedSlots.indices.contains(index) else { return }
-        let starterMinutes = clampMinutes(value)
-        editedSlots[index].starterMinutes = starterMinutes
-        editedSlots[index].backupMinutes = clampMinutes(40 - starterMinutes)
-    }
+        let rosterIndexes = Set(roster.map(\.playerIndex))
+        var used: Set<Int> = []
+        for index in base.indices {
+            let candidate = base[index].playerIndex
+            if let candidate, rosterIndexes.contains(candidate), !used.contains(candidate) {
+                used.insert(candidate)
+            } else {
+                base[index].playerIndex = nil
+            }
+        }
+        let remaining = roster.map(\.playerIndex).filter { !used.contains($0) }
+        var remainingCursor = 0
+        for index in base.indices {
+            if base[index].playerIndex != nil { continue }
+            guard remainingCursor < remaining.count else { break }
+            base[index].playerIndex = remaining[remainingCursor]
+            remainingCursor += 1
+        }
 
-    private func setBackupMinutes(at index: Int, to value: Double) {
-        guard editedSlots.indices.contains(index) else { return }
-        let backupMinutes = clampMinutes(value)
-        editedSlots[index].backupMinutes = backupMinutes
-        editedSlots[index].starterMinutes = clampMinutes(40 - backupMinutes)
+        for index in base.indices {
+            base[index].slot = index + 1
+            base[index].minutes = clampMinutes(base[index].minutes)
+            if index < min(5, base.count) {
+                let fallback = starterPositions[min(index, starterPositions.count - 1)]
+                let current = (base[index].position ?? "").uppercased()
+                base[index].position = starterPositions.contains(current) ? current : fallback
+            } else {
+                base[index].position = nil
+            }
+        }
+
+        return normalizeMinutes(base)
     }
 
     private func clampMinutes(_ value: Double) -> Double {
         min(40, max(0, (value * 2).rounded() / 2))
+    }
+
+    private func normalizeMinutes(_ source: [UserRotationSlot]) -> [UserRotationSlot] {
+        guard !source.isEmpty else { return source }
+        var normalized = source
+        let targetTotal = min(200.0, Double(source.count * 40))
+        let currentTotal = normalized.reduce(0) { $0 + $1.minutes }
+        if currentTotal <= 0 {
+            let even = clampMinutes(targetTotal / Double(max(1, normalized.count)))
+            for index in normalized.indices {
+                normalized[index].minutes = even
+            }
+        } else {
+            let scale = targetTotal / currentTotal
+            for index in normalized.indices {
+                normalized[index].minutes = clampMinutes(normalized[index].minutes * scale)
+            }
+        }
+
+        var diff = targetTotal - normalized.reduce(0) { $0 + $1.minutes }
+        var guardCount = 0
+        while abs(diff) >= 0.49 && guardCount < 1000 {
+            guardCount += 1
+            let step = diff > 0 ? 0.5 : -0.5
+            var adjusted = false
+            for index in normalized.indices {
+                let candidate = normalized[index].minutes + step
+                if candidate < 0 || candidate > 40 { continue }
+                normalized[index].minutes = candidate
+                adjusted = true
+                break
+            }
+            if !adjusted { break }
+            diff = targetTotal - normalized.reduce(0) { $0 + $1.minutes }
+        }
+
+        return normalized
+    }
+
+    private func moveSlot(from index: Int, delta: Int) {
+        let destination = index + delta
+        guard editedSlots.indices.contains(index), editedSlots.indices.contains(destination) else { return }
+        let moved = editedSlots.remove(at: index)
+        editedSlots.insert(moved, at: destination)
+        for idx in editedSlots.indices {
+            editedSlots[idx].slot = idx + 1
+        }
+    }
+
+    private func slotTitle(for index: Int) -> String {
+        if index < 5 { return "\(index + 1). Starter" }
+        return "\(index + 1). Bench"
+    }
+
+    private var totalMinutes: Double {
+        editedSlots.reduce(0) { $0 + $1.minutes }
     }
 }
 
@@ -1072,7 +1096,7 @@ private struct RotationPlayerPicker: View {
     @Binding var selectedIndex: Int?
 
     var body: some View {
-        SingleSelectDropdown(
+        FilterDropdown(
             label: label,
             selection: Binding<Int>(
                 get: { selectedIndex ?? -1 },

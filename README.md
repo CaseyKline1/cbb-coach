@@ -41,6 +41,9 @@ Implemented:
 - Substitutions and rotations:
   - lineup changes only occur at dead balls (`made basket`, `out of bounds`, `halftime`, `timeout`),
   - substitution decisions consider energy, relative player skill, and minute targets,
+  - user rotation model is `5 starters` (with assigned starter positions) plus a ranked bench order (`6, 7, ...`),
+  - each player has minute targets normalized to a team total of `200`,
+  - bench substitutions prefer role fit by position + skill profile for the outgoing lineup role,
   - optional preset rotation support via `team.rotation.minuteTargets` keyed by player name,
   - if no rotation is provided and a roster has more than 5 players, default minute targets ensure everyone plays at least a little in an average game.
 - Team pace profiles:

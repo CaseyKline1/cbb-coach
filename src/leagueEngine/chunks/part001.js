@@ -1252,47 +1252,6 @@ function normalizeRotationMinutes(value, fallback) {
   return clamp(Math.round(parsed * 2) / 2, 0, 40);
 }
 
-function normalizeRotationSlotMinutes(starterValue, backupValue, fallbackStarter, fallbackBackup, hasBackup = true) {
-  const starterRaw = Number(starterValue);
-  const backupRaw = Number(backupValue);
-  const hasStarter = Number.isFinite(starterRaw);
-  const hasBackupValue = Number.isFinite(backupRaw);
-
-  if (!hasBackup) {
-    return {
-      starterMinutes: normalizeRotationMinutes(starterRaw, fallbackStarter),
-      backupMinutes: 0,
-    };
-  }
-
-  if (!hasStarter && hasBackupValue) {
-    const backupMinutes = normalizeRotationMinutes(backupRaw, fallbackBackup);
-    return {
-      starterMinutes: normalizeRotationMinutes(40 - backupMinutes, fallbackStarter),
-      backupMinutes,
-    };
-  }
-
-  const starterMinutes = normalizeRotationMinutes(starterRaw, fallbackStarter);
-  return {
-    starterMinutes,
-    backupMinutes: normalizeRotationMinutes(40 - starterMinutes, fallbackBackup),
-  };
-}
-
-function addCappedRotationMinutes(minuteTargets, playerName, requestedMinutes) {
-  if (!playerName) return 0;
-  const requested = normalizeRotationMinutes(requestedMinutes, 0);
-  if (!requested) return 0;
-  const current = Number(minuteTargets[playerName]) || 0;
-  const available = Math.max(0, 40 - current);
-  const assigned = Math.min(requested, available);
-  if (assigned > 0) {
-    minuteTargets[playerName] = current + assigned;
-  }
-  return assigned;
-}
-
 function findPlayerByIndex(players, index) {
   if (!Array.isArray(players)) return null;
   const parsed = Number(index);
@@ -1302,193 +1261,228 @@ function findPlayerByIndex(players, index) {
   return players[rounded] || null;
 }
 
-function findRotationPlayerByPosition(players, position, excluding = new Set()) {
-  if (!Array.isArray(players) || !position) return null;
-  const normalized = String(position).trim().toUpperCase();
-  if (!normalized) return null;
-  const exact = players.find((player) =>
-    String(player?.bio?.position || "").trim().toUpperCase() === normalized && !excluding.has(player),
-  );
-  if (exact) return exact;
-
-  if (normalized === "PG") {
-    return players.find((player) => {
-      const pos = String(player?.bio?.position || "").trim().toUpperCase();
-      return (pos === "CG" || pos === "SG") && !excluding.has(player);
-    }) || null;
-  }
-
-  if (normalized === "SG") {
-    return players.find((player) => {
-      const pos = String(player?.bio?.position || "").trim().toUpperCase();
-      return (pos === "CG" || pos === "WING" || pos === "SF") && !excluding.has(player);
-    }) || null;
-  }
-
-  if (normalized === "SF") {
-    return players.find((player) => {
-      const pos = String(player?.bio?.position || "").trim().toUpperCase();
-      return (pos === "WING" || pos === "F" || pos === "SG" || pos === "PF") && !excluding.has(player);
-    }) || null;
-  }
-
-  if (normalized === "PF") {
-    return players.find((player) => {
-      const pos = String(player?.bio?.position || "").trim().toUpperCase();
-      return (pos === "F" || pos === "BIG" || pos === "C" || pos === "SF") && !excluding.has(player);
-    }) || null;
-  }
-
-  if (normalized === "C") {
-    return players.find((player) => {
-      const pos = String(player?.bio?.position || "").trim().toUpperCase();
-      return (pos === "BIG" || pos === "PF" || pos === "F") && !excluding.has(player);
-    }) || null;
-  }
-
-  return null;
+function normalizeStarterPosition(value, fallback = null) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (ROTATION_SLOTS.includes(normalized)) return normalized;
+  return fallback;
 }
 
-function inferUserRotationSlots(league) {
-  const userTeam = league?.teams?.byId?.[league?.userTeamId];
-  const players = Array.isArray(userTeam?.teamModel?.players) ? userTeam.teamModel.players : [];
-  const lineup = Array.isArray(userTeam?.teamModel?.lineup) ? userTeam.teamModel.lineup : [];
-  const lineupSet = new Set(lineup);
-  const minuteTargets = userTeam?.teamModel?.rotation?.minuteTargets || {};
+function getRotationOrderPlayers(players, lineup, savedOrder = []) {
+  const byName = new Map();
+  players.forEach((player) => {
+    byName.set(player?.bio?.name || "", player);
+  });
+  const ordered = [];
+  const used = new Set();
 
-  const slots = [];
-  ROTATION_SLOTS.forEach((slotPosition) => {
-    const starter = lineup.find(
-      (player) => String(player?.bio?.position || "").trim().toUpperCase() === slotPosition,
-    ) || findRotationPlayerByPosition(players, slotPosition);
-
-    const excluded = new Set();
-    if (starter) excluded.add(starter);
-    const backup = findRotationPlayerByPosition(players, slotPosition, excluded);
-
-    const starterIndex = starter ? players.indexOf(starter) : -1;
-    const backupIndex = backup ? players.indexOf(backup) : -1;
-
-    const starterName = starter?.bio?.name || "";
-    const backupName = backup?.bio?.name || "";
-    const rawStarter = Number(minuteTargets[starterName]);
-    const rawBackup = Number(minuteTargets[backupName]);
-
-    const fallbackStarterMinutes = starter ? (lineupSet.has(starter) ? 30 : 24) : 24;
-    const fallbackBackupMinutes = backup ? 40 - fallbackStarterMinutes : 0;
-
-    const normalizedMinutes = normalizeRotationSlotMinutes(
-      rawStarter,
-      rawBackup,
-      fallbackStarterMinutes,
-      fallbackBackupMinutes,
-      Boolean(backup),
-    );
-
-    slots.push({
-      position: slotPosition,
-      starterIndex: starterIndex >= 0 ? starterIndex : null,
-      backupIndex: backupIndex >= 0 ? backupIndex : null,
-      starterMinutes: normalizedMinutes.starterMinutes,
-      backupMinutes: normalizedMinutes.backupMinutes,
+  if (Array.isArray(savedOrder)) {
+    savedOrder.forEach((name) => {
+      const player = byName.get(String(name || ""));
+      if (player && !used.has(player)) {
+        ordered.push(player);
+        used.add(player);
+      }
     });
+  }
+
+  if (Array.isArray(lineup)) {
+    lineup.forEach((player) => {
+      if (player && !used.has(player)) {
+        ordered.push(player);
+        used.add(player);
+      }
+    });
+  }
+
+  players.forEach((player) => {
+    if (player && !used.has(player)) {
+      ordered.push(player);
+      used.add(player);
+    }
   });
 
-  return slots;
+  return ordered;
+}
+
+function defaultRotationMinutesForSlot(slotIndex, starterCount) {
+  if (slotIndex < starterCount) return 30;
+  if (slotIndex < 10) return 10;
+  return 0;
+}
+
+function normalizeRotationMinuteVector(rawMinutes, targetTotal = 200) {
+  const cap = 40;
+  const count = Array.isArray(rawMinutes) ? rawMinutes.length : 0;
+  if (!count) return [];
+
+  const target = Math.min(targetTotal, count * cap);
+  let values = rawMinutes.map((value) => normalizeRotationMinutes(value, 0));
+  let sum = values.reduce((total, value) => total + value, 0);
+
+  if (target <= 0) return values.map(() => 0);
+
+  if (sum <= 0) {
+    values = values.map(() => 1);
+    sum = values.length;
+  }
+
+  const scale = target / sum;
+  values = values.map((value) => Math.min(cap, Math.max(0, value * scale)));
+
+  let currentTotal = values.reduce((total, value) => total + value, 0);
+  let remaining = target - currentTotal;
+  let guard = 0;
+  while (remaining > 0.001 && guard < 200) {
+    guard += 1;
+    const eligible = values
+      .map((value, index) => ({ value, index }))
+      .filter((entry) => entry.value < cap - 0.001);
+    if (!eligible.length) break;
+    const increment = remaining / eligible.length;
+    eligible.forEach(({ index }) => {
+      const available = cap - values[index];
+      values[index] += Math.min(available, increment);
+    });
+    currentTotal = values.reduce((total, value) => total + value, 0);
+    remaining = target - currentTotal;
+  }
+
+  values = values.map((value) => normalizeRotationMinutes(value, 0));
+  let roundedTotal = values.reduce((total, value) => total + value, 0);
+  let diff = normalizeRotationMinutes(target - roundedTotal, 0);
+  let adjustGuard = 0;
+  while (Math.abs(diff) >= 0.49 && adjustGuard < 1000) {
+    adjustGuard += 1;
+    const direction = diff > 0 ? 0.5 : -0.5;
+    let adjusted = false;
+    for (let i = 0; i < values.length; i += 1) {
+      const next = values[i] + direction;
+      if (next < 0 || next > cap) continue;
+      values[i] = normalizeRotationMinutes(next, values[i]);
+      adjusted = true;
+      break;
+    }
+    if (!adjusted) break;
+    roundedTotal = values.reduce((total, value) => total + value, 0);
+    diff = target - roundedTotal;
+  }
+
+  return values.map((value) => normalizeRotationMinutes(value, 0));
+}
+
+function inferUserRotationEntries(league) {
+  const userTeam = league?.teams?.byId?.[league?.userTeamId];
+  const players = Array.isArray(userTeam?.teamModel?.players) ? userTeam.teamModel.players : [];
+  if (!players.length) return [];
+  const lineup = Array.isArray(userTeam?.teamModel?.lineup) ? userTeam.teamModel.lineup : [];
+  const rotation = userTeam?.teamModel?.rotation || {};
+  const minuteTargets = rotation.minuteTargets || {};
+  const savedOrder = Array.isArray(rotation.order) ? rotation.order : [];
+  const orderedPlayers = getRotationOrderPlayers(players, lineup, savedOrder);
+  const starterCount = Math.min(ROTATION_SLOTS.length, orderedPlayers.length);
+  const savedStarterPositions = Array.isArray(rotation.starterPositions) ? rotation.starterPositions : [];
+
+  const rawMinutes = orderedPlayers.map((player, slotIndex) => {
+    const name = player?.bio?.name || "";
+    const raw = Number(minuteTargets[name]);
+    if (Number.isFinite(raw)) return raw;
+    return defaultRotationMinutesForSlot(slotIndex, starterCount);
+  });
+  const normalizedMinutes = normalizeRotationMinuteVector(rawMinutes, 200);
+
+  return orderedPlayers.map((player, slotIndex) => {
+    const playerIndex = players.indexOf(player);
+    const fallbackPosition = normalizeStarterPosition(player?.bio?.position, ROTATION_SLOTS[slotIndex] || "SF");
+    const starterPosition =
+      slotIndex < starterCount
+        ? normalizeStarterPosition(savedStarterPositions[slotIndex], fallbackPosition)
+        : null;
+    return {
+      slot: slotIndex + 1,
+      playerIndex: playerIndex >= 0 ? playerIndex : null,
+      position: starterPosition,
+      minutes: normalizedMinutes[slotIndex] || 0,
+    };
+  });
 }
 
 function getUserRotation(league) {
-  return inferUserRotationSlots(league);
+  return inferUserRotationEntries(league);
 }
 
-function setUserRotation(league, rawSlots = []) {
+function setUserRotation(league, rawEntries = []) {
   const userTeam = league?.teams?.byId?.[league?.userTeamId];
   if (!userTeam?.teamModel) return [];
 
   const players = Array.isArray(userTeam.teamModel.players) ? userTeam.teamModel.players : [];
   if (!players.length) return [];
 
-  const requested = Array.isArray(rawSlots) ? rawSlots : [];
-  const defaultSlots = inferUserRotationSlots(league);
-  const merged = ROTATION_SLOTS.map((position, index) => {
-    const incoming = requested.find((entry) => String(entry?.position || "").toUpperCase() === position) || {};
-    const base = defaultSlots[index] || {};
-    const normalizedMinutes = normalizeRotationSlotMinutes(
-      incoming.starterMinutes,
-      incoming.backupMinutes,
-      base.starterMinutes ?? 30,
-      base.backupMinutes ?? 10,
-      true,
-    );
+  const current = inferUserRotationEntries(league);
+  const requested = Array.isArray(rawEntries) ? rawEntries : [];
+  const merged = current.map((entry, index) => {
+    const incoming = requested.find((candidate) => Number(candidate?.slot) === entry.slot) || requested[index] || {};
     return {
-      position,
-      starterIndex: incoming.starterIndex ?? base.starterIndex ?? null,
-      backupIndex: incoming.backupIndex ?? base.backupIndex ?? null,
-      starterMinutes: normalizedMinutes.starterMinutes,
-      backupMinutes: normalizedMinutes.backupMinutes,
+      slot: entry.slot,
+      playerIndex: incoming.playerIndex ?? entry.playerIndex ?? null,
+      position: incoming.position ?? entry.position ?? null,
+      minutes: incoming.minutes ?? entry.minutes ?? 0,
     };
   });
 
-  const selectedStarters = [];
-  const selectedStarterSet = new Set();
-  const minuteTargets = {};
-
-  merged.forEach((slot) => {
-    let starter = findPlayerByIndex(players, slot.starterIndex);
-    if (!starter || selectedStarterSet.has(starter)) {
-      starter =
-        findRotationPlayerByPosition(players, slot.position, selectedStarterSet) ||
-        players.find((player) => !selectedStarterSet.has(player)) ||
-        null;
+  const ordered = [];
+  const used = new Set();
+  merged.forEach((entry) => {
+    const player = findPlayerByIndex(players, entry.playerIndex);
+    if (player && !used.has(player)) {
+      ordered.push({ ...entry, player });
+      used.add(player);
     }
-    if (!starter) return;
-
-    selectedStarters.push(starter);
-    selectedStarterSet.add(starter);
-
-    let backup = findPlayerByIndex(players, slot.backupIndex);
-    if (!backup || backup === starter) {
-      backup =
-        findRotationPlayerByPosition(players, slot.position, new Set([starter])) ||
-        players.find((player) => player !== starter) ||
-        null;
-    }
-
-    const starterName = starter?.bio?.name;
-    const backupName = backup?.bio?.name;
-    let starterAssigned = addCappedRotationMinutes(
-      minuteTargets,
-      starterName,
-      normalizeRotationMinutes(slot.starterMinutes, 30),
-    );
-    let backupAssigned = addCappedRotationMinutes(
-      minuteTargets,
-      backupName,
-      normalizeRotationMinutes(slot.backupMinutes, 10),
-    );
-
-    let remainingInSlot = Math.max(0, 40 - (starterAssigned + backupAssigned));
-    if (remainingInSlot > 0 && starterName && backupName && starterName !== backupName) {
-      const backupExtra = addCappedRotationMinutes(minuteTargets, backupName, remainingInSlot);
-      backupAssigned += backupExtra;
-      remainingInSlot -= backupExtra;
-      if (remainingInSlot > 0) {
-        const starterExtra = addCappedRotationMinutes(minuteTargets, starterName, remainingInSlot);
-        starterAssigned += starterExtra;
-      }
+  });
+  players.forEach((player) => {
+    if (!used.has(player)) {
+      ordered.push({
+        slot: ordered.length + 1,
+        playerIndex: players.indexOf(player),
+        position: null,
+        minutes: 0,
+        player,
+      });
+      used.add(player);
     }
   });
 
-  const fallbackLineup = players
-    .filter((player) => !selectedStarterSet.has(player))
-    .slice(0, 5 - selectedStarters.length);
-  userTeam.teamModel.lineup = [...selectedStarters, ...fallbackLineup].slice(0, 5);
+  const starterCount = Math.min(ROTATION_SLOTS.length, ordered.length);
+  const rawMinutes = ordered.map((entry, slotIndex) => {
+    const requestedValue = Number(entry.minutes);
+    if (Number.isFinite(requestedValue)) return requestedValue;
+    return defaultRotationMinutesForSlot(slotIndex, starterCount);
+  });
+  const normalizedMinutes = normalizeRotationMinuteVector(rawMinutes, 200);
+  const minuteTargets = {};
+  ordered.forEach((entry, index) => {
+    const name = entry?.player?.bio?.name || "";
+    if (!name) return;
+    minuteTargets[name] = normalizedMinutes[index] || 0;
+  });
+
+  const starterPositions = [];
+  for (let i = 0; i < starterCount; i += 1) {
+    const fallbackPosition = normalizeStarterPosition(
+      ordered[i]?.player?.bio?.position,
+      ROTATION_SLOTS[i] || "SF",
+    );
+    starterPositions.push(normalizeStarterPosition(ordered[i]?.position, fallbackPosition));
+  }
+
+  userTeam.teamModel.lineup = ordered.slice(0, starterCount).map((entry) => entry.player);
   userTeam.teamModel.rotation = {
     ...(userTeam.teamModel.rotation || {}),
     minuteTargets,
+    order: ordered.map((entry) => entry?.player?.bio?.name || "").filter((name) => name),
+    starterPositions,
   };
 
-  return inferUserRotationSlots(league);
+  return inferUserRotationEntries(league);
 }
 
 function getUserRoster(league) {
