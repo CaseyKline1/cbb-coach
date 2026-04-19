@@ -1176,6 +1176,62 @@ function getUserSchedule(league) {
     .sort((a, b) => a.day - b.day);
 }
 
+function buildPlayerAttributeSummary(player = {}) {
+  const rating = (value) => Math.max(1, Math.round(asNumber(value, 1)));
+  return {
+    potential: rating(player?.bio?.potential),
+    speed: rating(player?.athleticism?.speed),
+    agility: rating(player?.athleticism?.agility),
+    burst: rating(player?.athleticism?.burst),
+    strength: rating(player?.athleticism?.strength),
+    vertical: rating(player?.athleticism?.vertical),
+    stamina: rating(player?.athleticism?.stamina),
+    durability: rating(player?.athleticism?.durability),
+    layups: rating(player?.shooting?.layups),
+    dunks: rating(player?.shooting?.dunks),
+    closeShot: rating(player?.shooting?.closeShot),
+    midrangeShot: rating(player?.shooting?.midrangeShot),
+    threePointShooting: rating(player?.shooting?.threePointShooting),
+    cornerThrees: rating(player?.shooting?.cornerThrees),
+    upTopThrees: rating(player?.shooting?.upTopThrees),
+    drawFoul: rating(player?.shooting?.drawFoul),
+    freeThrows: rating(player?.shooting?.freeThrows),
+    postControl: rating(player?.postGame?.postControl),
+    postFadeaways: rating(player?.postGame?.postFadeaways),
+    postHooks: rating(player?.postGame?.postHooks),
+    ballHandling: rating(player?.skills?.ballHandling),
+    ballSafety: rating(player?.skills?.ballSafety),
+    passingAccuracy: rating(player?.skills?.passingAccuracy),
+    passingVision: rating(player?.skills?.passingVision),
+    passingIQ: rating(player?.skills?.passingIQ),
+    shotIQ: rating(player?.skills?.shotIQ),
+    offballOffense: rating(player?.skills?.offballOffense),
+    hands: rating(player?.skills?.hands),
+    hustle: rating(player?.skills?.hustle),
+    clutch: rating(player?.skills?.clutch),
+    perimeterDefense: rating(player?.defense?.perimeterDefense),
+    postDefense: rating(player?.defense?.postDefense),
+    shotBlocking: rating(player?.defense?.shotBlocking),
+    shotContest: rating(player?.defense?.shotContest),
+    steals: rating(player?.defense?.steals),
+    lateralQuickness: rating(player?.defense?.lateralQuickness),
+    offballDefense: rating(player?.defense?.offballDefense),
+    passPerception: rating(player?.defense?.passPerception),
+    defensiveControl: rating(player?.defense?.defensiveControl),
+    offensiveRebounding: rating(player?.rebounding?.offensiveRebounding),
+    defensiveRebound: rating(player?.rebounding?.defensiveRebound),
+    boxouts: rating(player?.rebounding?.boxouts),
+    tendencyPost: rating(player?.tendencies?.post),
+    tendencyInside: rating(player?.tendencies?.inside),
+    tendencyMidrange: rating(player?.tendencies?.midrange),
+    tendencyThreePoint: rating(player?.tendencies?.threePoint),
+    tendencyDrive: rating(player?.tendencies?.drive),
+    tendencyPickAndRoll: rating(player?.tendencies?.pickAndRoll),
+    tendencyPickAndPop: rating(player?.tendencies?.pickAndPop),
+    tendencyShootVsPass: rating(player?.tendencies?.shootVsPass),
+  };
+}
+
 function getUserRoster(league) {
   const userTeam = league?.teams?.byId?.[league?.userTeamId];
   const players = Array.isArray(userTeam?.teamModel?.players) ? userTeam.teamModel.players : [];
@@ -1191,6 +1247,7 @@ function getUserRoster(league) {
         year: player?.bio?.year || "",
         overall: estimatePlayerOverall(player),
         isStarter: lineupKeys.has(key),
+        attributes: buildPlayerAttributeSummary(player),
       };
     })
     .sort((a, b) => {

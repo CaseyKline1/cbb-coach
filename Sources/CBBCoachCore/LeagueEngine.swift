@@ -34,6 +34,7 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
     public var year: String
     public var overall: Int
     public var isStarter: Bool
+    public var attributes: [String: Int]?
 }
 
 public struct PreseasonBoardOption: Codable, Equatable, Sendable {
