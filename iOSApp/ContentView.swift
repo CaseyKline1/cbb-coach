@@ -516,6 +516,7 @@ private struct CollegeLeagueHomeView: View {
     @State private var roster: [UserRosterPlayerSummary] = []
     @State private var schedule: [UserGameSummary] = []
     @State private var summary: LeagueSummary?
+    @State private var conferenceStandings: [String: [ConferenceStanding]] = [:]
 
     var body: some View {
         NavigationStack {
@@ -549,6 +550,16 @@ private struct CollegeLeagueHomeView: View {
 
                             NavigationLink(value: LeagueMenuDestination.schedule) {
                                 MenuRow(title: "Schedule", subtitle: "Full schedule and completed game results")
+                            }
+                            .buttonStyle(.plain)
+
+                            NavigationLink(value: LeagueMenuDestination.playerStats) {
+                                MenuRow(title: "Player Stats", subtitle: "Season totals from completed games")
+                            }
+                            .buttonStyle(.plain)
+
+                            NavigationLink(value: LeagueMenuDestination.standings) {
+                                MenuRow(title: "Standings", subtitle: "Conference records and point differentials")
                             }
                             .buttonStyle(.plain)
                         }
@@ -603,6 +614,13 @@ private struct CollegeLeagueHomeView: View {
                     RosterRatingsView(roster: roster)
                 case .schedule:
                     ScheduleListView(schedule: schedule, userTeamName: summary?.userTeamName ?? teamName)
+                case .playerStats:
+                    PlayerStatsView(schedule: schedule, userTeamName: summary?.userTeamName ?? teamName)
+                case .standings:
+                    ConferenceStandingsView(
+                        standingsByConference: conferenceStandings,
+                        preferredConferenceId: userConferenceId
+                    )
                 case .boxScore(let gameId):
                     if let game = schedule.first(where: { $0.gameId == gameId }) {
                         BoxScoreDetailView(game: game, userTeamName: summary?.userTeamName ?? teamName)
@@ -634,6 +652,10 @@ private struct CollegeLeagueHomeView: View {
             .max { ($0.day ?? 0) < ($1.day ?? 0) }
     }
 
+    private var userConferenceId: String? {
+        listCareerTeamOptions().first(where: { $0.teamName == teamName })?.conferenceId
+    }
+
     private func createLeague() {
         do {
             var options = CreateLeagueOptions(userTeamName: teamName, seed: "ios-league-\(profile.fullName)-\(teamName)")
@@ -644,6 +666,7 @@ private struct CollegeLeagueHomeView: View {
             schedule = getUserSchedule(created)
             let leagueSummary = getLeagueSummary(created)
             summary = leagueSummary
+            conferenceStandings = fetchConferenceStandings(created)
             statusText = "\(leagueSummary.userTeamName): \(leagueSummary.totalScheduledGames) total games generated"
         } catch {
             statusText = "League error: \(error.localizedDescription)"
@@ -657,6 +680,7 @@ private struct CollegeLeagueHomeView: View {
         roster = getUserRoster(currentLeague)
         schedule = getUserSchedule(currentLeague)
         summary = getLeagueSummary(currentLeague)
+        conferenceStandings = fetchConferenceStandings(currentLeague)
         if result.done == true {
             statusText = "Season complete."
             return
@@ -674,11 +698,25 @@ private struct CollegeLeagueHomeView: View {
         let opponentScore = game.isHome == true ? away : home
         return "\(userScore > opponentScore ? "W" : "L") \(userScore)-\(opponentScore)"
     }
+
+    private func fetchConferenceStandings(_ league: LeagueState) -> [String: [ConferenceStanding]] {
+        let conferenceIds = ["acc", "sec", "big-ten", "big-12", "big-east"]
+        var result: [String: [ConferenceStanding]] = [:]
+        for id in conferenceIds {
+            let rows = getConferenceStandings(league, conferenceId: id)
+            if !rows.isEmpty {
+                result[id] = rows
+            }
+        }
+        return result
+    }
 }
 
 private enum LeagueMenuDestination: Hashable {
     case roster
     case schedule
+    case playerStats
+    case standings
     case boxScore(String)
 }
 
@@ -1064,6 +1102,269 @@ private struct BoxScoreDetailView: View {
         Text(text)
             .lineLimit(1)
             .frame(width: width, alignment: align)
+    }
+}
+
+private struct PlayerStatsRow: Hashable {
+    let name: String
+    let games: Int
+    let points: Int
+    let rebounds: Int
+    let assists: Int
+    let steals: Int
+    let blocks: Int
+    let turnovers: Int
+    let fgMade: Int
+    let fgAttempts: Int
+    let threeMade: Int
+    let threeAttempts: Int
+    let ftMade: Int
+    let ftAttempts: Int
+}
+
+private struct PlayerStatsView: View {
+    let schedule: [UserGameSummary]
+    let userTeamName: String
+    @State private var sortColumn: String = "points"
+    @State private var isAscending: Bool = false
+
+    private var rows: [PlayerStatsRow] {
+        var totals: [String: PlayerStatsRow] = [:]
+
+        for game in schedule where game.completed == true {
+            guard
+                let resultObj = game.result?.objectDictionary,
+                let teamBoxes = resultObj["boxScore"]?.arrayValues
+            else { continue }
+
+            guard let userTeamBox = teamBoxes.first(where: { box in
+                box.objectDictionary?["name"]?.stringValue == userTeamName
+            }) else { continue }
+
+            let players = userTeamBox.objectDictionary?["players"]?.arrayValues ?? []
+            for player in players {
+                guard let parsed = ParsedPlayerBoxScore(value: player) else { continue }
+                let current = totals[parsed.playerName]
+                totals[parsed.playerName] = PlayerStatsRow(
+                    name: parsed.playerName,
+                    games: (current?.games ?? 0) + 1,
+                    points: (current?.points ?? 0) + parsed.points,
+                    rebounds: (current?.rebounds ?? 0) + parsed.rebounds,
+                    assists: (current?.assists ?? 0) + parsed.assists,
+                    steals: (current?.steals ?? 0) + parsed.steals,
+                    blocks: (current?.blocks ?? 0) + parsed.blocks,
+                    turnovers: (current?.turnovers ?? 0) + parsed.turnovers,
+                    fgMade: (current?.fgMade ?? 0) + parsed.fgMade,
+                    fgAttempts: (current?.fgAttempts ?? 0) + parsed.fgAttempts,
+                    threeMade: (current?.threeMade ?? 0) + parsed.threeMade,
+                    threeAttempts: (current?.threeAttempts ?? 0) + parsed.threeAttempts,
+                    ftMade: (current?.ftMade ?? 0) + parsed.ftMade,
+                    ftAttempts: (current?.ftAttempts ?? 0) + parsed.ftAttempts
+                )
+            }
+        }
+
+        return totals.values.sorted { lhs, rhs in
+            let comparison = compare(lhs, rhs)
+            if comparison == .orderedSame {
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+            return isAscending ? (comparison == .orderedAscending) : (comparison == .orderedDescending)
+        }
+    }
+
+    var body: some View {
+        ScrollView([.vertical, .horizontal]) {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                header
+                ForEach(rows, id: \.name) { row in
+                    rowView(row)
+                    Divider()
+                }
+            }
+        }
+        .background(Color(.secondarySystemBackground))
+        .navigationTitle("Player Stats")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var header: some View {
+        HStack(spacing: 0) {
+            sortHeader("PLAYER", id: "name", width: 170)
+            sortHeader("G", id: "games", width: 42)
+            sortHeader("PTS", id: "points", width: 48)
+            sortHeader("REB", id: "rebounds", width: 48)
+            sortHeader("AST", id: "assists", width: 48)
+            sortHeader("STL", id: "steals", width: 48)
+            sortHeader("BLK", id: "blocks", width: 48)
+            sortHeader("TO", id: "turnovers", width: 48)
+            sortHeader("FG", id: "fg", width: 78)
+            sortHeader("3PT", id: "three", width: 78)
+            sortHeader("FT", id: "ft", width: 78)
+        }
+        .padding(.vertical, 6)
+        .background(Color(.tertiarySystemBackground))
+    }
+
+    private func rowView(_ row: PlayerStatsRow) -> some View {
+        HStack(spacing: 0) {
+            cell(row.name, width: 170, align: .leading)
+            cell("\(row.games)", width: 42)
+            cell("\(row.points)", width: 48)
+            cell("\(row.rebounds)", width: 48)
+            cell("\(row.assists)", width: 48)
+            cell("\(row.steals)", width: 48)
+            cell("\(row.blocks)", width: 48)
+            cell("\(row.turnovers)", width: 48)
+            cell("\(row.fgMade)-\(row.fgAttempts)", width: 78)
+            cell("\(row.threeMade)-\(row.threeAttempts)", width: 78)
+            cell("\(row.ftMade)-\(row.ftAttempts)", width: 78)
+        }
+        .font(.caption.monospacedDigit())
+        .padding(.vertical, 5)
+        .background(Color(.systemBackground))
+    }
+
+    private func sortHeader(_ title: String, id: String, width: CGFloat) -> some View {
+        Button {
+            if sortColumn == id {
+                isAscending.toggle()
+            } else {
+                sortColumn = id
+                isAscending = false
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(title).font(.caption2.weight(.bold))
+                if sortColumn == id {
+                    Image(systemName: isAscending ? "arrow.up" : "arrow.down")
+                        .font(.caption2.weight(.bold))
+                }
+            }
+            .frame(width: width)
+            .foregroundStyle(.primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func cell(_ value: String, width: CGFloat, align: Alignment = .center) -> some View {
+        Text(value)
+            .lineLimit(1)
+            .frame(width: width, alignment: align)
+    }
+
+    private func compare(_ lhs: PlayerStatsRow, _ rhs: PlayerStatsRow) -> ComparisonResult {
+        switch sortColumn {
+        case "name":
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+        case "games":
+            return numeric(lhs.games, rhs.games)
+        case "points":
+            return numeric(lhs.points, rhs.points)
+        case "rebounds":
+            return numeric(lhs.rebounds, rhs.rebounds)
+        case "assists":
+            return numeric(lhs.assists, rhs.assists)
+        case "steals":
+            return numeric(lhs.steals, rhs.steals)
+        case "blocks":
+            return numeric(lhs.blocks, rhs.blocks)
+        case "turnovers":
+            return numeric(lhs.turnovers, rhs.turnovers)
+        case "fg":
+            return numeric(lhs.fgMade, rhs.fgMade)
+        case "three":
+            return numeric(lhs.threeMade, rhs.threeMade)
+        case "ft":
+            return numeric(lhs.ftMade, rhs.ftMade)
+        default:
+            return .orderedSame
+        }
+    }
+
+    private func numeric(_ lhs: Int, _ rhs: Int) -> ComparisonResult {
+        if lhs == rhs { return .orderedSame }
+        return lhs < rhs ? .orderedAscending : .orderedDescending
+    }
+}
+
+private struct ConferenceStandingsView: View {
+    let standingsByConference: [String: [ConferenceStanding]]
+    let preferredConferenceId: String?
+
+    private var orderedConferences: [String] {
+        var result: [String] = []
+        if let preferredConferenceId, standingsByConference[preferredConferenceId] != nil {
+            result.append(preferredConferenceId)
+        }
+        let rest = standingsByConference.keys.filter { $0 != preferredConferenceId }.sorted()
+        result.append(contentsOf: rest)
+        return result
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(orderedConferences, id: \.self) { conferenceId in
+                    if let rows = standingsByConference[conferenceId], !rows.isEmpty {
+                        GroupBox(conferenceTitle(conferenceId)) {
+                            VStack(spacing: 0) {
+                                HStack {
+                                    header("Team", alignment: .leading)
+                                    header("Conf")
+                                    header("Overall")
+                                    header("PF")
+                                    header("PA")
+                                    header("DIFF")
+                                }
+                                .padding(.bottom, 6)
+
+                                ForEach(rows, id: \.teamId) { row in
+                                    HStack {
+                                        Text(row.teamName)
+                                            .font(.subheadline.weight(.semibold))
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        value("\(row.conferenceWins)-\(row.conferenceLosses)")
+                                        value("\(row.wins)-\(row.losses)")
+                                        value("\(row.pointsFor ?? 0)")
+                                        value("\(row.pointsAgainst ?? 0)")
+                                        value("\((row.pointsFor ?? 0) - (row.pointsAgainst ?? 0))")
+                                    }
+                                    .padding(.vertical, 4)
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .navigationTitle("Standings")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func header(_ label: String, alignment: Alignment = .center) -> some View {
+        Text(label)
+            .font(.caption2.weight(.bold))
+            .frame(width: label == "Team" ? 140 : 56, alignment: alignment)
+    }
+
+    private func value(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.monospacedDigit().weight(.medium))
+            .frame(width: 56, alignment: .center)
+    }
+
+    private func conferenceTitle(_ id: String) -> String {
+        switch id {
+        case "acc": "ACC"
+        case "sec": "SEC"
+        case "big-ten": "Big Ten"
+        case "big-12": "Big 12"
+        case "big-east": "Big East"
+        default: id.uppercased()
+        }
     }
 }
 
