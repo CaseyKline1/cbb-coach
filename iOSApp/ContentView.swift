@@ -554,7 +554,7 @@ private struct CollegeLeagueHomeView: View {
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.playerStats) {
-                                MenuRow(title: "Player Stats", subtitle: "Season totals from completed games")
+                                MenuRow(title: "Player Stats", subtitle: "Per-game averages from completed games")
                             }
                             .buttonStyle(.plain)
 
@@ -1120,6 +1120,24 @@ private struct PlayerStatsRow: Hashable {
     let threeAttempts: Int
     let ftMade: Int
     let ftAttempts: Int
+
+    var pointsPerGame: Double { perGame(points) }
+    var reboundsPerGame: Double { perGame(rebounds) }
+    var assistsPerGame: Double { perGame(assists) }
+    var stealsPerGame: Double { perGame(steals) }
+    var blocksPerGame: Double { perGame(blocks) }
+    var turnoversPerGame: Double { perGame(turnovers) }
+    var fgMadePerGame: Double { perGame(fgMade) }
+    var fgAttemptsPerGame: Double { perGame(fgAttempts) }
+    var threeMadePerGame: Double { perGame(threeMade) }
+    var threeAttemptsPerGame: Double { perGame(threeAttempts) }
+    var ftMadePerGame: Double { perGame(ftMade) }
+    var ftAttemptsPerGame: Double { perGame(ftAttempts) }
+
+    private func perGame(_ value: Int) -> Double {
+        guard games > 0 else { return 0 }
+        return Double(value) / Double(games)
+    }
 }
 
 private struct PlayerStatsView: View {
@@ -1210,15 +1228,15 @@ private struct PlayerStatsView: View {
         HStack(spacing: 0) {
             cell(row.name, width: 170, align: .leading)
             cell("\(row.games)", width: 42)
-            cell("\(row.points)", width: 48)
-            cell("\(row.rebounds)", width: 48)
-            cell("\(row.assists)", width: 48)
-            cell("\(row.steals)", width: 48)
-            cell("\(row.blocks)", width: 48)
-            cell("\(row.turnovers)", width: 48)
-            cell("\(row.fgMade)-\(row.fgAttempts)", width: 78)
-            cell("\(row.threeMade)-\(row.threeAttempts)", width: 78)
-            cell("\(row.ftMade)-\(row.ftAttempts)", width: 78)
+            cell(format(row.pointsPerGame), width: 48)
+            cell(format(row.reboundsPerGame), width: 48)
+            cell(format(row.assistsPerGame), width: 48)
+            cell(format(row.stealsPerGame), width: 48)
+            cell(format(row.blocksPerGame), width: 48)
+            cell(format(row.turnoversPerGame), width: 48)
+            cell("\(format(row.fgMadePerGame))-\(format(row.fgAttemptsPerGame))", width: 78)
+            cell("\(format(row.threeMadePerGame))-\(format(row.threeAttemptsPerGame))", width: 78)
+            cell("\(format(row.ftMadePerGame))-\(format(row.ftAttemptsPerGame))", width: 78)
         }
         .font(.caption.monospacedDigit())
         .padding(.vertical, 5)
@@ -1260,23 +1278,23 @@ private struct PlayerStatsView: View {
         case "games":
             return numeric(lhs.games, rhs.games)
         case "points":
-            return numeric(lhs.points, rhs.points)
+            return numeric(lhs.pointsPerGame, rhs.pointsPerGame)
         case "rebounds":
-            return numeric(lhs.rebounds, rhs.rebounds)
+            return numeric(lhs.reboundsPerGame, rhs.reboundsPerGame)
         case "assists":
-            return numeric(lhs.assists, rhs.assists)
+            return numeric(lhs.assistsPerGame, rhs.assistsPerGame)
         case "steals":
-            return numeric(lhs.steals, rhs.steals)
+            return numeric(lhs.stealsPerGame, rhs.stealsPerGame)
         case "blocks":
-            return numeric(lhs.blocks, rhs.blocks)
+            return numeric(lhs.blocksPerGame, rhs.blocksPerGame)
         case "turnovers":
-            return numeric(lhs.turnovers, rhs.turnovers)
+            return numeric(lhs.turnoversPerGame, rhs.turnoversPerGame)
         case "fg":
-            return numeric(lhs.fgMade, rhs.fgMade)
+            return numeric(lhs.fgMadePerGame, rhs.fgMadePerGame)
         case "three":
-            return numeric(lhs.threeMade, rhs.threeMade)
+            return numeric(lhs.threeMadePerGame, rhs.threeMadePerGame)
         case "ft":
-            return numeric(lhs.ftMade, rhs.ftMade)
+            return numeric(lhs.ftMadePerGame, rhs.ftMadePerGame)
         default:
             return .orderedSame
         }
@@ -1285,6 +1303,15 @@ private struct PlayerStatsView: View {
     private func numeric(_ lhs: Int, _ rhs: Int) -> ComparisonResult {
         if lhs == rhs { return .orderedSame }
         return lhs < rhs ? .orderedAscending : .orderedDescending
+    }
+
+    private func numeric(_ lhs: Double, _ rhs: Double) -> ComparisonResult {
+        if lhs == rhs { return .orderedSame }
+        return lhs < rhs ? .orderedAscending : .orderedDescending
+    }
+
+    private func format(_ value: Double) -> String {
+        String(format: "%.1f", value)
     }
 }
 
