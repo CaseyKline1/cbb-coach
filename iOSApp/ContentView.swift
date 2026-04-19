@@ -2077,9 +2077,9 @@ private struct ConferenceStandingsView: View {
                             .init(id: "team", title: "TEAM", width: 140, alignment: .leading),
                             .init(id: "conf", title: "CONF", width: 56),
                             .init(id: "overall", title: "OVR", width: 56),
-                            .init(id: "pf", title: "PF", width: 56),
-                            .init(id: "pa", title: "PA", width: 56),
-                            .init(id: "diff", title: "DIFF", width: 56),
+                            .init(id: "pf", title: "PPG", width: 56),
+                            .init(id: "pa", title: "PAPG", width: 56),
+                            .init(id: "diff", title: "DIFF/G", width: 56),
                         ]
                         let tableRows = rows.map { (id: AnyHashable($0.teamId), data: $0) }
 
@@ -2104,17 +2104,21 @@ private struct ConferenceStandingsView: View {
                                         font: .caption.monospacedDigit().weight(.medium)
                                     )
                                     AppTableTextCell(
-                                        text: "\(row.pointsFor ?? 0)",
+                                        text: formatPerGame(points: row.pointsFor ?? 0, wins: row.wins, losses: row.losses),
                                         width: 56,
                                         font: .caption.monospacedDigit().weight(.medium)
                                     )
                                     AppTableTextCell(
-                                        text: "\(row.pointsAgainst ?? 0)",
+                                        text: formatPerGame(points: row.pointsAgainst ?? 0, wins: row.wins, losses: row.losses),
                                         width: 56,
                                         font: .caption.monospacedDigit().weight(.medium)
                                     )
                                     AppTableTextCell(
-                                        text: "\((row.pointsFor ?? 0) - (row.pointsAgainst ?? 0))",
+                                        text: formatPerGame(
+                                            points: (row.pointsFor ?? 0) - (row.pointsAgainst ?? 0),
+                                            wins: row.wins,
+                                            losses: row.losses
+                                        ),
                                         width: 56,
                                         font: .caption.monospacedDigit().weight(.medium)
                                     )
@@ -2139,6 +2143,12 @@ private struct ConferenceStandingsView: View {
         case "big-east": "Big East"
         default: id.uppercased()
         }
+    }
+
+    private func formatPerGame(points: Int, wins: Int, losses: Int) -> String {
+        let gamesPlayed = wins + losses
+        guard gamesPlayed > 0 else { return "0.0" }
+        return String(format: "%.1f", Double(points) / Double(gamesPlayed))
     }
 }
 
