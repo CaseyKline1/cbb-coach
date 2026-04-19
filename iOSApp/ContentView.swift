@@ -767,9 +767,6 @@ private struct RosterRatingsView: View {
     let roster: [UserRosterPlayerSummary]
     @State private var sortColumn: String = "overall"
     @State private var isAscending: Bool = false
-    private let headerVerticalPadding: CGFloat = 3
-    private let rowVerticalPadding: CGFloat = 2
-    private let minimumRowHeight: CGFloat = 20
 
     private let preferredAttributeOrder: [String] = [
         "potential", "speed", "agility", "burst", "strength", "vertical", "stamina", "durability",
@@ -796,14 +793,38 @@ private struct RosterRatingsView: View {
         }
     }
 
+    private var columns: [AppTableColumn<String>] {
+        [
+            .init(id: "isStarter", title: "ST", width: 30),
+            .init(id: "name", title: "PLYR", width: 132, alignment: .leading),
+            .init(id: "position", title: "POS", width: 42),
+            .init(id: "year", title: "YR", width: 30),
+            .init(id: "overall", title: "OVR", width: 38),
+        ] + attributeColumns.map { .init(id: $0, title: attributeLabel($0), width: 44) }
+    }
+
+    private var tableRows: [(id: AnyHashable, data: UserRosterPlayerSummary)] {
+        Array(sortedRoster.enumerated()).map { (id: AnyHashable($0.offset), data: $0.element) }
+    }
+
     var body: some View {
-        ScrollView([.horizontal, .vertical], showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                headerRow
-                ForEach(Array(sortedRoster.enumerated()), id: \.offset) { _, player in
-                    dataRow(player)
-                        .background(Color(.systemBackground))
-                    Divider()
+        ScrollView(.vertical, showsIndicators: false) {
+            AppTable(
+                columns: columns,
+                rows: tableRows,
+                sortState: .init(column: sortColumn, ascending: isAscending),
+                onSort: toggleSort
+            ) { player in
+                HStack(spacing: 0) {
+                    AppTableTextCell(text: player.isStarter ? "★" : "", width: 30)
+                    AppTableTextCell(text: player.name, width: 132, alignment: .leading)
+                    AppTableTextCell(text: player.position, width: 42)
+                    AppTableTextCell(text: player.year, width: 30)
+                    AppTableTextCell(text: "\(player.overall)", width: 38)
+                    ForEach(attributeColumns, id: \.self) { key in
+                        let value = player.attributes?[key] ?? 0
+                        AppTableTextCell(text: "\(value)", width: 44)
+                    }
                 }
             }
         }
@@ -812,67 +833,13 @@ private struct RosterRatingsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var headerRow: some View {
-        HStack(spacing: 0) {
-            sortableHeader("ST", id: "isStarter", width: 30)
-            sortableHeader("PLYR", id: "name", width: 132, alignment: .leading)
-            sortableHeader("POS", id: "position", width: 42)
-            sortableHeader("YR", id: "year", width: 30)
-            sortableHeader("OVR", id: "overall", width: 38)
-            ForEach(attributeColumns, id: \.self) { column in
-                sortableHeader(attributeLabel(column), id: column, width: 44)
-            }
+    private func toggleSort(_ id: String) {
+        if sortColumn == id {
+            isAscending.toggle()
+        } else {
+            sortColumn = id
+            isAscending = false
         }
-        .padding(.vertical, headerVerticalPadding)
-        .background(Color(.tertiarySystemBackground))
-    }
-
-    private func dataRow(_ player: UserRosterPlayerSummary) -> some View {
-        HStack(spacing: 0) {
-            textCell(player.isStarter ? "★" : "", width: 30, alignment: .center)
-            textCell(player.name, width: 132, alignment: .leading)
-            textCell(player.position, width: 42, alignment: .center)
-            textCell(player.year, width: 30, alignment: .center)
-            textCell("\(player.overall)", width: 38, alignment: .center)
-            ForEach(attributeColumns, id: \.self) { key in
-                let value = player.attributes?[key] ?? 0
-                textCell("\(value)", width: 44, alignment: .center)
-            }
-        }
-        .font(.caption2.monospacedDigit())
-        .frame(minHeight: minimumRowHeight)
-        .padding(.vertical, rowVerticalPadding)
-    }
-
-    private func sortableHeader(_ title: String, id: String, width: CGFloat, alignment: Alignment = .center) -> some View {
-        Button {
-            if sortColumn == id {
-                isAscending.toggle()
-            } else {
-                sortColumn = id
-                isAscending = false
-            }
-        } label: {
-            HStack(spacing: 2) {
-                Text(title)
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(sortColumn == id ? .primary : .secondary)
-                if sortColumn == id {
-                    Image(systemName: isAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(.primary)
-                }
-            }
-            .frame(width: width, alignment: alignment)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func textCell(_ text: String, width: CGFloat, alignment: Alignment) -> some View {
-        Text(text)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(width: width, alignment: alignment)
     }
 
     private func compare(lhs: UserRosterPlayerSummary, rhs: UserRosterPlayerSummary, column: String) -> ComparisonResult {
@@ -1088,55 +1055,47 @@ private struct BoxScoreDetailView: View {
     }
 
     private func teamSection(_ team: ParsedTeamBoxScore) -> some View {
-        GroupBox(team.name) {
-            ScrollView(.horizontal) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 10) {
-                        header("Player", width: 140, align: .leading)
-                        header("MIN", width: 44)
-                        header("PTS", width: 42)
-                        header("REB", width: 42)
-                        header("AST", width: 42)
-                        header("STL", width: 42)
-                        header("BLK", width: 42)
-                        header("TO", width: 42)
-                        header("FG", width: 64)
-                        header("3PT", width: 64)
-                        header("FT", width: 64)
-                        header("PF", width: 42)
-                    }
-                    ForEach(team.players, id: \.playerName) { player in
-                        HStack(spacing: 10) {
-                            cell("\(player.playerName) (\(player.position))", width: 140, align: .leading)
-                            cell(String(format: "%.1f", player.minutes), width: 44)
-                            cell("\(player.points)", width: 42)
-                            cell("\(player.rebounds)", width: 42)
-                            cell("\(player.assists)", width: 42)
-                            cell("\(player.steals)", width: 42)
-                            cell("\(player.blocks)", width: 42)
-                            cell("\(player.turnovers)", width: 42)
-                            cell("\(player.fgMade)-\(player.fgAttempts)", width: 64)
-                            cell("\(player.threeMade)-\(player.threeAttempts)", width: 64)
-                            cell("\(player.ftMade)-\(player.ftAttempts)", width: 64)
-                            cell("\(player.fouls)", width: 42)
-                        }
-                        .font(.caption.monospacedDigit())
-                    }
+        let columns: [AppTableColumn<String>] = [
+            .init(id: "player", title: "PLYR", width: 140, alignment: .leading),
+            .init(id: "min", title: "MIN", width: 44),
+            .init(id: "pts", title: "PTS", width: 42),
+            .init(id: "reb", title: "REB", width: 42),
+            .init(id: "ast", title: "AST", width: 42),
+            .init(id: "stl", title: "STL", width: 42),
+            .init(id: "blk", title: "BLK", width: 42),
+            .init(id: "to", title: "TO", width: 42),
+            .init(id: "fg", title: "FG", width: 64),
+            .init(id: "three", title: "3PT", width: 64),
+            .init(id: "ft", title: "FT", width: 64),
+            .init(id: "pf", title: "PF", width: 42),
+        ]
+        let tableRows = Array(team.players.enumerated()).map {
+            (id: AnyHashable("\($0.offset)-\($0.element.playerName)"), data: $0.element)
+        }
+
+        return GroupBox(team.name) {
+            AppTable(columns: columns, rows: tableRows) { player in
+                HStack(spacing: 0) {
+                    AppTableTextCell(
+                        text: "\(player.playerName) (\(player.position))",
+                        width: 140,
+                        alignment: .leading,
+                        font: .caption.monospacedDigit()
+                    )
+                    AppTableTextCell(text: String(format: "%.1f", player.minutes), width: 44, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.points)", width: 42, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.rebounds)", width: 42, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.assists)", width: 42, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.steals)", width: 42, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.blocks)", width: 42, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.turnovers)", width: 42, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.fgMade)-\(player.fgAttempts)", width: 64, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.threeMade)-\(player.threeAttempts)", width: 64, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.ftMade)-\(player.ftAttempts)", width: 64, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.fouls)", width: 42, font: .caption.monospacedDigit())
                 }
             }
         }
-    }
-
-    private func header(_ text: String, width: CGFloat, align: Alignment = .center) -> some View {
-        Text(text)
-            .font(.caption2.weight(.bold))
-            .frame(width: width, alignment: align)
-    }
-
-    private func cell(_ text: String, width: CGFloat, align: Alignment = .center) -> some View {
-        Text(text)
-            .lineLimit(1)
-            .frame(width: width, alignment: align)
     }
 }
 
@@ -1226,13 +1185,46 @@ private struct PlayerStatsView: View {
         }
     }
 
+    private var columns: [AppTableColumn<String>] {
+        [
+            .init(id: "name", title: "PLYR", width: 170, alignment: .leading),
+            .init(id: "games", title: "G", width: 42),
+            .init(id: "points", title: "PTS", width: 48),
+            .init(id: "rebounds", title: "REB", width: 48),
+            .init(id: "assists", title: "AST", width: 48),
+            .init(id: "steals", title: "STL", width: 48),
+            .init(id: "blocks", title: "BLK", width: 48),
+            .init(id: "turnovers", title: "TO", width: 48),
+            .init(id: "fg", title: "FG", width: 78),
+            .init(id: "three", title: "3PT", width: 78),
+            .init(id: "ft", title: "FT", width: 78),
+        ]
+    }
+
+    private var tableRows: [(id: AnyHashable, data: PlayerStatsRow)] {
+        rows.map { (id: AnyHashable($0.name), data: $0) }
+    }
+
     var body: some View {
-        ScrollView([.vertical, .horizontal]) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                header
-                ForEach(rows, id: \.name) { row in
-                    rowView(row)
-                    Divider()
+        ScrollView(.vertical, showsIndicators: false) {
+            AppTable(
+                columns: columns,
+                rows: tableRows,
+                sortState: .init(column: sortColumn, ascending: isAscending),
+                onSort: toggleSort
+            ) { row in
+                HStack(spacing: 0) {
+                    AppTableTextCell(text: row.name, width: 170, alignment: .leading)
+                    AppTableTextCell(text: "\(row.games)", width: 42)
+                    AppTableTextCell(text: format(row.pointsPerGame), width: 48)
+                    AppTableTextCell(text: format(row.reboundsPerGame), width: 48)
+                    AppTableTextCell(text: format(row.assistsPerGame), width: 48)
+                    AppTableTextCell(text: format(row.stealsPerGame), width: 48)
+                    AppTableTextCell(text: format(row.blocksPerGame), width: 48)
+                    AppTableTextCell(text: format(row.turnoversPerGame), width: 48)
+                    AppTableTextCell(text: "\(format(row.fgMadePerGame))-\(format(row.fgAttemptsPerGame))", width: 78)
+                    AppTableTextCell(text: "\(format(row.threeMadePerGame))-\(format(row.threeAttemptsPerGame))", width: 78)
+                    AppTableTextCell(text: "\(format(row.ftMadePerGame))-\(format(row.ftAttemptsPerGame))", width: 78)
                 }
             }
         }
@@ -1241,69 +1233,13 @@ private struct PlayerStatsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var header: some View {
-        HStack(spacing: 0) {
-            sortHeader("PLAYER", id: "name", width: 170)
-            sortHeader("G", id: "games", width: 42)
-            sortHeader("PTS", id: "points", width: 48)
-            sortHeader("REB", id: "rebounds", width: 48)
-            sortHeader("AST", id: "assists", width: 48)
-            sortHeader("STL", id: "steals", width: 48)
-            sortHeader("BLK", id: "blocks", width: 48)
-            sortHeader("TO", id: "turnovers", width: 48)
-            sortHeader("FG", id: "fg", width: 78)
-            sortHeader("3PT", id: "three", width: 78)
-            sortHeader("FT", id: "ft", width: 78)
+    private func toggleSort(_ id: String) {
+        if sortColumn == id {
+            isAscending.toggle()
+        } else {
+            sortColumn = id
+            isAscending = false
         }
-        .padding(.vertical, 6)
-        .background(Color(.tertiarySystemBackground))
-    }
-
-    private func rowView(_ row: PlayerStatsRow) -> some View {
-        HStack(spacing: 0) {
-            cell(row.name, width: 170, align: .leading)
-            cell("\(row.games)", width: 42)
-            cell(format(row.pointsPerGame), width: 48)
-            cell(format(row.reboundsPerGame), width: 48)
-            cell(format(row.assistsPerGame), width: 48)
-            cell(format(row.stealsPerGame), width: 48)
-            cell(format(row.blocksPerGame), width: 48)
-            cell(format(row.turnoversPerGame), width: 48)
-            cell("\(format(row.fgMadePerGame))-\(format(row.fgAttemptsPerGame))", width: 78)
-            cell("\(format(row.threeMadePerGame))-\(format(row.threeAttemptsPerGame))", width: 78)
-            cell("\(format(row.ftMadePerGame))-\(format(row.ftAttemptsPerGame))", width: 78)
-        }
-        .font(.caption.monospacedDigit())
-        .padding(.vertical, 5)
-        .background(Color(.systemBackground))
-    }
-
-    private func sortHeader(_ title: String, id: String, width: CGFloat) -> some View {
-        Button {
-            if sortColumn == id {
-                isAscending.toggle()
-            } else {
-                sortColumn = id
-                isAscending = false
-            }
-        } label: {
-            HStack(spacing: 3) {
-                Text(title).font(.caption2.weight(.bold))
-                if sortColumn == id {
-                    Image(systemName: isAscending ? "arrow.up" : "arrow.down")
-                        .font(.caption2.weight(.bold))
-                }
-            }
-            .frame(width: width)
-            .foregroundStyle(.primary)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func cell(_ value: String, width: CGFloat, align: Alignment = .center) -> some View {
-        Text(value)
-            .lineLimit(1)
-            .frame(width: width, alignment: align)
     }
 
     private func compare(_ lhs: PlayerStatsRow, _ rhs: PlayerStatsRow) -> ComparisonResult {
@@ -1369,31 +1305,51 @@ private struct ConferenceStandingsView: View {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(orderedConferences, id: \.self) { conferenceId in
                     if let rows = standingsByConference[conferenceId], !rows.isEmpty {
-                        GroupBox(conferenceTitle(conferenceId)) {
-                            VStack(spacing: 0) {
-                                HStack {
-                                    header("Team", alignment: .leading)
-                                    header("Conf")
-                                    header("Overall")
-                                    header("PF")
-                                    header("PA")
-                                    header("DIFF")
-                                }
-                                .padding(.bottom, 6)
+                        let columns: [AppTableColumn<String>] = [
+                            .init(id: "team", title: "TEAM", width: 140, alignment: .leading),
+                            .init(id: "conf", title: "CONF", width: 56),
+                            .init(id: "overall", title: "OVR", width: 56),
+                            .init(id: "pf", title: "PF", width: 56),
+                            .init(id: "pa", title: "PA", width: 56),
+                            .init(id: "diff", title: "DIFF", width: 56),
+                        ]
+                        let tableRows = rows.map { (id: AnyHashable($0.teamId), data: $0) }
 
-                                ForEach(rows, id: \.teamId) { row in
-                                    HStack {
-                                        Text(row.teamName)
-                                            .font(.subheadline.weight(.semibold))
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                        value("\(row.conferenceWins)-\(row.conferenceLosses)")
-                                        value("\(row.wins)-\(row.losses)")
-                                        value("\(row.pointsFor ?? 0)")
-                                        value("\(row.pointsAgainst ?? 0)")
-                                        value("\((row.pointsFor ?? 0) - (row.pointsAgainst ?? 0))")
-                                    }
-                                    .padding(.vertical, 4)
-                                    Divider()
+                        GroupBox(conferenceTitle(conferenceId)) {
+                            AppTable(columns: columns, rows: tableRows) { row in
+                                HStack(spacing: 0) {
+                                    AppTableTextCell(
+                                        text: row.teamName,
+                                        width: 140,
+                                        alignment: .leading,
+                                        font: .subheadline.weight(.semibold),
+                                        foreground: .primary
+                                    )
+                                    AppTableTextCell(
+                                        text: "\(row.conferenceWins)-\(row.conferenceLosses)",
+                                        width: 56,
+                                        font: .caption.monospacedDigit().weight(.medium)
+                                    )
+                                    AppTableTextCell(
+                                        text: "\(row.wins)-\(row.losses)",
+                                        width: 56,
+                                        font: .caption.monospacedDigit().weight(.medium)
+                                    )
+                                    AppTableTextCell(
+                                        text: "\(row.pointsFor ?? 0)",
+                                        width: 56,
+                                        font: .caption.monospacedDigit().weight(.medium)
+                                    )
+                                    AppTableTextCell(
+                                        text: "\(row.pointsAgainst ?? 0)",
+                                        width: 56,
+                                        font: .caption.monospacedDigit().weight(.medium)
+                                    )
+                                    AppTableTextCell(
+                                        text: "\((row.pointsFor ?? 0) - (row.pointsAgainst ?? 0))",
+                                        width: 56,
+                                        font: .caption.monospacedDigit().weight(.medium)
+                                    )
                                 }
                             }
                         }
@@ -1404,18 +1360,6 @@ private struct ConferenceStandingsView: View {
         }
         .navigationTitle("Standings")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func header(_ label: String, alignment: Alignment = .center) -> some View {
-        Text(label)
-            .font(.caption2.weight(.bold))
-            .frame(width: label == "Team" ? 140 : 56, alignment: alignment)
-    }
-
-    private func value(_ text: String) -> some View {
-        Text(text)
-            .font(.caption.monospacedDigit().weight(.medium))
-            .frame(width: 56, alignment: .center)
     }
 
     private func conferenceTitle(_ id: String) -> String {
