@@ -178,33 +178,32 @@ private struct CoachIdentityStepView: View {
                 )
             }
         ) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("CBB Coach")
-                    .font(.system(size: 36, weight: .black))
+            GameCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("CBB Coach")
+                        .font(.system(size: 36, weight: .black))
 
-                TextField("First Name", text: $firstName)
-                    .textInputAutocapitalization(.words)
-                    .textFieldStyle(.roundedBorder)
+                    TextField("First Name", text: $firstName)
+                        .textInputAutocapitalization(.words)
+                        .textFieldStyle(.roundedBorder)
 
-                TextField("Last Name", text: $lastName)
-                    .textInputAutocapitalization(.words)
-                    .textFieldStyle(.roundedBorder)
+                    TextField("Last Name", text: $lastName)
+                        .textInputAutocapitalization(.words)
+                        .textFieldStyle(.roundedBorder)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Age")
-                            .font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Text("\(Int(age.rounded()))")
-                            .font(.subheadline.monospacedDigit().weight(.bold))
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Age")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text("\(Int(age.rounded()))")
+                                .font(.subheadline.monospacedDigit().weight(.bold))
+                        }
+                        Slider(value: $age, in: 25...75, step: 1)
+                            .tint(AppTheme.accent)
                     }
-                    Slider(value: $age, in: 25...75, step: 1)
-                        .tint(.orange)
                 }
             }
-            .padding(18)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
 }
@@ -224,25 +223,24 @@ private struct CoachArchetypeStepView: View {
             nextDisabled: false,
             onNext: { onNext(selectedArchetype) }
         ) {
-            VStack(alignment: .leading, spacing: 16) {
-                FilterDropdown(
-                    label: "Archetype",
-                    selection: $selectedArchetype,
-                    options: CoachArchetype.allCases,
-                    optionLabel: \.label
-                )
+            GameCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    FilterDropdown(
+                        label: "Archetype",
+                        selection: $selectedArchetype,
+                        options: CoachArchetype.allCases,
+                        optionLabel: \.label
+                    )
 
-                Text(selectedArchetype.summary)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    Text(selectedArchetype.summary)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
 
-                Text("\(identity.firstName) \(identity.lastName), age \(identity.age)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    Text("\(identity.firstName) \(identity.lastName), age \(identity.age)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .padding(18)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
 }
@@ -272,35 +270,34 @@ private struct CoachStyleStepView: View {
                 )
             }
         ) {
-            VStack(alignment: .leading, spacing: 16) {
-                FilterDropdown(
-                    label: "Tempo",
-                    selection: $selectedPace,
-                    options: PaceProfile.allCases,
-                    optionLabel: \.label
-                )
+            GameCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    FilterDropdown(
+                        label: "Tempo",
+                        selection: $selectedPace,
+                        options: PaceProfile.allCases,
+                        optionLabel: \.label
+                    )
 
-                FilterDropdown(
-                    label: "Base Offense",
-                    selection: $selectedOffense,
-                    options: OffensiveFormation.allCases,
-                    optionLabel: \.label
-                )
+                    FilterDropdown(
+                        label: "Base Offense",
+                        selection: $selectedOffense,
+                        options: OffensiveFormation.allCases,
+                        optionLabel: \.label
+                    )
 
-                FilterDropdown(
-                    label: "Base Defense",
-                    selection: $selectedDefense,
-                    options: DefenseScheme.allCases,
-                    optionLabel: \.label
-                )
+                    FilterDropdown(
+                        label: "Base Defense",
+                        selection: $selectedDefense,
+                        options: DefenseScheme.allCases,
+                        optionLabel: \.label
+                    )
 
-                Text("\(identity.firstName) \(identity.lastName), age \(identity.age)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    Text("\(identity.firstName) \(identity.lastName), age \(identity.age)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .padding(18)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
 }
@@ -326,27 +323,22 @@ private struct CareerTeamSelectionView: View {
                             Button {
                                 selectedTeamId = team.teamId
                             } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(team.teamName)
-                                            .font(.subheadline.weight(.semibold))
-                                        Text(team.conferenceName)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if selectedTeamId == team.teamId {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.orange)
+                                GameCard {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(team.teamName)
+                                                .font(.subheadline.weight(.semibold))
+                                            Text(team.conferenceName)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        if selectedTeamId == team.teamId {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(AppTheme.accent)
+                                        }
                                     }
                                 }
-                                .padding(12)
-                                .background(selectedTeamId == team.teamId ? Color.orange.opacity(0.1) : Color.clear)
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(selectedTeamId == team.teamId ? Color.orange.opacity(0.5) : Color.black.opacity(0.08), lineWidth: 1)
-                                )
                             }
                             .buttonStyle(.plain)
                         }
@@ -360,7 +352,7 @@ private struct CareerTeamSelectionView: View {
                     else { return }
                     onTeamSelected(selected.teamName)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(GameButtonStyle(variant: .primary))
                 .disabled(selectedTeamId == nil)
             }
             .padding(16)
@@ -386,12 +378,7 @@ private struct OnboardingStepScaffold<Content: View>: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color(red: 0.96, green: 0.97, blue: 0.99), Color(red: 0.92, green: 0.94, blue: 0.97)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            AppTheme.background.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 20) {
@@ -408,14 +395,9 @@ private struct OnboardingStepScaffold<Content: View>: View {
 
                     Button(action: onNext) {
                         Text(nextLabel)
-                            .font(.headline)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
                     }
-                    .buttonStyle(.plain)
-                    .background(nextDisabled ? Color.gray.opacity(0.5) : Color.orange)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .buttonStyle(GameButtonStyle(variant: .primary))
                     .disabled(nextDisabled)
                 }
                 .padding(.horizontal, 16)
@@ -904,54 +886,7 @@ private struct RotationSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                GameCard {
-                    VStack(spacing: 0) {
-                        HStack(spacing: 0) {
-                            AppTableTextCell(text: "SLOT", width: 88, font: .caption2.weight(.bold), foreground: .secondary)
-                            AppTableTextCell(text: "PLAYER", width: 220, alignment: .leading, font: .caption2.weight(.bold), foreground: .secondary)
-                            AppTableTextCell(text: "MIN", width: 120, font: .caption2.weight(.bold), foreground: .secondary)
-                        }
-                        .padding(.vertical, 6)
-                        .background(AppTheme.cardBackground)
-                        Divider()
-
-                        ForEach(Array(editedSlots.enumerated()), id: \.element.id) { index, slot in
-                            HStack(spacing: 0) {
-                                AppTableTextCell(
-                                    text: slotLabel(for: index),
-                                    width: 88,
-                                    font: .caption.monospacedDigit().weight(.semibold)
-                                )
-
-                                playerCell(for: slot)
-                                    .frame(width: 220, alignment: .leading)
-
-                                RotationMinuteControl(
-                                    label: "",
-                                    value: Binding(
-                                        get: { editedSlots[index].minutes },
-                                        set: { editedSlots[index].minutes = $0 }
-                                    ),
-                                    step: 1
-                                )
-                                .frame(width: 120)
-                            }
-                            .padding(.vertical, 6)
-                            .background(targetedDropSlot == slot.slot ? Color.orange.opacity(0.16) : Color.clear)
-                            .contentShape(Rectangle())
-                            .onDrop(of: [UTType.plainText], isTargeted: dropTargetBinding(for: slot.slot)) { _ in
-                                guard let sourceSlot = draggedSlot else { return false }
-                                movePlayer(fromSlot: sourceSlot, toSlot: slot.slot)
-                                draggedSlot = nil
-                                targetedDropSlot = nil
-                                return true
-                            }
-                            if index < editedSlots.count - 1 {
-                                Divider()
-                            }
-                        }
-                    }
-                }
+                rotationTable
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(statusText)
@@ -1003,6 +938,57 @@ private struct RotationSettingsView: View {
             }
         } message: {
             Text("Rotation minutes are currently \(Int(totalMinutes.rounded())) and need to be \(Int(targetTotal.rounded())).")
+        }
+    }
+
+    private var rotationTable: some View {
+        GameCard {
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    AppTableTextCell(text: "SLOT", width: 88, font: .caption2.weight(.bold), foreground: .secondary)
+                    AppTableTextCell(text: "PLAYER", width: 220, alignment: .leading, font: .caption2.weight(.bold), foreground: .secondary)
+                    AppTableTextCell(text: "MIN", width: 120, font: .caption2.weight(.bold), foreground: .secondary)
+                }
+                .padding(.vertical, 6)
+                .background(AppTheme.cardBackground)
+                Divider()
+
+                ForEach(Array(editedSlots.enumerated()), id: \.element.id) { index, slot in
+                    HStack(spacing: 0) {
+                        AppTableTextCell(
+                            text: slotLabel(for: index),
+                            width: 88,
+                            font: .caption.monospacedDigit().weight(.semibold)
+                        )
+
+                        playerCell(for: slot)
+                            .frame(width: 220, alignment: .leading)
+
+                        RotationMinuteControl(
+                            label: "",
+                            value: Binding(
+                                get: { editedSlots[index].minutes },
+                                set: { editedSlots[index].minutes = $0 }
+                            ),
+                            step: 1
+                        )
+                        .frame(width: 120)
+                    }
+                    .padding(.vertical, 6)
+                    .background(targetedDropSlot == slot.slot ? AppTheme.accent.opacity(0.16) : Color.clear)
+                    .contentShape(Rectangle())
+                    .onDrop(of: [UTType.plainText], isTargeted: dropTargetBinding(for: slot.slot)) { _ in
+                        guard let sourceSlot = draggedSlot else { return false }
+                        movePlayer(fromSlot: sourceSlot, toSlot: slot.slot)
+                        draggedSlot = nil
+                        targetedDropSlot = nil
+                        return true
+                    }
+                    if index < editedSlots.count - 1 {
+                        Divider()
+                    }
+                }
+            }
         }
     }
 
@@ -1144,7 +1130,6 @@ private struct RotationSettingsView: View {
         return "\(index + 1) BEN"
     }
 
-    @ViewBuilder
     private func playerCell(for slot: UserRotationSlot) -> some View {
         let playerLabel: String
         if let playerIndex = slot.playerIndex, let player = roster.first(where: { $0.playerIndex == playerIndex }) {
@@ -1153,18 +1138,18 @@ private struct RotationSettingsView: View {
             playerLabel = "Unassigned"
         }
 
-        Text(playerLabel)
+        return Text(playerLabel)
             .font(.caption.monospacedDigit().weight(.semibold))
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemBackground))
+            .background(AppTheme.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color(.separator).opacity(0.45), lineWidth: 1)
+                    .stroke(AppTheme.cardBorder, lineWidth: 1)
             )
             .onDrag {
                 draggedSlot = slot.slot
@@ -1325,7 +1310,7 @@ private struct RosterRatingsView: View {
                             width: 132,
                             alignment: .leading,
                             font: .caption.monospacedDigit().weight(.semibold),
-                            foreground: .blue
+                            foreground: AppTheme.accent
                         )
                     }
                     .buttonStyle(.plain)
@@ -1339,7 +1324,7 @@ private struct RosterRatingsView: View {
                 }
             }
         }
-        .background(Color(.secondarySystemBackground))
+        .background(AppTheme.background)
         .navigationTitle("Roster")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -1856,41 +1841,38 @@ private struct ScheduleListView: View {
     }
 
     private func scheduleRowContent(_ game: UserGameSummary) -> some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(game.isHome == true ? "vs" : "@") \(game.opponentName ?? "Unknown")")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text(game.type?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Game")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if game.completed == true {
-                let home = game.result?.intValue(for: "homeScore") ?? 0
-                let away = game.result?.intValue(for: "awayScore") ?? 0
-                let userScore = game.isHome == true ? home : away
-                let oppScore = game.isHome == true ? away : home
-                HStack(spacing: 6) {
-                    Text(userScore > oppScore ? "W" : "L")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(userScore > oppScore ? .green : .red)
-                    Text("\(userScore)-\(oppScore)")
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
+        GameCard {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(game.isHome == true ? "vs" : "@") \(game.opponentName ?? "Unknown")")
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
+                    Text(game.type?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Game")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            } else {
-                Text("Upcoming")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Spacer()
+                if game.completed == true {
+                    let home = game.result?.intValue(for: "homeScore") ?? 0
+                    let away = game.result?.intValue(for: "awayScore") ?? 0
+                    let userScore = game.isHome == true ? home : away
+                    let oppScore = game.isHome == true ? away : home
+                    HStack(spacing: 6) {
+                        GamePill(text: userScore > oppScore ? "W" : "L", color: userScore > oppScore ? AppTheme.success : AppTheme.danger)
+                        Text("\(userScore)-\(oppScore)")
+                            .font(.subheadline.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("Upcoming")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
-        .padding(12)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -2115,7 +2097,7 @@ private struct PlayerStatsView: View {
                 }
             }
         }
-        .background(Color(.secondarySystemBackground))
+        .background(AppTheme.background)
         .navigationTitle("Player Stats")
         .navigationBarTitleDisplayMode(.inline)
     }

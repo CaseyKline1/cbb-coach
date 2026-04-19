@@ -12,6 +12,7 @@
 		4A3F436DD523E92D203DACC6 /* CBBCoachApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 723406DE4B79EAE29077EC7F /* CBBCoachApp.swift */; };
 		8E777E6698C0FD72023F14AD /* FilterDropdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF61AD187740290FDECD395 /* FilterDropdown.swift */; };
 		BAC5A2D4195FEBA68BD4F156 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A95D0E601B2745C92AF4D82E /* ContentView.swift */; };
+		E5122D07E12E1240BDAFAC66 /* AppComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB79331F4DDA7BE27C24E4E /* AppComponents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -22,6 +23,7 @@
 		A95D0E601B2745C92AF4D82E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		CAEE84DF38E8D2CAAF7CBE6A /* CBBCoachApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CBBCoachApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0D7F0523C735098D20C2209 /* AppTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTable.swift; sourceTree = "<group>"; };
+		FAB79331F4DDA7BE27C24E4E /* AppComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppComponents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +69,7 @@
 		BFB4F2AC81D052E6C9972E49 /* Components */ = {
 			isa = PBXGroup;
 			children = (
+				FAB79331F4DDA7BE27C24E4E /* AppComponents.swift */,
 				D0D7F0523C735098D20C2209 /* AppTable.swift */,
 				9FF61AD187740290FDECD395 /* FilterDropdown.swift */,
 			);
@@ -144,6 +147,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E5122D07E12E1240BDAFAC66 /* AppComponents.swift in Sources */,
 				02B3C00333821A59462B729C /* AppTable.swift in Sources */,
 				4A3F436DD523E92D203DACC6 /* CBBCoachApp.swift in Sources */,
 				BAC5A2D4195FEBA68BD4F156 /* ContentView.swift in Sources */,
