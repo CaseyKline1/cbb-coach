@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import CBBCoachCore
 
 struct ContentView: View {
@@ -462,45 +463,44 @@ private struct CollegeLeagueHomeView: View {
                         }
                     }
 
-                    Text(statusText)
-                        .font(.subheadline)
-
-                    GroupBox("Team") {
+                    GameCard {
                         VStack(spacing: 8) {
+                            GameSectionHeader(title: "Team")
                             NavigationLink(value: LeagueMenuDestination.roster) {
-                                MenuRow(title: "Roster")
+                                MenuRow(title: "Roster", subtitle: "View player ratings, traits, and details")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.schedule) {
-                                MenuRow(title: "Schedule")
+                                MenuRow(title: "Schedule", subtitle: "Review upcoming and completed games")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.rotation) {
-                                MenuRow(title: "Rotation")
+                                MenuRow(title: "Rotation", subtitle: "Set starters, bench order, and minutes")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.playerStats) {
-                                MenuRow(title: "Player Stats")
+                                MenuRow(title: "Player Stats", subtitle: "Sortable per-game production")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.standings) {
-                                MenuRow(title: "Standings")
+                                MenuRow(title: "Standings", subtitle: "Conference records and point margins")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.coachingStaff) {
-                                MenuRow(title: "Coaching Staff")
+                                MenuRow(title: "Coaching Staff", subtitle: "Adjust assistant priorities")
                             }
                             .buttonStyle(.plain)
                         }
                     }
 
                     if let lastPlayed = latestCompletedGame {
-                        GroupBox("Last Result") {
+                        GameCard {
+                            GameSectionHeader(title: "Last Result")
                             NavigationLink(value: LeagueMenuDestination.boxScore(lastPlayed.gameId ?? "")) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -521,26 +521,32 @@ private struct CollegeLeagueHomeView: View {
                         }
                     }
 
+                    GameCard {
+                        Text(statusText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
                     HStack(spacing: 10) {
                         Button("Sim Next User Game") {
                             playNextGame()
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(GameButtonStyle(variant: .primary))
 
                         Button("Choose Team") {
                             onChooseDifferentTeam()
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(GameButtonStyle(variant: .secondary))
                     }
 
                     Button("Create New Coach") {
                         onCreateNewCoach()
                     }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.orange)
+                    .buttonStyle(GameButtonStyle(variant: .danger, size: .compact))
                 }
                 .padding(20)
             }
+            .background(AppTheme.background)
             .navigationTitle("College League")
             .navigationDestination(for: LeagueMenuDestination.self) { destination in
                 switch destination {
@@ -725,29 +731,42 @@ private struct StatChip: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(.subheadline.monospacedDigit().weight(.bold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(AppTheme.ink)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(Color(.secondarySystemBackground))
+        .background(AppTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+        )
     }
 }
 
 private struct MenuRow: View {
     let title: String
+    var subtitle: String = ""
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+        GameCard {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.vertical, 6)
     }
 }
 
@@ -763,7 +782,8 @@ private struct CoachingStaffView: View {
                     .foregroundStyle(.secondary)
 
                 if let staff {
-                    GroupBox("Head Coach") {
+                    GameCard {
+                        GameSectionHeader(title: "Head Coach")
                         CoachTraitRowView(
                             title: staff.headCoach.displayName,
                             subtitle: "Program Leader",
@@ -771,7 +791,8 @@ private struct CoachingStaffView: View {
                         )
                     }
 
-                    GroupBox("Assistants") {
+                    GameCard {
+                        GameSectionHeader(title: "Assistants")
                         VStack(spacing: 12) {
                             ForEach(Array(staff.assistants.enumerated()), id: \.offset) { index, assistant in
                                 VStack(alignment: .leading, spacing: 8) {
@@ -852,8 +873,12 @@ private struct TraitPill: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)
-        .background(Color(.tertiarySystemBackground))
+        .background(AppTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(AppTheme.cardBorder.opacity(0.8), lineWidth: 1)
+        )
     }
 }
 
@@ -861,75 +886,69 @@ private struct RotationSettingsView: View {
     let roster: [UserRosterPlayerSummary]
     let slots: [UserRotationSlot]
     let onSave: ([UserRotationSlot]) -> Void
+    @Environment(\.dismiss) private var dismiss
 
     @State private var editedSlots: [UserRotationSlot] = []
     @State private var isApplyingIncomingSlots: Bool = false
-    @State private var statusText: String = "Set starters (1-5), then rank bench (6+). Team minutes are normalized to 200."
+    @State private var statusText: String = "Set starters (1-5), then rank bench (6+). Totals can be temporary while you edit."
+    @State private var showExitBalancePrompt: Bool = false
+    @State private var draggedSlot: Int? = nil
+    @State private var targetedDropSlot: Int? = nil
 
     private let starterPositions = ["PG", "SG", "SF", "PF", "C"]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Starters are slots 1-5 with assigned positions. Bench order drives substitution priority and role-fit checks.")
+                Text("Drag player names between rows to set starters and bench order. Each row has its own minute target.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                ForEach(Array(editedSlots.enumerated()), id: \.element.id) { index, slot in
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text(slotTitle(for: index))
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer()
-                                HStack(spacing: 8) {
-                                    Button(action: { moveSlot(from: index, delta: -1) }) {
-                                        Image(systemName: "arrow.up.circle.fill")
-                                    }
-                                    .buttonStyle(.plain)
-                                    .foregroundStyle(index > 0 ? .secondary : .tertiary)
-                                    .disabled(index == 0)
-                                    .accessibilityLabel("Move up")
+                GameCard {
+                    VStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            AppTableTextCell(text: "SLOT", width: 88, font: .caption2.weight(.bold), foreground: .secondary)
+                            AppTableTextCell(text: "PLAYER", width: 220, alignment: .leading, font: .caption2.weight(.bold), foreground: .secondary)
+                            AppTableTextCell(text: "MIN", width: 120, font: .caption2.weight(.bold), foreground: .secondary)
+                        }
+                        .padding(.vertical, 6)
+                        .background(AppTheme.cardBackground)
+                        Divider()
 
-                                    Button(action: { moveSlot(from: index, delta: 1) }) {
-                                        Image(systemName: "arrow.down.circle.fill")
-                                    }
-                                    .buttonStyle(.plain)
-                                    .foregroundStyle(index < editedSlots.count - 1 ? .secondary : .tertiary)
-                                    .disabled(index >= editedSlots.count - 1)
-                                    .accessibilityLabel("Move down")
-                                }
-                            }
-
-                            RotationPlayerPicker(
-                                label: "Player",
-                                roster: roster,
-                                selectedIndex: Binding(
-                                    get: { editedSlots[index].playerIndex },
-                                    set: { editedSlots[index].playerIndex = $0 }
+                        ForEach(Array(editedSlots.enumerated()), id: \.element.id) { index, slot in
+                            HStack(spacing: 0) {
+                                AppTableTextCell(
+                                    text: slotLabel(for: index),
+                                    width: 88,
+                                    font: .caption.monospacedDigit().weight(.semibold)
                                 )
-                            )
 
-                            if index < min(5, editedSlots.count) {
-                                FilterDropdown(
-                                    label: "Starter Position",
-                                    selection: Binding(
-                                        get: { editedSlots[index].position ?? starterPositions[min(index, starterPositions.count - 1)] },
-                                        set: { editedSlots[index].position = $0 }
+                                playerCell(for: slot)
+                                    .frame(width: 220, alignment: .leading)
+
+                                RotationMinuteControl(
+                                    label: "",
+                                    value: Binding(
+                                        get: { editedSlots[index].minutes },
+                                        set: { editedSlots[index].minutes = $0 }
                                     ),
-                                    options: starterPositions,
-                                    optionLabel: { $0 }
+                                    step: 1
                                 )
+                                .frame(width: 120)
                             }
-
-                            RotationMinuteControl(
-                                label: "Minutes",
-                                value: Binding(
-                                    get: { editedSlots[index].minutes },
-                                    set: { editedSlots[index].minutes = $0 }
-                                ),
-                                step: 1
-                            )
+                            .padding(.vertical, 6)
+                            .background(targetedDropSlot == slot.slot ? Color.orange.opacity(0.16) : Color.clear)
+                            .contentShape(Rectangle())
+                            .onDrop(of: [UTType.plainText], isTargeted: dropTargetBinding(for: slot.slot)) { _ in
+                                guard let sourceSlot = draggedSlot else { return false }
+                                movePlayer(fromSlot: sourceSlot, toSlot: slot.slot)
+                                draggedSlot = nil
+                                targetedDropSlot = nil
+                                return true
+                            }
+                            if index < editedSlots.count - 1 {
+                                Divider()
+                            }
                         }
                     }
                 }
@@ -947,6 +966,14 @@ private struct RotationSettingsView: View {
         }
         .navigationTitle("Rotation")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: attemptExit) {
+                    Label("Back", systemImage: "chevron.backward")
+                }
+            }
+        }
         .onAppear {
             applyIncomingSlots(slots)
         }
@@ -955,19 +982,33 @@ private struct RotationSettingsView: View {
         }
         .onChange(of: editedSlots) { _, updated in
             if isApplyingIncomingSlots { return }
-            let normalizedUpdated = normalized(updated)
-            if !areSlotsEqual(updated, normalizedUpdated) {
-                editedSlots = normalizedUpdated
+            let sanitizedUpdated = sanitized(updated)
+            if !areSlotsEqual(updated, sanitizedUpdated) {
+                editedSlots = sanitizedUpdated
                 return
             }
-            onSave(normalizedUpdated)
-            statusText = "Rotation auto-saved."
+            statusText = totalIsBalanced(updated)
+                ? "Minutes balanced at \(Int(targetTotal.rounded())). Back out to save."
+                : "Total is \(Int(totalMinutes.rounded())) / \(Int(targetTotal.rounded())). You can fix now or let assistants fix when leaving."
+        }
+        .alert("Minutes Need To Add Up", isPresented: $showExitBalancePrompt) {
+            Button("Fix Manually", role: .cancel) {
+                statusText = "Adjust minutes to \(Int(targetTotal.rounded())) before leaving, or use Let Assistants Fix."
+            }
+            Button("Let Assistants Fix") {
+                let fixed = assistantFixedSlots(editedSlots)
+                editedSlots = fixed
+                onSave(fixed)
+                dismiss()
+            }
+        } message: {
+            Text("Rotation minutes are currently \(Int(totalMinutes.rounded())) and need to be \(Int(targetTotal.rounded())).")
         }
     }
 
     private func applyIncomingSlots(_ source: [UserRotationSlot]) {
         isApplyingIncomingSlots = true
-        editedSlots = normalized(source)
+        editedSlots = sanitized(source)
         isApplyingIncomingSlots = false
     }
 
@@ -984,7 +1025,7 @@ private struct RotationSettingsView: View {
         return true
     }
 
-    private func normalized(_ source: [UserRotationSlot]) -> [UserRotationSlot] {
+    private func sanitized(_ source: [UserRotationSlot]) -> [UserRotationSlot] {
         let targetCount = max(source.count, roster.count)
         if targetCount == 0 { return [] }
 
@@ -1026,17 +1067,16 @@ private struct RotationSettingsView: View {
             }
         }
 
-        return normalizeMinutes(base)
+        return base
     }
 
     private func clampMinutes(_ value: Double) -> Double {
         min(40, max(0, (value * 2).rounded() / 2))
     }
 
-    private func normalizeMinutes(_ source: [UserRotationSlot]) -> [UserRotationSlot] {
+    private func normalizeMinutes(_ source: [UserRotationSlot], targetTotal: Double) -> [UserRotationSlot] {
         guard !source.isEmpty else { return source }
         var normalized = source
-        let targetTotal = min(200.0, Double(source.count * 40))
         let currentTotal = normalized.reduce(0) { $0 + $1.minutes }
         if currentTotal <= 0 {
             let even = clampMinutes(targetTotal / Double(max(1, normalized.count)))
@@ -1070,45 +1110,97 @@ private struct RotationSettingsView: View {
         return normalized
     }
 
-    private func moveSlot(from index: Int, delta: Int) {
-        let destination = index + delta
-        guard editedSlots.indices.contains(index), editedSlots.indices.contains(destination) else { return }
-        let moved = editedSlots.remove(at: index)
-        editedSlots.insert(moved, at: destination)
-        for idx in editedSlots.indices {
-            editedSlots[idx].slot = idx + 1
+    private func assistantFixedSlots(_ source: [UserRotationSlot]) -> [UserRotationSlot] {
+        let sanitizedSource = sanitized(source)
+        return normalizeMinutes(sanitizedSource, targetTotal: targetTotal)
+    }
+
+    private func totalIsBalanced(_ source: [UserRotationSlot]) -> Bool {
+        abs(source.reduce(0) { $0 + $1.minutes } - targetTotal) < 0.49
+    }
+
+    private func attemptExit() {
+        let cleaned = sanitized(editedSlots)
+        if !areSlotsEqual(cleaned, editedSlots) {
+            editedSlots = cleaned
+        }
+        guard !cleaned.isEmpty else {
+            onSave(cleaned)
+            dismiss()
+            return
+        }
+        if totalIsBalanced(cleaned) {
+            onSave(cleaned)
+            dismiss()
+        } else {
+            showExitBalancePrompt = true
         }
     }
 
-    private func slotTitle(for index: Int) -> String {
-        if index < 5 { return "\(index + 1). Starter" }
-        return "\(index + 1). Bench"
+    private func slotLabel(for index: Int) -> String {
+        if index < 5 {
+            return "\(index + 1) \(starterPositions[min(index, starterPositions.count - 1)])"
+        }
+        return "\(index + 1) BEN"
+    }
+
+    @ViewBuilder
+    private func playerCell(for slot: UserRotationSlot) -> some View {
+        let playerLabel: String
+        if let playerIndex = slot.playerIndex, let player = roster.first(where: { $0.playerIndex == playerIndex }) {
+            playerLabel = "\(player.name) (\(player.position))"
+        } else {
+            playerLabel = "Unassigned"
+        }
+
+        Text(playerLabel)
+            .font(.caption.monospacedDigit().weight(.semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color(.separator).opacity(0.45), lineWidth: 1)
+            )
+            .onDrag {
+                draggedSlot = slot.slot
+                return NSItemProvider(object: "\(slot.slot)" as NSString)
+            }
+    }
+
+    private func movePlayer(fromSlot sourceSlot: Int, toSlot destinationSlot: Int) {
+        guard sourceSlot != destinationSlot else { return }
+        guard
+            let sourceIndex = editedSlots.firstIndex(where: { $0.slot == sourceSlot }),
+            let destinationIndex = editedSlots.firstIndex(where: { $0.slot == destinationSlot })
+        else {
+            return
+        }
+
+        let sourcePlayer = editedSlots[sourceIndex].playerIndex
+        editedSlots[sourceIndex].playerIndex = editedSlots[destinationIndex].playerIndex
+        editedSlots[destinationIndex].playerIndex = sourcePlayer
+    }
+
+    private func dropTargetBinding(for slot: Int) -> Binding<Bool> {
+        Binding(
+            get: { targetedDropSlot == slot },
+            set: { isTargeted in
+                targetedDropSlot = isTargeted ? slot : (targetedDropSlot == slot ? nil : targetedDropSlot)
+            }
+        )
     }
 
     private var totalMinutes: Double {
         editedSlots.reduce(0) { $0 + $1.minutes }
     }
-}
 
-private struct RotationPlayerPicker: View {
-    let label: String
-    let roster: [UserRosterPlayerSummary]
-    @Binding var selectedIndex: Int?
-
-    var body: some View {
-        FilterDropdown(
-            label: label,
-            selection: Binding<Int>(
-                get: { selectedIndex ?? -1 },
-                set: { selectedIndex = $0 >= 0 ? $0 : nil }
-            ),
-            options: [-1] + roster.map(\.playerIndex),
-            optionLabel: { index in
-                if index < 0 { return "Auto" }
-                guard let player = roster.first(where: { $0.playerIndex == index }) else { return "Auto" }
-                return "\(player.name) (\(player.position))"
-            }
-        )
+    private var targetTotal: Double {
+        min(200.0, Double(editedSlots.count * 40))
     }
 }
 
@@ -1119,9 +1211,11 @@ private struct RotationMinuteControl: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            if !label.isEmpty {
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
 
             HStack(spacing: 10) {
                 Button(action: decrement) {
@@ -1130,7 +1224,7 @@ private struct RotationMinuteControl: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .accessibilityLabel("Decrease \(label)")
+                .accessibilityLabel("Decrease \(label.isEmpty ? "minutes" : label)")
 
                 Text("\(Int(value.rounded()))")
                     .font(.body.monospacedDigit().weight(.semibold))
@@ -1142,7 +1236,7 @@ private struct RotationMinuteControl: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .accessibilityLabel("Increase \(label)")
+                .accessibilityLabel("Increase \(label.isEmpty ? "minutes" : label)")
             }
         }
     }
@@ -1554,7 +1648,8 @@ private struct PlayerCardDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                GroupBox("Player") {
+                GameCard {
+                    GameSectionHeader(title: "Player")
                     VStack(alignment: .leading, spacing: 6) {
                         Text(player.name)
                             .font(.title3.weight(.bold))
@@ -1565,7 +1660,8 @@ private struct PlayerCardDetailView: View {
                     }
                 }
 
-                GroupBox("Traits") {
+                GameCard {
+                    GameSectionHeader(title: "Traits")
                     if topTraits.isEmpty {
                         Text("No standout traits yet.")
                             .font(.caption)
@@ -1581,7 +1677,8 @@ private struct PlayerCardDetailView: View {
                     }
                 }
 
-                GroupBox("Ratings") {
+                GameCard {
+                    GameSectionHeader(title: "Ratings")
                     let columns: [AppTableColumn<String>] = [
                         .init(id: "rating", title: "RATING", width: 180, alignment: .leading),
                         .init(id: "value", title: "VALUE", width: 60),
@@ -1603,7 +1700,8 @@ private struct PlayerCardDetailView: View {
                     }
                 }
 
-                GroupBox("Career Stats") {
+                GameCard {
+                    GameSectionHeader(title: "Career Stats")
                     let columns: [AppTableColumn<String>] = [
                         .init(id: "stat", title: "STAT", width: 90, alignment: .leading),
                         .init(id: "value", title: "VALUE", width: 80),
@@ -1808,7 +1906,8 @@ private struct BoxScoreDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                GroupBox("Final") {
+                GameCard {
+                    GameSectionHeader(title: "Final")
                     VStack(alignment: .leading, spacing: 6) {
                         Text("\(game.isHome == true ? "vs" : "@") \(game.opponentName ?? "Unknown")")
                             .font(.subheadline.weight(.semibold))
@@ -1852,7 +1951,8 @@ private struct BoxScoreDetailView: View {
             (id: AnyHashable("\($0.offset)-\($0.element.playerName)"), data: $0.element)
         }
 
-        return GroupBox(team.name) {
+        return GameCard {
+            GameSectionHeader(title: team.name)
             AppTable(columns: columns, rows: tableRows) { player in
                 HStack(spacing: 0) {
                     AppTableTextCell(
@@ -2107,7 +2207,8 @@ private struct ConferenceStandingsView: View {
                         ]
                         let tableRows = rows.map { (id: AnyHashable($0.teamId), data: $0) }
 
-                        GroupBox(conferenceTitle(conferenceId)) {
+                        GameCard {
+                            GameSectionHeader(title: conferenceTitle(conferenceId))
                             AppTable(columns: columns, rows: tableRows) { row in
                                 HStack(spacing: 0) {
                                     AppTableTextCell(

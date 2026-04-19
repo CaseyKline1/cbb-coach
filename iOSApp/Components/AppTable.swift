@@ -17,6 +17,7 @@ struct AppTableStyle {
     var rowVerticalPadding: CGFloat = 2
     var minimumRowHeight: CGFloat = 20
     var cornerRadius: CGFloat = 12
+    var borderColor: Color = AppTheme.cardBorder
 
     static let compact = AppTableStyle()
 }
@@ -59,16 +60,16 @@ struct AppTable<RowData, ColumnID: Hashable, RowContent: View>: View {
                         .frame(minHeight: style.minimumRowHeight)
                         .padding(.vertical, style.rowVerticalPadding)
                     if index < rows.count - 1 {
-                        Divider()
+                        Divider().opacity(0.4)
                     }
                 }
             }
         }
-        .background(Color(.systemBackground))
+        .background(AppTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
-                .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
+                .stroke(style.borderColor, lineWidth: 1)
         )
     }
 
@@ -79,7 +80,7 @@ struct AppTable<RowData, ColumnID: Hashable, RowContent: View>: View {
             }
         }
         .padding(.vertical, style.headerVerticalPadding)
-        .background(Color(.secondarySystemBackground))
+        .background(AppTheme.cardBackground)
         .overlay(alignment: .bottom) {
             Divider()
         }
@@ -105,11 +106,11 @@ struct AppTable<RowData, ColumnID: Hashable, RowContent: View>: View {
         return HStack(spacing: 2) {
             Text(column.title)
                 .font(.caption2.weight(.bold))
-                .foregroundStyle(isActive ? .primary : .secondary)
+                .foregroundStyle(isActive ? AppTheme.accent : .secondary)
             if isActive, let sortState {
                 Image(systemName: sortState.ascending ? "chevron.up" : "chevron.down")
                     .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(AppTheme.accent)
             }
         }
         .frame(width: column.width, alignment: column.alignment)
@@ -120,7 +121,7 @@ struct AppTableTextCell: View {
     let text: String
     let width: CGFloat
     var alignment: Alignment = .center
-    var font: Font = .caption2.monospacedDigit()
+    var font: Font = .caption.monospacedDigit()
     var foreground: Color = .primary
 
     var body: some View {

@@ -86,7 +86,7 @@ struct FilterDropdown<Option: Hashable>: View {
                 if hasTitle {
                     Text(title)
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(isFiltered ? Color.primary.opacity(0.85) : .secondary)
+                        .foregroundStyle(isFiltered ? AppTheme.ink.opacity(0.85) : .secondary)
                         .lineLimit(1)
                 }
                 HStack(spacing: isCompact ? 6 : 8) {
@@ -109,7 +109,7 @@ struct FilterDropdown<Option: Hashable>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: isCompact ? 10 : 12, style: .continuous)
-                    .strokeBorder(isFiltered ? Color.primary.opacity(0.35) : Color.black.opacity(0.14),
+                    .strokeBorder(isFiltered ? AppTheme.ink.opacity(0.35) : Color.black.opacity(0.14),
                                   lineWidth: isFiltered ? 1.2 : 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: isCompact ? 10 : 12, style: .continuous))
@@ -191,7 +191,7 @@ struct FilterDropdown<Option: Hashable>: View {
                                     )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .strokeBorder(isSelected ? Color.primary.opacity(0.32) : Color.black.opacity(0.12), lineWidth: 1)
+                                            .strokeBorder(isSelected ? AppTheme.ink.opacity(0.32) : Color.black.opacity(0.12), lineWidth: 1)
                                     )
                                 }
                                 .buttonStyle(.plain)
