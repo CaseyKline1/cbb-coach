@@ -11,6 +11,8 @@ struct ContentView: View {
     @AppStorage("coachOffense") private var coachOffenseRaw: String = OffensiveFormation.motion.rawValue
     @AppStorage("coachDefense") private var coachDefenseRaw: String = DefenseScheme.manToMan.rawValue
     @AppStorage("coachArchetype") private var coachArchetypeRaw: String = CoachArchetype.recruiting.rawValue
+    @AppStorage("coachAlmaMater") private var coachAlmaMater: String = "Independent"
+    @AppStorage("coachPipelineState") private var coachPipelineState: String = "CA"
     @AppStorage("coachCareerTeam") private var coachCareerTeam: String = ""
 
     var body: some View {
@@ -53,7 +55,9 @@ struct ContentView: View {
             archetype: archetype,
             pace: pace,
             offense: offense,
-            defense: defense
+            defense: defense,
+            almaMater: coachAlmaMater,
+            pipelineState: coachPipelineState
         )
     }
 
@@ -65,11 +69,15 @@ struct ContentView: View {
         coachOffenseRaw = profile.offense.rawValue
         coachDefenseRaw = profile.defense.rawValue
         coachArchetypeRaw = profile.archetype.rawValue
+        coachAlmaMater = profile.almaMater
+        coachPipelineState = profile.pipelineState
         coachCreationComplete = true
     }
 
     private func resetCoachCreation() {
         coachCareerTeam = ""
+        coachAlmaMater = "Independent"
+        coachPipelineState = "CA"
         coachCreationComplete = false
     }
 }
@@ -92,6 +100,10 @@ private struct CoachCreationFlowView: View {
                     }
                 case .style(let identity, let archetype):
                     CoachStyleStepView(identity: identity) { style in
+                        path.append(.background(identity, archetype, style))
+                    }
+                case .background(let identity, let archetype, let style):
+                    CoachBackgroundStepView(identity: identity) { background in
                         onComplete(
                             CoachCreationProfile(
                                 firstName: identity.firstName,
@@ -100,7 +112,9 @@ private struct CoachCreationFlowView: View {
                                 archetype: archetype,
                                 pace: style.pace,
                                 offense: style.offense,
-                                defense: style.defense
+                                defense: style.defense,
+                                almaMater: background.almaMater,
+                                pipelineState: background.pipelineState
                             )
                         )
                     }
@@ -113,6 +127,7 @@ private struct CoachCreationFlowView: View {
 private enum CoachCreationStep: Hashable {
     case archetype(CoachIdentitySelection)
     case style(CoachIdentitySelection, CoachArchetype)
+    case background(CoachIdentitySelection, CoachArchetype, CoachStyleSelection)
 }
 
 private struct CoachCreationProfile {
@@ -123,6 +138,8 @@ private struct CoachCreationProfile {
     let pace: PaceProfile
     let offense: OffensiveFormation
     let defense: DefenseScheme
+    let almaMater: String
+    let pipelineState: String
 
     var fullName: String {
         "\(firstName) \(lastName)"
@@ -139,6 +156,11 @@ private struct CoachStyleSelection: Hashable {
     let pace: PaceProfile
     let offense: OffensiveFormation
     let defense: DefenseScheme
+}
+
+private struct CoachBackgroundSelection: Hashable {
+    let almaMater: String
+    let pipelineState: String
 }
 
 private enum CoachArchetype: String, CaseIterable, Hashable {
@@ -164,7 +186,7 @@ private struct CoachIdentityStepView: View {
     var body: some View {
         OnboardingStepScaffold(
             title: "Create Your Coach",
-            subtitle: "Step 1 of 3",
+            subtitle: "Step 1 of 4",
             navTitle: "Coach Setup",
             nextLabel: "Next: Archetype",
             nextDisabled: !isValid,
@@ -217,7 +239,7 @@ private struct CoachArchetypeStepView: View {
     var body: some View {
         OnboardingStepScaffold(
             title: "Choose Your Archetype",
-            subtitle: "Step 2 of 3",
+            subtitle: "Step 2 of 4",
             navTitle: "Coach Setup",
             nextLabel: "Next: Style",
             nextDisabled: false,
@@ -256,9 +278,9 @@ private struct CoachStyleStepView: View {
     var body: some View {
         OnboardingStepScaffold(
             title: "Define Your Style",
-            subtitle: "Step 3 of 3",
+            subtitle: "Step 3 of 4",
             navTitle: "Coach Setup",
-            nextLabel: "Finish Coach",
+            nextLabel: "Next: Background",
             nextDisabled: false,
             onNext: {
                 onNext(
@@ -292,6 +314,79 @@ private struct CoachStyleStepView: View {
                         options: DefenseScheme.allCases,
                         optionLabel: \.label
                     )
+
+                    Text("\(identity.firstName) \(identity.lastName), age \(identity.age)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct CoachBackgroundStepView: View {
+    let identity: CoachIdentitySelection
+    let onNext: (CoachBackgroundSelection) -> Void
+
+    @State private var almaMater: String = "Independent"
+    @State private var pipelineState: String = "CA"
+
+    private var trimmedAlma: String {
+        almaMater.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedPipeline: String {
+        pipelineState.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    }
+
+    private var pipelineIsValid: Bool {
+        let code = normalizedPipeline
+        guard code.count == 2 else { return false }
+        return code.unicodeScalars.allSatisfy { CharacterSet.uppercaseLetters.contains($0) }
+    }
+
+    private var isValid: Bool {
+        !trimmedAlma.isEmpty && pipelineIsValid
+    }
+
+    var body: some View {
+        OnboardingStepScaffold(
+            title: "Set Coach Background",
+            subtitle: "Step 4 of 4",
+            navTitle: "Coach Setup",
+            nextLabel: "Finish Coach",
+            nextDisabled: !isValid,
+            onNext: {
+                onNext(
+                    CoachBackgroundSelection(
+                        almaMater: trimmedAlma,
+                        pipelineState: normalizedPipeline
+                    )
+                )
+            }
+        ) {
+            GameCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    TextField("Alma Mater", text: $almaMater)
+                        .textInputAutocapitalization(.words)
+                        .textFieldStyle(.roundedBorder)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("Pipeline State (2-letter code)", text: $pipelineState)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .textFieldStyle(.roundedBorder)
+
+                        Text("Example: CA, TX, FL")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if !pipelineState.isEmpty, !pipelineIsValid {
+                            Text("Use a valid 2-letter state code.")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
 
                     Text("\(identity.firstName) \(identity.lastName), age \(identity.age)")
                         .font(.footnote)
@@ -645,6 +740,8 @@ private struct CollegeLeagueHomeView: View {
             var options = CreateLeagueOptions(userTeamName: teamName, seed: "ios-league-\(profile.fullName)-\(teamName)")
             options.userHeadCoachName = profile.fullName
             options.userHeadCoachSkills = profile.archetype.initialSkills
+            options.userHeadCoachAlmaMater = profile.almaMater
+            options.userHeadCoachPipelineState = profile.pipelineState
             let created = try createD1League(options: options)
             league = created
             roster = getUserRoster(created)

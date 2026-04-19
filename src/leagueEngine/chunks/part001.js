@@ -1260,12 +1260,38 @@ function createD1League(options = {}) {
     typeof options.userHeadCoachName === "string" && options.userHeadCoachName.trim()
       ? options.userHeadCoachName.trim()
       : null;
+  const requestedUserCoachAlmaMater =
+    typeof options.userHeadCoachAlmaMater === "string" && options.userHeadCoachAlmaMater.trim()
+      ? options.userHeadCoachAlmaMater.trim()
+      : null;
+  const requestedUserCoachPipelineState =
+    typeof options.userHeadCoachPipelineState === "string" && options.userHeadCoachPipelineState.trim()
+      ? options.userHeadCoachPipelineState.trim().toUpperCase()
+      : null;
   if (requestedUserCoachName) {
     const headCoach = teamStateById[userTeamId]?.teamModel?.coachingStaff?.headCoach;
     if (headCoach && typeof headCoach === "object") {
       headCoach.name = requestedUserCoachName;
       if (Array.isArray(teamStateById[userTeamId]?.teamModel?.coaches) && teamStateById[userTeamId].teamModel.coaches[0]) {
         teamStateById[userTeamId].teamModel.coaches[0].name = requestedUserCoachName;
+      }
+    }
+  }
+  if (requestedUserCoachAlmaMater) {
+    const headCoach = teamStateById[userTeamId]?.teamModel?.coachingStaff?.headCoach;
+    if (headCoach && typeof headCoach === "object") {
+      headCoach.almaMater = requestedUserCoachAlmaMater;
+      if (Array.isArray(teamStateById[userTeamId]?.teamModel?.coaches) && teamStateById[userTeamId].teamModel.coaches[0]) {
+        teamStateById[userTeamId].teamModel.coaches[0].almaMater = requestedUserCoachAlmaMater;
+      }
+    }
+  }
+  if (requestedUserCoachPipelineState) {
+    const headCoach = teamStateById[userTeamId]?.teamModel?.coachingStaff?.headCoach;
+    if (headCoach && typeof headCoach === "object") {
+      headCoach.pipelineState = requestedUserCoachPipelineState;
+      if (Array.isArray(teamStateById[userTeamId]?.teamModel?.coaches) && teamStateById[userTeamId].teamModel.coaches[0]) {
+        teamStateById[userTeamId].teamModel.coaches[0].pipelineState = requestedUserCoachPipelineState;
       }
     }
   }
