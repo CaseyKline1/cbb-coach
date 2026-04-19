@@ -529,7 +529,6 @@ private struct CollegeLeagueHomeView: View {
                 .padding(20)
             }
             .background(AppTheme.background)
-            .navigationTitle("College League")
             .navigationDestination(for: LeagueMenuDestination.self) { destination in
                 switch destination {
                 case .roster:
@@ -1993,6 +1992,7 @@ private struct BoxScoreDetailView: View {
             .init(id: "fg", title: "FG", width: 64),
             .init(id: "three", title: "3PT", width: 64),
             .init(id: "ft", title: "FT", width: 64),
+            .init(id: "plusMinus", title: "+/-", width: 46),
             .init(id: "pf", title: "PF", width: 42),
         ]
         let tableRows = Array(team.players.enumerated()).map {
@@ -2019,10 +2019,16 @@ private struct BoxScoreDetailView: View {
                     AppTableTextCell(text: "\(player.fgMade)-\(player.fgAttempts)", width: 64, font: .caption.monospacedDigit())
                     AppTableTextCell(text: "\(player.threeMade)-\(player.threeAttempts)", width: 64, font: .caption.monospacedDigit())
                     AppTableTextCell(text: "\(player.ftMade)-\(player.ftAttempts)", width: 64, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: formatPlusMinus(player.plusMinus), width: 46, font: .caption.monospacedDigit())
                     AppTableTextCell(text: "\(player.fouls)", width: 42, font: .caption.monospacedDigit())
                 }
             }
         }
+    }
+
+    private func formatPlusMinus(_ value: Int) -> String {
+        if value > 0 { return "+\(value)" }
+        return "\(value)"
     }
 }
 
@@ -2363,6 +2369,7 @@ private struct ParsedPlayerBoxScore {
     let blocks: Int
     let turnovers: Int
     let fouls: Int
+    let plusMinus: Int
 
     init?(value: JSONValue) {
         guard let object = value.objectDictionary else { return nil }
@@ -2382,6 +2389,7 @@ private struct ParsedPlayerBoxScore {
         blocks = object["blocks"]?.intValue ?? 0
         turnovers = object["turnovers"]?.intValue ?? 0
         fouls = object["fouls"]?.intValue ?? 0
+        plusMinus = object["plusMinus"]?.intValue ?? 0
     }
 }
 
