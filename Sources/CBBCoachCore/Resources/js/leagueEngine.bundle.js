@@ -1267,6 +1267,19 @@ function normalizeRotationSlotMinutes(starterValue, backupValue, fallbackStarter
   };
 }
 
+function addCappedRotationMinutes(minuteTargets, playerName, requestedMinutes) {
+  if (!playerName) return 0;
+  const requested = normalizeRotationMinutes(requestedMinutes, 0);
+  if (!requested) return 0;
+  const current = Number(minuteTargets[playerName]) || 0;
+  const available = Math.max(0, 40 - current);
+  const assigned = Math.min(requested, available);
+  if (assigned > 0) {
+    minuteTargets[playerName] = current + assigned;
+  }
+  return assigned;
+}
+
 function findPlayerByIndex(players, index) {
   if (!Array.isArray(players)) return null;
   const parsed = Number(index);
@@ -1430,13 +1443,26 @@ function setUserRotation(league, rawSlots = []) {
 
     const starterName = starter?.bio?.name;
     const backupName = backup?.bio?.name;
-    if (starterName) {
-      minuteTargets[starterName] =
-        (minuteTargets[starterName] || 0) + normalizeRotationMinutes(slot.starterMinutes, 30);
-    }
-    if (backupName) {
-      minuteTargets[backupName] =
-        (minuteTargets[backupName] || 0) + normalizeRotationMinutes(slot.backupMinutes, 10);
+    let starterAssigned = addCappedRotationMinutes(
+      minuteTargets,
+      starterName,
+      normalizeRotationMinutes(slot.starterMinutes, 30),
+    );
+    let backupAssigned = addCappedRotationMinutes(
+      minuteTargets,
+      backupName,
+      normalizeRotationMinutes(slot.backupMinutes, 10),
+    );
+
+    let remainingInSlot = Math.max(0, 40 - (starterAssigned + backupAssigned));
+    if (remainingInSlot > 0 && starterName && backupName && starterName !== backupName) {
+      const backupExtra = addCappedRotationMinutes(minuteTargets, backupName, remainingInSlot);
+      backupAssigned += backupExtra;
+      remainingInSlot -= backupExtra;
+      if (remainingInSlot > 0) {
+        const starterExtra = addCappedRotationMinutes(minuteTargets, starterName, remainingInSlot);
+        starterAssigned += starterExtra;
+      }
     }
   });
 
