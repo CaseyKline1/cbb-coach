@@ -5,6 +5,13 @@ public enum CoachRole: String, Codable, Sendable {
     case assistant = "assistant"
 }
 
+public enum AssistantFocus: String, Codable, CaseIterable, Sendable {
+    case recruiting
+    case development
+    case gamePrep = "game_prep"
+    case scouting
+}
+
 public struct CoachSkills: Codable, Equatable, Sendable {
     public var recruiting: Int = 50
     public var playerDevelopment: Int = 50
@@ -81,6 +88,7 @@ public struct CoachSkills: Codable, Equatable, Sendable {
 
 public struct Coach: Codable, Equatable, Sendable {
     public var role: CoachRole = .assistant
+    public var focus: AssistantFocus?
     public var age: Int = 45
     public var pressAggressiveness: Int = 50
     public var pace: PaceProfile = .normal

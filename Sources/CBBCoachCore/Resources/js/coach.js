@@ -160,11 +160,14 @@ function createCoach({
   pipelineState,
   pipelineStateWeights = DEFAULT_PIPELINE_STATE_WEIGHTS,
   skills = {},
+  focus,
   random = Math.random,
 } = {}) {
   const resolvedAlmaMater = chooseAlmaMater({ almaMater, schoolPool, teamName, random });
+  const resolvedFocus = typeof focus === "string" && focus.trim() ? focus.trim() : role === COACH_ROLE.ASSISTANT ? "recruiting" : null;
   return {
     role,
+    focus: resolvedFocus,
     age: Number.isFinite(Number(age)) ? clamp(Math.round(Number(age)), 24, 80) : randomInt(31, 69, random),
     pressAggressiveness: Number.isFinite(Number(pressAggressiveness))
       ? clamp(Math.round(Number(pressAggressiveness)), 1, 100)
