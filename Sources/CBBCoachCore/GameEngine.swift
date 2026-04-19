@@ -79,8 +79,6 @@ public struct GameState: Codable, Equatable, Sendable {
     }
 }
 
-private let gameEngineModule = "./gameEngine"
-
 private let mobilityInteractionRatings: Set<String> = [
     "athleticism.burst",
     "athleticism.speed",
@@ -90,18 +88,67 @@ private let mobilityInteractionRatings: Set<String> = [
 
 private let clutchRatingImpact = 0.08
 
+private struct NativeGameStateStore {
+    struct TeamTracker {
+        var team: Team
+        var score: Int
+    }
+
+    struct StoredState {
+        var teams: [TeamTracker]
+        var currentHalf: Int
+        var gameClockRemaining: Int
+        var possessionTeamId: Int
+        var playByPlay: [PlayByPlayEvent]
+    }
+
+    private static let lock = NSLock()
+    private static nonisolated(unsafe) var nextId = 1
+    private static nonisolated(unsafe) var states: [String: StoredState] = [:]
+
+    static func create(home: Team, away: Team, random: inout SeededRandom) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        let handle = "swift_g_\(nextId)"
+        nextId += 1
+
+        let initialPossession = random.nextUnit() < 0.5 ? 0 : 1
+        states[handle] = StoredState(
+            teams: [
+                TeamTracker(team: home, score: 0),
+                TeamTracker(team: away, score: 0),
+            ],
+            currentHalf: 1,
+            gameClockRemaining: HALF_SECONDS,
+            possessionTeamId: initialPossession,
+            playByPlay: []
+        )
+        return handle
+    }
+
+    static func withState<T>(_ handle: String, _ body: (inout StoredState) -> T) -> T? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard var state = states[handle] else { return nil }
+        let result = body(&state)
+        states[handle] = state
+        return result
+    }
+
+    static func snapshot(_ handle: String) -> StoredState? {
+        lock.lock()
+        defer { lock.unlock() }
+        return states[handle]
+    }
+}
+
 private struct WeightedSkill: Sendable {
     var score: Double
 }
 
 public func createInitialGameState(homeTeam: Team, awayTeam: Team, random: inout SeededRandom) -> GameState {
-    do {
-        let args = [try toJSONValue(homeTeam), try toJSONValue(awayTeam)]
-        let response = try JSRuntime.shared.invokeNewWithRandom(moduleId: gameEngineModule, fn: "createInitialGameState", args: args, random: &random)
-        return GameState(handle: response.handle)
-    } catch {
-        fatalError("createInitialGameState failed: \(error)")
-    }
+    let handle = NativeGameStateStore.create(home: homeTeam, away: awayTeam, random: &random)
+    return GameState(handle: handle)
 }
 
 public func resolveInteraction(
@@ -135,30 +182,125 @@ public func resolveInteraction(
 
 @discardableResult
 public func resolveActionChunk(state: inout GameState, random: inout SeededRandom) -> String {
-    do {
-        let response = try JSRuntime.shared.invokeHandleMutableWithRandom(moduleId: gameEngineModule, fn: "resolveActionChunk", handle: state.handle, restArgs: [], random: &random)
-        return try fromJSONValue(response.result, as: String.self)
-    } catch {
-        fatalError("resolveActionChunk failed: \(error)")
+    guard let chunkType = NativeGameStateStore.withState(state.handle, { stored in
+        if stored.gameClockRemaining <= 0 {
+            return "period_end"
+        }
+
+        let offenseTeamId = stored.possessionTeamId
+        let defenseTeamId = offenseTeamId == 0 ? 1 : 0
+
+        let offenseStrength = computeTeamOffenseStrength(stored.teams[offenseTeamId].team)
+        let defenseStrength = computeTeamDefenseStrength(stored.teams[defenseTeamId].team)
+        let edge = (offenseStrength - defenseStrength) / 22 + (random.nextUnit() * 0.2 - 0.1)
+        let madeProbability = clamp(0.44 + edge * 0.18, min: 0.18, max: 0.78)
+        let isThree = random.nextUnit() < 0.34
+        let didScore = random.nextUnit() < madeProbability
+        let points = didScore ? (isThree ? 3 : 2) : 0
+        if points > 0 {
+            stored.teams[offenseTeamId].score += points
+        }
+
+        let eventType: String
+        if points > 0 {
+            eventType = "made_shot"
+        } else if random.nextUnit() < 0.11 {
+            eventType = "turnover"
+        } else {
+            eventType = "missed_shot"
+        }
+
+        let periodLength = stored.currentHalf <= 2 ? HALF_SECONDS : OVERTIME_SECONDS
+        let elapsedInPeriod = periodLength - stored.gameClockRemaining
+        let elapsedGameSeconds: Int
+        if stored.currentHalf <= 2 {
+            elapsedGameSeconds = (stored.currentHalf - 1) * HALF_SECONDS + elapsedInPeriod
+        } else {
+            elapsedGameSeconds = 2 * HALF_SECONDS + (stored.currentHalf - 3) * OVERTIME_SECONDS + elapsedInPeriod
+        }
+
+        stored.playByPlay.append(
+            PlayByPlayEvent(
+                half: stored.currentHalf,
+                elapsedSecondsInHalf: elapsedInPeriod,
+                elapsedGameSeconds: elapsedGameSeconds,
+                clockRemaining: stored.gameClockRemaining,
+                type: eventType,
+                teamIndex: offenseTeamId,
+                offenseTeam: stored.teams[offenseTeamId].team.name,
+                defenseTeam: stored.teams[defenseTeamId].team.name,
+                points: points,
+                description: nil,
+                detail: nil
+            )
+        )
+
+        stored.gameClockRemaining = max(0, stored.gameClockRemaining - CHUNK_SECONDS)
+        stored.possessionTeamId = defenseTeamId
+        return eventType
+    }) else {
+        fatalError("resolveActionChunk failed: unknown game handle \(state.handle)")
     }
+
+    return chunkType
 }
 
 public func simulateHalf(state: inout GameState, random: inout SeededRandom) {
-    do {
-        _ = try JSRuntime.shared.invokeHandleMutableWithRandom(moduleId: gameEngineModule, fn: "simulateHalf", handle: state.handle, restArgs: [], random: &random)
-    } catch {
-        fatalError("simulateHalf failed: \(error)")
+    guard NativeGameStateStore.snapshot(state.handle) != nil else {
+        fatalError("simulateHalf failed: unknown game handle \(state.handle)")
+    }
+    while true {
+        guard let snapshot = NativeGameStateStore.snapshot(state.handle) else {
+            fatalError("simulateHalf failed: missing game state \(state.handle)")
+        }
+        if snapshot.gameClockRemaining <= 0 {
+            break
+        }
+        _ = resolveActionChunk(state: &state, random: &random)
     }
 }
 
 public func simulateGame(homeTeam: Team, awayTeam: Team, random: inout SeededRandom) -> SimulatedGameResult {
-    do {
-        let args = [try toJSONValue(homeTeam), try toJSONValue(awayTeam)]
-        let response = try JSRuntime.shared.invokeWithRandom(moduleId: gameEngineModule, fn: "simulateGame", args: args, random: &random)
-        return try fromJSONValue(response.result, as: SimulatedGameResult.self)
-    } catch {
-        fatalError("simulateGame failed: \(error)")
+    var state = createInitialGameState(homeTeam: homeTeam, awayTeam: awayTeam, random: &random)
+    simulateHalf(state: &state, random: &random)
+
+    _ = NativeGameStateStore.withState(state.handle) { stored in
+        stored.currentHalf = 2
+        stored.gameClockRemaining = HALF_SECONDS
     }
+    simulateHalf(state: &state, random: &random)
+
+    var overtimeNumber = 0
+    while true {
+        guard let snapshot = NativeGameStateStore.snapshot(state.handle) else {
+            fatalError("simulateGame failed: missing game state \(state.handle)")
+        }
+        if snapshot.teams[0].score != snapshot.teams[1].score {
+            break
+        }
+        overtimeNumber += 1
+        _ = NativeGameStateStore.withState(state.handle) { stored in
+            stored.currentHalf = 2 + overtimeNumber
+            stored.gameClockRemaining = OVERTIME_SECONDS
+        }
+        simulateHalf(state: &state, random: &random)
+    }
+
+    guard let final = NativeGameStateStore.snapshot(state.handle) else {
+        fatalError("simulateGame failed: missing game state \(state.handle)")
+    }
+
+    let homeBox = makeSimpleTeamBoxScore(final.teams[0].team, score: final.teams[0].score, didWin: final.teams[0].score > final.teams[1].score)
+    let awayBox = makeSimpleTeamBoxScore(final.teams[1].team, score: final.teams[1].score, didWin: final.teams[1].score > final.teams[0].score)
+    let boxScores = [homeBox, awayBox]
+
+    return SimulatedGameResult(
+        home: SimulatedTeamResult(name: final.teams[0].team.name, score: final.teams[0].score, boxScore: homeBox),
+        away: SimulatedTeamResult(name: final.teams[1].team.name, score: final.teams[1].score, boxScore: awayBox),
+        winner: final.teams[0].score == final.teams[1].score ? nil : (final.teams[0].score > final.teams[1].score ? final.teams[0].team.name : final.teams[1].team.name),
+        playByPlay: final.playByPlay,
+        boxScore: boxScores
+    )
 }
 
 private func logistic(_ x: Double) -> Double {
@@ -368,4 +510,67 @@ private func getMobilitySizeEdge(
     let offensePenalty = offenseUsesMobility ? getMobilitySizePenalty(offensePlayer) : 0
     let defensePenalty = defenseUsesMobility ? getMobilitySizePenalty(defensePlayer) : 0
     return clamp((defensePenalty - offensePenalty) / 12, min: -0.16, max: 0.16)
+}
+
+private func computeTeamOffenseStrength(_ team: Team) -> Double {
+    let lineup = Array(team.lineup.prefix(5))
+    guard !lineup.isEmpty else { return 50 }
+    let values = lineup.map { player in
+        average([
+            getBaseRating(player, path: "skills.shotIQ"),
+            getBaseRating(player, path: "shooting.threePointShooting"),
+            getBaseRating(player, path: "shooting.midrangeShot"),
+            getBaseRating(player, path: "shooting.closeShot"),
+            getBaseRating(player, path: "skills.ballHandling"),
+        ])
+    }
+    return average(values)
+}
+
+private func computeTeamDefenseStrength(_ team: Team) -> Double {
+    let lineup = Array(team.lineup.prefix(5))
+    guard !lineup.isEmpty else { return 50 }
+    let values = lineup.map { player in
+        average([
+            getBaseRating(player, path: "defense.perimeterDefense"),
+            getBaseRating(player, path: "defense.postDefense"),
+            getBaseRating(player, path: "defense.shotContest"),
+            getBaseRating(player, path: "defense.lateralQuickness"),
+            getBaseRating(player, path: "skills.hustle"),
+        ])
+    }
+    return average(values)
+}
+
+private func makeSimpleTeamBoxScore(_ team: Team, score: Int, didWin: Bool) -> TeamBoxScore {
+    let lineup = Array(team.lineup.prefix(5))
+    let players = lineup.enumerated().map { idx, player in
+        let minuteBase = 20 + (idx < 2 ? 8 : 4)
+        let points = max(0, Int(Double(score) * (idx == 0 ? 0.27 : idx == 1 ? 0.23 : 0.17)))
+        let fga = max(1, points / 2 + 4)
+        let fgm = max(0, min(fga, points / 2))
+        return PlayerBoxScore(
+            playerName: player.bio.name.isEmpty ? "Player \(idx + 1)" : player.bio.name,
+            position: player.bio.position.rawValue,
+            minutes: Double(minuteBase),
+            points: points,
+            fgMade: fgm,
+            fgAttempts: fga,
+            threeMade: min(4, max(0, points / 5)),
+            threeAttempts: min(9, max(1, points / 3)),
+            ftMade: max(0, points / 6),
+            ftAttempts: max(0, points / 5),
+            rebounds: max(1, 2 + (idx < 3 ? 2 : 1)),
+            offensiveRebounds: max(0, 1 + (idx == 3 ? 1 : 0)),
+            defensiveRebounds: max(1, 2 + (idx == 4 ? 2 : 0)),
+            assists: max(0, idx < 2 ? 4 - idx : 2),
+            steals: max(0, idx == 0 ? 2 : 1),
+            blocks: max(0, idx >= 3 ? 1 : 0),
+            turnovers: max(0, idx < 2 ? 2 : 1),
+            fouls: max(0, idx < 4 ? 2 : 3),
+            plusMinus: didWin ? 4 : -4,
+            energy: player.condition.energy
+        )
+    }
+    return TeamBoxScore(name: team.name, players: players, teamExtras: ["turnovers": max(6, score / 10)])
 }
