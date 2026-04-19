@@ -430,11 +430,8 @@ private struct CollegeLeagueHomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Coach \(profile.fullName)")
+                        Text(teamHeaderText)
                             .font(.largeTitle.bold())
-                        Text("\(teamName) | \(profile.archetype.label) Archetype | Pace: \(profile.pace.label)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
                     }
 
                     if let lastPlayed = latestCompletedGame {
@@ -583,6 +580,15 @@ private struct CollegeLeagueHomeView: View {
             return $0.isHome == true ? home > away : away > home
         }.count
         return "\(wins)-\(max(0, completedGames.count - wins))"
+    }
+
+    private var userRanking: Int? {
+        nil
+    }
+
+    private var teamHeaderText: String {
+        let rankingPrefix = userRanking.map { "#\($0) " } ?? ""
+        return "\(rankingPrefix)\(teamName) (\(userRecordText))"
     }
 
     private var orderedSchedule: [UserGameSummary] {
