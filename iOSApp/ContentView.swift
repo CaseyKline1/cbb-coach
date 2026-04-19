@@ -787,7 +787,7 @@ private struct CoachingStaffView: View {
                         GameSectionHeader(title: "Head Coach")
                         CoachTraitRowView(
                             title: staff.headCoach.displayName,
-                            subtitle: "Program Leader",
+                            subtitle: "Program Leader · \(staff.headCoach.bioLine)",
                             coach: staff.headCoach
                         )
                     }
@@ -799,7 +799,7 @@ private struct CoachingStaffView: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     CoachTraitRowView(
                                         title: assistant.displayName,
-                                        subtitle: "Assistant \(index + 1) · \(assistant.focus?.label ?? AssistantFocus.recruiting.label)",
+                                        subtitle: "Assistant \(index + 1) · \(assistant.focus?.label ?? AssistantFocus.recruiting.label) · \(assistant.bioLine)",
                                         coach: assistant
                                     )
                                     FilterDropdown(
@@ -2691,6 +2691,16 @@ private extension Coach {
             ("Scouting", skills.scouting),
             ("Potential", skills.potential),
         ]
+    }
+
+    var bioLine: String {
+        let trimmedAlma = almaMater.trimmingCharacters(in: .whitespacesAndNewlines)
+        let almaLabel = trimmedAlma.isEmpty ? "Independent" : trimmedAlma
+
+        let trimmedPipeline = pipelineState.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let pipelineLabel = trimmedPipeline.isEmpty ? "--" : trimmedPipeline
+
+        return "Alma: \(almaLabel) · Pipeline: \(pipelineLabel)"
     }
 }
 
