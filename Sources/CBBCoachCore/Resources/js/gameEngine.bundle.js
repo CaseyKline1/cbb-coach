@@ -9,6 +9,8 @@ const REGULATION_HALVES = 2;
 const CLUTCH_TIME_SECONDS = 2 * 60;
 const CLOSE_GAME_MARGIN = 6;
 const CLUTCH_RATING_IMPACT = 0.08;
+const HOME_COURT_GENERAL_BOOST = 0.01;
+const HOME_COURT_CLUTCH_EXTRA_BOOST = 0.01;
 const EARLY_CLOCK_SHOT_ATTEMPT_BONUS = 0;
 const CONTESTED_SHOOTING_FOUL_BASE_CHANCE = 0.15;
 const PASS_DELIVERY_COMPLETION_EDGE_BONUS = 0.52;
@@ -19,7 +21,8 @@ const HOOK_MAKE_EDGE_BONUS = 0.08;
 const FADEAWAY_MAKE_EDGE_PENALTY = 0.06;
 const THREE_POINT_MAKE_EDGE_PENALTY = 0.42;
 const THREE_POINT_CONTESTED_EXTRA_PENALTY = 0.12;
-const THREE_POINT_SUCCESS_PROBABILITY_PENALTY = 0.125;
+const THREE_POINT_SUCCESS_PROBABILITY_PENALTY = 0.165;
+const THREE_POINT_MAX_MAKE_PROBABILITY = 0.66;
 const GLOBAL_SHOT_MAKE_PROBABILITY_PENALTY = 0.04;
 const PRESS_BASE_TRIGGER_CHANCE = 0.06;
 const PRESS_HIGH_TENDENCY_TRIGGER_BONUS = 0.4;
@@ -215,19 +218,25 @@ function isClutchTimeActive(state) {
 function syncClutchTimeState(state) {
   const clutchActive = isClutchTimeActive(state);
   state.teams.forEach((team) => {
+    const homeBoost = team?.isHomeTeam ? HOME_COURT_GENERAL_BOOST : 0;
+    const clutchBoost = team?.isHomeTeam && clutchActive ? HOME_COURT_CLUTCH_EXTRA_BOOST : 0;
+    const situationMultiplier = 1 + homeBoost + clutchBoost;
     getTeamRoster(team).forEach((player) => {
       ensurePlayerCondition(player);
       player.condition.clutchTime = clutchActive;
+      player.condition.homeCourtMultiplier = situationMultiplier;
     });
   });
 }
 
 function applyClutchModifier(player, rating) {
-  if (!player?.condition?.clutchTime) return rating;
+  const homeCourtMultiplier = Number(player?.condition?.homeCourtMultiplier);
+  const baseMultiplier = Number.isFinite(homeCourtMultiplier) ? homeCourtMultiplier : 1;
+  if (!player?.condition?.clutchTime) return clamp(rating * baseMultiplier, 1, 100);
   const clutch = getBaseRating(player, "skills.clutch", 50);
   const clutchEdge = clamp((clutch - 50) / 50, -1, 1);
-  const multiplier = 1 + clutchEdge * CLUTCH_RATING_IMPACT;
-  return clamp(rating * multiplier, 1, 100);
+  const clutchMultiplier = 1 + clutchEdge * CLUTCH_RATING_IMPACT;
+  return clamp(rating * baseMultiplier * clutchMultiplier, 1, 100);
 }
 
 function createEmptyPlayerBoxScore(player) {
@@ -1766,7 +1775,11 @@ function resolveShot({
 
   let madeProbability = shotResult.successProbability;
   if (isThreePointShot) {
-    madeProbability = clamp(madeProbability - THREE_POINT_SUCCESS_PROBABILITY_PENALTY, 0.02, 0.9);
+    madeProbability = clamp(
+      madeProbability - THREE_POINT_SUCCESS_PROBABILITY_PENALTY,
+      0.02,
+      THREE_POINT_MAX_MAKE_PROBABILITY,
+    );
   }
   madeProbability = clamp(madeProbability - GLOBAL_SHOT_MAKE_PROBABILITY_PENALTY, 0.02, 0.9);
 
@@ -2670,7 +2683,8 @@ function applyPendingAssistIfEligible(state, offenseTeamId, shooter, shot) {
   shot.assister = pending.passer;
 }
 
-function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
+function createInitialGameState(homeTeam, awayTeam, random = Math.random, options = {}) {
+  const neutralSite = options.gameSiteType === "neutral" || options.neutralSite === true;
   const homeLineup = getDefaultLineup(homeTeam);
   const awayLineup = getDefaultLineup(awayTeam);
   const teams = [
@@ -2679,6 +2693,7 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
       players: homeTeam.players?.length ? homeTeam.players : homeLineup,
       lineup: homeLineup,
       score: 0,
+      isHomeTeam: !neutralSite,
       timeoutsRemaining: Number.isFinite(homeTeam.timeouts) ? homeTeam.timeouts : 4,
     }),
     initializeTeamFormationState({
@@ -2686,6 +2701,7 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
       players: awayTeam.players?.length ? awayTeam.players : awayLineup,
       lineup: awayLineup,
       score: 0,
+      isHomeTeam: false,
       timeoutsRemaining: Number.isFinite(awayTeam.timeouts) ? awayTeam.timeouts : 4,
     }),
   ];
@@ -2696,6 +2712,7 @@ function createInitialGameState(homeTeam, awayTeam, random = Math.random) {
 
   const state = {
     teams,
+    gameSiteType: neutralSite ? "neutral" : "home",
     boxScore: initializeBoxScoreTracker(teams),
     possessionTeamId: random() < 0.5 ? 0 : 1,
     gameClockRemaining: HALF_SECONDS,
@@ -5552,7 +5569,7 @@ function simulateHalf(state, random = Math.random) {
 
 function simulateGame(homeTeam, awayTeam, options = {}) {
   const random = options.random || Math.random;
-  const state = createInitialGameState(homeTeam, awayTeam, random);
+  const state = createInitialGameState(homeTeam, awayTeam, random, options);
 
   simulateHalf(state, random);
 
@@ -5685,3 +5702,4 @@ module.exports = {
   simulateHalf,
   simulateGame,
 };
+

@@ -260,7 +260,11 @@ function resolveShot({
 
   let madeProbability = shotResult.successProbability;
   if (isThreePointShot) {
-    madeProbability = clamp(madeProbability - THREE_POINT_SUCCESS_PROBABILITY_PENALTY, 0.02, 0.9);
+    madeProbability = clamp(
+      madeProbability - THREE_POINT_SUCCESS_PROBABILITY_PENALTY,
+      0.02,
+      THREE_POINT_MAX_MAKE_PROBABILITY,
+    );
   }
   madeProbability = clamp(madeProbability - GLOBAL_SHOT_MAKE_PROBABILITY_PENALTY, 0.02, 0.9);
 
