@@ -437,10 +437,44 @@ private struct CollegeLeagueHomeView: View {
                             .foregroundStyle(.secondary)
                     }
 
+                    if let lastPlayed = latestCompletedGame {
+                        GameCard {
+                            GameSectionHeader(title: "Last Result")
+                            NavigationLink(value: LeagueMenuDestination.boxScore(lastPlayed.gameId ?? "")) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Game \(gameNumber(for: lastPlayed)): \(lastPlayed.isHome == true ? "vs" : "@") \(lastPlayed.opponentName ?? "Unknown")")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(.primary)
+                                        Text(resultSummaryText(for: lastPlayed))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    HStack(spacing: 10) {
+                        Button("Sim Next User Game") {
+                            playNextGame()
+                        }
+                        .buttonStyle(GameButtonStyle(variant: .primary))
+
+                        Button("Choose Team") {
+                            onChooseDifferentTeam()
+                        }
+                        .buttonStyle(GameButtonStyle(variant: .secondary))
+                    }
+
                     if let summary {
                         HStack(spacing: 14) {
                             StatChip(title: "Game", value: "\(summary.currentDay)")
-                            StatChip(title: "Games", value: "\(summary.totalScheduledGames)")
                             StatChip(title: "Record", value: userRecordText)
                         }
                     }
@@ -480,45 +514,10 @@ private struct CollegeLeagueHomeView: View {
                         }
                     }
 
-                    if let lastPlayed = latestCompletedGame {
-                        GameCard {
-                            GameSectionHeader(title: "Last Result")
-                            NavigationLink(value: LeagueMenuDestination.boxScore(lastPlayed.gameId ?? "")) {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Game \(gameNumber(for: lastPlayed)): \(lastPlayed.isHome == true ? "vs" : "@") \(lastPlayed.opponentName ?? "Unknown")")
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.primary)
-                                        Text(resultSummaryText(for: lastPlayed))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
                     GameCard {
                         Text(statusText)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                    }
-
-                    HStack(spacing: 10) {
-                        Button("Sim Next User Game") {
-                            playNextGame()
-                        }
-                        .buttonStyle(GameButtonStyle(variant: .primary))
-
-                        Button("Choose Team") {
-                            onChooseDifferentTeam()
-                        }
-                        .buttonStyle(GameButtonStyle(variant: .secondary))
                     }
 
                     Button("Create New Coach") {
