@@ -183,11 +183,11 @@ function collectReboundCandidates({ offensePositions, defensePositions, landingS
   const candidates = [];
   offensePositions.forEach(({ player, coord }) => {
     const distance = dist(coord, landingSpot);
-    if (distance <= radius) candidates.push({ player, team: "offense", distance });
+    if (distance <= radius) candidates.push({ player, team: "offense", distance, coord });
   });
   defensePositions.forEach(({ player, coord }) => {
     const distance = dist(coord, landingSpot);
-    if (distance <= radius) candidates.push({ player, team: "defense", distance });
+    if (distance <= radius) candidates.push({ player, team: "defense", distance, coord });
   });
   return candidates;
 }

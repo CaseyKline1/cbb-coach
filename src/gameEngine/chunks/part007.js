@@ -107,6 +107,13 @@ function resolveTransitionMissRebound({
   shooter,
   random = Math.random,
 }) {
+  const transitionRoleMultiplier = (player) => {
+    const roleOptions = getPositionRoleOptions(player?.bio?.position);
+    if (roleOptions.includes("PF") || roleOptions.includes("C")) return 1.14;
+    if (roleOptions.includes("SF")) return 1.04;
+    return 0.93;
+  };
+
   const weighted = [
     ...offenseLineup.map((player) => {
       const score =
@@ -118,7 +125,7 @@ function resolveTransitionMissRebound({
       const shooterPenalty = player === shooter ? 0.52 : 1.18;
       return {
         value: { player, team: "offense" },
-        weight: Math.max(1, score * shooterPenalty * (0.85 + random() * 0.3)),
+        weight: Math.max(1, score * shooterPenalty * transitionRoleMultiplier(player) * (0.85 + random() * 0.3)),
       };
     }),
     ...defenseLineup.map((player) => {
@@ -130,7 +137,7 @@ function resolveTransitionMissRebound({
         getRating(player, "rebounding.boxouts") * 0.14;
       return {
         value: { player, team: "defense" },
-        weight: Math.max(1, score * (0.85 + random() * 0.3)),
+        weight: Math.max(1, score * transitionRoleMultiplier(player) * (0.85 + random() * 0.3)),
       };
     }),
   ];

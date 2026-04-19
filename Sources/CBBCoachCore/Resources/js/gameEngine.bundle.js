@@ -1245,11 +1245,11 @@ function collectReboundCandidates({ offensePositions, defensePositions, landingS
   const candidates = [];
   offensePositions.forEach(({ player, coord }) => {
     const distance = dist(coord, landingSpot);
-    if (distance <= radius) candidates.push({ player, team: "offense", distance });
+    if (distance <= radius) candidates.push({ player, team: "offense", distance, coord });
   });
   defensePositions.forEach(({ player, coord }) => {
     const distance = dist(coord, landingSpot);
-    if (distance <= radius) candidates.push({ player, team: "defense", distance });
+    if (distance <= radius) candidates.push({ player, team: "defense", distance, coord });
   });
   return candidates;
 }
@@ -2609,11 +2609,13 @@ function resolveRebound({
             player,
             team: "offense",
             distance: dist(coord, landingSpot),
+            coord,
           })),
           ...defensePositions.map(({ player, coord }) => ({
             player,
             team: "defense",
             distance: dist(coord, landingSpot),
+            coord,
           })),
         ];
 
@@ -2628,10 +2630,19 @@ function resolveRebound({
           : getRating(player, "rebounding.defensiveRebound");
       const positioningScore = positioning.get(player) || 1;
       const distanceScore = clamp(1 - entry.distance / (radius + 0.15), 0.18, 1);
+      const roleOptions = getPositionRoleOptions(player?.bio?.position);
+      const isBig = roleOptions.includes("PF") || roleOptions.includes("C");
+      const isWing = !isBig && roleOptions.includes("SF");
+      const postRoleMultiplier = isBig ? 1.18 : isWing ? 1.06 : 0.94;
+      const paintDistance = dist(entry.coord || { x: 0, y: 4.5 }, { x: 0, y: 2 });
+      const paintProximity = clamp(1 - paintDistance / 4.7, 0, 1);
+      const locationMultiplier = isLong ? 0.92 + paintProximity * 0.22 : 0.84 + paintProximity * 0.46;
+      const interiorBiasMultiplier = clamp(postRoleMultiplier * locationMultiplier, 0.74, 1.38);
       const weight =
         (reboundingScore * 0.47 + reachScore * 0.22 + verticalScore * 0.21 + getRating(player, "rebounding.boxouts") * 0.1) *
         positioningScore *
         distanceScore *
+        interiorBiasMultiplier *
         (entry.team === "offense" ? reboundTradeoff.offenseCrashMultiplier : reboundTradeoff.defenseCrashMultiplier);
       return {
         value: entry,
@@ -2977,6 +2988,13 @@ function resolveTransitionMissRebound({
   shooter,
   random = Math.random,
 }) {
+  const transitionRoleMultiplier = (player) => {
+    const roleOptions = getPositionRoleOptions(player?.bio?.position);
+    if (roleOptions.includes("PF") || roleOptions.includes("C")) return 1.14;
+    if (roleOptions.includes("SF")) return 1.04;
+    return 0.93;
+  };
+
   const weighted = [
     ...offenseLineup.map((player) => {
       const score =
@@ -2988,7 +3006,7 @@ function resolveTransitionMissRebound({
       const shooterPenalty = player === shooter ? 0.52 : 1.18;
       return {
         value: { player, team: "offense" },
-        weight: Math.max(1, score * shooterPenalty * (0.85 + random() * 0.3)),
+        weight: Math.max(1, score * shooterPenalty * transitionRoleMultiplier(player) * (0.85 + random() * 0.3)),
       };
     }),
     ...defenseLineup.map((player) => {
@@ -3000,7 +3018,7 @@ function resolveTransitionMissRebound({
         getRating(player, "rebounding.boxouts") * 0.14;
       return {
         value: { player, team: "defense" },
-        weight: Math.max(1, score * (0.85 + random() * 0.3)),
+        weight: Math.max(1, score * transitionRoleMultiplier(player) * (0.85 + random() * 0.3)),
       };
     }),
   ];
