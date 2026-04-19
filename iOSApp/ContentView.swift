@@ -1646,6 +1646,22 @@ private struct PlayerCardDetailView: View {
             .map(\.name)
     }
 
+    private var measurableTraits: [String] {
+        let potential = player.attributes?["potential"]
+        return [
+            traitLabel("Height", value: player.height),
+            traitLabel("Weight", value: player.weight),
+            traitLabel("Wingspan", value: player.wingspan),
+            traitLabel("Home", value: player.home),
+            potential.map { "Potential \($0)" },
+        ]
+        .compactMap { $0 }
+    }
+
+    private var allTraits: [String] {
+        measurableTraits + topTraits
+    }
+
     private struct CareerYearRow {
         let year: String
         let totals: PlayerCareerTotals
@@ -1706,13 +1722,13 @@ private struct PlayerCardDetailView: View {
 
                 GameCard {
                     GameSectionHeader(title: "Traits")
-                    if topTraits.isEmpty {
+                    if allTraits.isEmpty {
                         Text("No standout traits yet.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(topTraits, id: \.self) { trait in
+                            ForEach(allTraits, id: \.self) { trait in
                                 Text(trait)
                                     .font(.caption.monospacedDigit().weight(.semibold))
                                     .foregroundStyle(.primary)
@@ -1869,6 +1885,13 @@ private struct PlayerCardDetailView: View {
         let valid = values.compactMap { $0 }
         guard !valid.isEmpty else { return 0 }
         return Double(valid.reduce(0, +)) / Double(valid.count)
+    }
+
+    private func traitLabel(_ label: String, value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return "\(label): \(trimmed)"
     }
 
     private func format(_ value: Double) -> String {

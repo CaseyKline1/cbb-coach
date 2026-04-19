@@ -33,6 +33,10 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
     public var name: String
     public var position: String
     public var year: String
+    public var home: String?
+    public var height: String?
+    public var weight: String?
+    public var wingspan: String?
     public var overall: Int
     public var isStarter: Bool
     public var attributes: [String: Int]?
