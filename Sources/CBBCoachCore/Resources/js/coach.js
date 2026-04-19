@@ -3,6 +3,16 @@ const COACH_ROLE = Object.freeze({
   ASSISTANT: "assistant",
 });
 
+const COACH_FIRST_NAME_POOL = Object.freeze([
+  "Alex", "Jordan", "Taylor", "Chris", "Devin", "Morgan", "Riley", "Cameron", "Hayden", "Avery",
+  "Parker", "Quinn", "Casey", "Logan", "Skyler", "Reese", "Drew", "Rowan", "Blake", "Micah",
+]);
+
+const COACH_LAST_NAME_POOL = Object.freeze([
+  "Anderson", "Bennett", "Collins", "Diaz", "Evans", "Fisher", "Graham", "Howard", "Irving", "James",
+  "Keller", "Lawson", "Morris", "Nguyen", "Owens", "Parker", "Quincy", "Ramirez", "Sullivan", "Turner",
+]);
+
 const DEFAULT_COACH_SKILLS = Object.freeze({
   recruiting: 50,
   playerDevelopment: 50,
@@ -146,8 +156,16 @@ function choosePipelineState({
   return weightedRandomFromMap(pipelineStateWeights, random) || "CA";
 }
 
+function chooseCoachName(name, random = Math.random) {
+  if (typeof name === "string" && name.trim()) return name.trim();
+  const first = chooseRandom(COACH_FIRST_NAME_POOL, random) || "Coach";
+  const last = chooseRandom(COACH_LAST_NAME_POOL, random) || "Staff";
+  return `${first} ${last}`;
+}
+
 function createCoach({
   role = COACH_ROLE.ASSISTANT,
+  name,
   age,
   pressAggressiveness,
   pace = "normal",
@@ -167,6 +185,7 @@ function createCoach({
   const resolvedFocus = typeof focus === "string" && focus.trim() ? focus.trim() : role === COACH_ROLE.ASSISTANT ? "recruiting" : null;
   return {
     role,
+    name: chooseCoachName(name, random),
     focus: resolvedFocus,
     age: Number.isFinite(Number(age)) ? clamp(Math.round(Number(age)), 24, 80) : randomInt(31, 69, random),
     pressAggressiveness: Number.isFinite(Number(pressAggressiveness))

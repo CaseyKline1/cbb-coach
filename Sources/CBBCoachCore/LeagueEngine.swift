@@ -135,6 +135,7 @@ public struct CreateLeagueOptions: Codable, Equatable, Sendable {
     public var userTeamId: String?
     public var seed: String
     public var totalRegularSeasonGames: Int
+    public var userHeadCoachName: String?
     public var userHeadCoachSkills: CoachSkills?
 
     public init(userTeamName: String, seed: String = "default", totalRegularSeasonGames: Int = DEFAULT_TOTAL_REGULAR_SEASON_GAMES) {
@@ -142,6 +143,7 @@ public struct CreateLeagueOptions: Codable, Equatable, Sendable {
         self.userTeamId = nil
         self.seed = seed
         self.totalRegularSeasonGames = totalRegularSeasonGames
+        self.userHeadCoachName = nil
         self.userHeadCoachSkills = nil
     }
 }

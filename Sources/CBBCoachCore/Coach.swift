@@ -88,6 +88,7 @@ public struct CoachSkills: Codable, Equatable, Sendable {
 
 public struct Coach: Codable, Equatable, Sendable {
     public var role: CoachRole = .assistant
+    public var name: String?
     public var focus: AssistantFocus?
     public var age: Int = 45
     public var pressAggressiveness: Int = 50
@@ -135,6 +136,7 @@ private let SCHOOL_KEYWORDS_TO_STATE: [String: String] = [
 
 public struct CreateCoachOptions: Codable, Equatable, Sendable {
     public var role: CoachRole = .assistant
+    public var name: String?
     public var age: Int?
     public var pressAggressiveness: Int?
     public var pace: PaceProfile = .normal

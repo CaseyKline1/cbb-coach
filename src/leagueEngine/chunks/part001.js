@@ -1061,6 +1061,19 @@ function createD1League(options = {}) {
 
   const requestedUserSkills =
     options.userHeadCoachSkills && typeof options.userHeadCoachSkills === "object" ? options.userHeadCoachSkills : null;
+  const requestedUserCoachName =
+    typeof options.userHeadCoachName === "string" && options.userHeadCoachName.trim()
+      ? options.userHeadCoachName.trim()
+      : null;
+  if (requestedUserCoachName) {
+    const headCoach = teamStateById[userTeamId]?.teamModel?.coachingStaff?.headCoach;
+    if (headCoach && typeof headCoach === "object") {
+      headCoach.name = requestedUserCoachName;
+      if (Array.isArray(teamStateById[userTeamId]?.teamModel?.coaches) && teamStateById[userTeamId].teamModel.coaches[0]) {
+        teamStateById[userTeamId].teamModel.coaches[0].name = requestedUserCoachName;
+      }
+    }
+  }
   if (requestedUserSkills) {
     const headCoachSkills = teamStateById[userTeamId]?.teamModel?.coachingStaff?.headCoach?.skills;
     if (headCoachSkills && typeof headCoachSkills === "object") {

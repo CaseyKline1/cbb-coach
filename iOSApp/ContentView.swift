@@ -690,6 +690,7 @@ private struct CollegeLeagueHomeView: View {
     private func createLeague() {
         do {
             var options = CreateLeagueOptions(userTeamName: teamName, seed: "ios-league-\(profile.fullName)-\(teamName)")
+            options.userHeadCoachName = profile.fullName
             options.userHeadCoachSkills = profile.archetype.initialSkills
             let created = try createD1League(options: options)
             league = created
@@ -828,7 +829,7 @@ private struct CoachingStaffView: View {
                 if let staff {
                     GroupBox("Head Coach") {
                         CoachTraitRowView(
-                            title: "Head Coach",
+                            title: staff.headCoach.displayName,
                             subtitle: "Program Leader",
                             coach: staff.headCoach
                         )
@@ -839,8 +840,8 @@ private struct CoachingStaffView: View {
                             ForEach(Array(staff.assistants.enumerated()), id: \.offset) { index, assistant in
                                 VStack(alignment: .leading, spacing: 8) {
                                     CoachTraitRowView(
-                                        title: "Assistant \(index + 1)",
-                                        subtitle: assistant.focus?.label ?? AssistantFocus.recruiting.label,
+                                        title: assistant.displayName,
+                                        subtitle: "Assistant \(index + 1) · \(assistant.focus?.label ?? AssistantFocus.recruiting.label)",
                                         coach: assistant
                                     )
                                     SingleSelectDropdown(
@@ -877,6 +878,10 @@ private struct CoachTraitRowView: View {
     let title: String
     let subtitle: String
     let coach: Coach
+    private let traitColumns = [
+        GridItem(.flexible(minimum: 120), spacing: 8),
+        GridItem(.flexible(minimum: 120), spacing: 8),
+    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -888,11 +893,10 @@ private struct CoachTraitRowView: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 8) {
-                TraitPill(title: "Recruiting", value: coach.skills.recruiting)
-                TraitPill(title: "Development", value: coach.skills.playerDevelopment)
-                TraitPill(title: "Game Prep", value: coach.gamePrepTrait)
-                TraitPill(title: "Scouting", value: coach.skills.scouting)
+            LazyVGrid(columns: traitColumns, alignment: .leading, spacing: 8) {
+                ForEach(Array(coach.allTraitValues.enumerated()), id: \.offset) { _, item in
+                    TraitPill(title: item.title, value: item.value)
+                }
             }
         }
     }
@@ -2320,8 +2324,26 @@ private extension AssistantFocus {
 }
 
 private extension Coach {
-    var gamePrepTrait: Int {
-        Int(((Double(skills.offensiveCoaching) + Double(skills.defensiveCoaching)) / 2.0).rounded())
+    var displayName: String {
+        guard let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "Unnamed Coach"
+        }
+        return name
+    }
+
+    var allTraitValues: [(title: String, value: Int)] {
+        [
+            ("Recruiting", skills.recruiting),
+            ("Player Dev", skills.playerDevelopment),
+            ("Guard Dev", skills.guardDevelopment),
+            ("Wing Dev", skills.wingDevelopment),
+            ("Big Dev", skills.bigDevelopment),
+            ("Offensive", skills.offensiveCoaching),
+            ("Defensive", skills.defensiveCoaching),
+            ("Fundraising", skills.fundraising),
+            ("Scouting", skills.scouting),
+            ("Potential", skills.potential),
+        ]
     }
 }
 
