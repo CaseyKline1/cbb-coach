@@ -109,6 +109,20 @@ public struct UserGameSummary: Codable, Equatable, Sendable {
     public var record: JSONValue?
 }
 
+public struct LeagueGameSummary: Codable, Equatable, Sendable {
+    public var gameId: String?
+    public var day: Int?
+    public var type: String?
+    public var siteType: String?
+    public var neutralSite: Bool?
+    public var homeTeamId: String?
+    public var homeTeamName: String?
+    public var awayTeamId: String?
+    public var awayTeamName: String?
+    public var completed: Bool?
+    public var result: JSONValue?
+}
+
 public struct ConferenceStanding: Codable, Equatable, Sendable {
     public var teamId: String
     public var teamName: String
@@ -328,6 +342,15 @@ public func getUserCompletedGames(_ league: LeagueState) -> [UserGameSummary] {
         return try fromJSONValue(raw, as: [UserGameSummary].self)
     } catch {
         fatalError("getUserCompletedGames failed: \(error)")
+    }
+}
+
+public func getCompletedLeagueGames(_ league: LeagueState) -> [LeagueGameSummary] {
+    do {
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "getCompletedLeagueGames", handle: league.handle, restArgs: [])
+        return try fromJSONValue(raw, as: [LeagueGameSummary].self)
+    } catch {
+        fatalError("getCompletedLeagueGames failed: \(error)")
     }
 }
 

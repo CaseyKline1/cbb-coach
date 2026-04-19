@@ -425,6 +425,7 @@ private struct CollegeLeagueHomeView: View {
     @State private var summary: LeagueSummary?
     @State private var conferenceStandings: [String: [ConferenceStanding]] = [:]
     @State private var rankings: LeagueRankings?
+    @State private var completedLeagueGames: [LeagueGameSummary] = []
 
     var body: some View {
         NavigationStack {
@@ -500,6 +501,11 @@ private struct CollegeLeagueHomeView: View {
                             }
                             .buttonStyle(.plain)
 
+                            NavigationLink(value: LeagueMenuDestination.statLeaders) {
+                                MenuRow(title: "Stat Leaders")
+                            }
+                            .buttonStyle(.plain)
+
                             NavigationLink(value: LeagueMenuDestination.standings) {
                                 MenuRow(title: "Standings")
                             }
@@ -551,6 +557,8 @@ private struct CollegeLeagueHomeView: View {
                     )
                 case .playerStats:
                     PlayerStatsView(schedule: schedule, userTeamName: summary?.userTeamName ?? teamName)
+                case .statLeaders:
+                    StatLeadersView(games: completedLeagueGames)
                 case .standings:
                     ConferenceStandingsView(
                         standingsByConference: conferenceStandings,
@@ -647,6 +655,7 @@ private struct CollegeLeagueHomeView: View {
             summary = leagueSummary
             conferenceStandings = fetchConferenceStandings(created)
             rankings = getRankings(created)
+            completedLeagueGames = getCompletedLeagueGames(created)
             statusText = "\(leagueSummary.userTeamName): \(leagueSummary.totalScheduledGames) total games generated"
         } catch {
             statusText = "League error: \(error.localizedDescription)"
@@ -664,6 +673,7 @@ private struct CollegeLeagueHomeView: View {
         summary = getLeagueSummary(currentLeague)
         conferenceStandings = fetchConferenceStandings(currentLeague)
         rankings = getRankings(currentLeague)
+        completedLeagueGames = getCompletedLeagueGames(currentLeague)
         if result.done == true {
             statusText = "Season complete."
             return
@@ -715,6 +725,7 @@ private enum LeagueMenuDestination: Hashable {
     case schedule
     case rotation
     case playerStats
+    case statLeaders
     case standings
     case rankings
     case coachingStaff
@@ -2272,6 +2283,330 @@ private struct PlayerStatsView: View {
     private func formatPercentage(_ value: Double, attempts: Int) -> String {
         guard attempts > 0 else { return "--" }
         return String(format: "%.1f%%", value)
+    }
+}
+
+private struct NationalLeaderStats {
+    let playerName: String
+    let teamName: String
+    var games: Int = 0
+    var points: Int = 0
+    var rebounds: Int = 0
+    var assists: Int = 0
+    var steals: Int = 0
+    var blocks: Int = 0
+    var fgMade: Int = 0
+    var fgAttempts: Int = 0
+    var threeMade: Int = 0
+    var threeAttempts: Int = 0
+    var ftMade: Int = 0
+    var ftAttempts: Int = 0
+
+    private func perGame(_ value: Int) -> Double {
+        guard games > 0 else { return 0 }
+        return Double(value) / Double(games)
+    }
+
+    var pointsPerGame: Double { perGame(points) }
+    var reboundsPerGame: Double { perGame(rebounds) }
+    var assistsPerGame: Double { perGame(assists) }
+    var stealsPerGame: Double { perGame(steals) }
+    var blocksPerGame: Double { perGame(blocks) }
+
+    var fgPercentage: Double {
+        guard fgAttempts > 0 else { return 0 }
+        return (Double(fgMade) / Double(fgAttempts)) * 100
+    }
+
+    var threePercentage: Double {
+        guard threeAttempts > 0 else { return 0 }
+        return (Double(threeMade) / Double(threeAttempts)) * 100
+    }
+
+    var ftPercentage: Double {
+        guard ftAttempts > 0 else { return 0 }
+        return (Double(ftMade) / Double(ftAttempts)) * 100
+    }
+}
+
+private struct StatLeadersView: View {
+    let games: [LeagueGameSummary]
+
+    private enum StatCategory: String, CaseIterable {
+        case points = "Points"
+        case rebounds = "Rebounds"
+        case assists = "Assists"
+        case steals = "Steals"
+        case blocks = "Blocks"
+        case fgPct = "FG%"
+        case threePct = "3PT%"
+        case ftPct = "FT%"
+    }
+
+    private struct LeaderEntry {
+        let playerName: String
+        let teamName: String
+        let value: String
+        let sub: String
+    }
+
+    @State private var category: StatCategory = .points
+
+    private var allStats: [NationalLeaderStats] {
+        struct Key: Hashable {
+            let playerName: String
+            let teamName: String
+        }
+
+        var totals: [Key: NationalLeaderStats] = [:]
+
+        for game in games {
+            guard
+                let resultObject = game.result?.objectDictionary,
+                let boxArray = resultObject["boxScore"]?.arrayValues
+            else { continue }
+
+            for teamBox in boxArray {
+                guard let teamObject = teamBox.objectDictionary else { continue }
+                let teamName = teamObject["name"]?.stringValue ?? "Team"
+                let players = teamObject["players"]?.arrayValues ?? []
+                for player in players {
+                    guard let parsed = ParsedPlayerBoxScore(value: player) else { continue }
+                    let key = Key(playerName: parsed.playerName, teamName: teamName)
+                    var current = totals[key] ?? NationalLeaderStats(playerName: parsed.playerName, teamName: teamName)
+                    current.games += 1
+                    current.points += parsed.points
+                    current.rebounds += parsed.rebounds
+                    current.assists += parsed.assists
+                    current.steals += parsed.steals
+                    current.blocks += parsed.blocks
+                    current.fgMade += parsed.fgMade
+                    current.fgAttempts += parsed.fgAttempts
+                    current.threeMade += parsed.threeMade
+                    current.threeAttempts += parsed.threeAttempts
+                    current.ftMade += parsed.ftMade
+                    current.ftAttempts += parsed.ftAttempts
+                    totals[key] = current
+                }
+            }
+        }
+
+        return Array(totals.values)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(StatCategory.allCases, id: \.self) { item in
+                        Button {
+                            category = item
+                        } label: {
+                            Text(item.rawValue)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(category == item ? AppTheme.ink : .secondary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(category == item ? AppTheme.accent.opacity(0.2) : AppTheme.cardBackground)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(category == item ? AppTheme.accent : AppTheme.cardBorder, lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    GameSectionHeader(title: "\(category.rawValue) Leaders")
+
+                    let topLeaders = Array(leaders(for: category).prefix(25))
+                    if topLeaders.isEmpty {
+                        GameCard {
+                            Text("No qualified leaders yet.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        ForEach(Array(topLeaders.enumerated()), id: \.offset) { index, entry in
+                            leaderRow(rank: index + 1, entry: entry)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Stat Leaders")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func leaders(for category: StatCategory) -> [LeaderEntry] {
+        switch category {
+        case .points:
+            return allStats
+                .sorted { lhs, rhs in
+                    if lhs.points != rhs.points { return lhs.points > rhs.points }
+                    return lhs.pointsPerGame > rhs.pointsPerGame
+                }
+                .map { row in
+                    LeaderEntry(
+                        playerName: row.playerName,
+                        teamName: row.teamName,
+                        value: "\(row.points) PTS",
+                        sub: "\(format(row.pointsPerGame)) PPG • \(row.games) G"
+                    )
+                }
+        case .rebounds:
+            return allStats
+                .sorted { lhs, rhs in
+                    if lhs.rebounds != rhs.rebounds { return lhs.rebounds > rhs.rebounds }
+                    return lhs.reboundsPerGame > rhs.reboundsPerGame
+                }
+                .map { row in
+                    LeaderEntry(
+                        playerName: row.playerName,
+                        teamName: row.teamName,
+                        value: "\(row.rebounds) REB",
+                        sub: "\(format(row.reboundsPerGame)) RPG • \(row.games) G"
+                    )
+                }
+        case .assists:
+            return allStats
+                .sorted { lhs, rhs in
+                    if lhs.assists != rhs.assists { return lhs.assists > rhs.assists }
+                    return lhs.assistsPerGame > rhs.assistsPerGame
+                }
+                .map { row in
+                    LeaderEntry(
+                        playerName: row.playerName,
+                        teamName: row.teamName,
+                        value: "\(row.assists) AST",
+                        sub: "\(format(row.assistsPerGame)) APG • \(row.games) G"
+                    )
+                }
+        case .steals:
+            return allStats
+                .sorted { lhs, rhs in
+                    if lhs.steals != rhs.steals { return lhs.steals > rhs.steals }
+                    return lhs.stealsPerGame > rhs.stealsPerGame
+                }
+                .map { row in
+                    LeaderEntry(
+                        playerName: row.playerName,
+                        teamName: row.teamName,
+                        value: "\(row.steals) STL",
+                        sub: "\(format(row.stealsPerGame)) SPG • \(row.games) G"
+                    )
+                }
+        case .blocks:
+            return allStats
+                .sorted { lhs, rhs in
+                    if lhs.blocks != rhs.blocks { return lhs.blocks > rhs.blocks }
+                    return lhs.blocksPerGame > rhs.blocksPerGame
+                }
+                .map { row in
+                    LeaderEntry(
+                        playerName: row.playerName,
+                        teamName: row.teamName,
+                        value: "\(row.blocks) BLK",
+                        sub: "\(format(row.blocksPerGame)) BPG • \(row.games) G"
+                    )
+                }
+        case .fgPct:
+            return allStats
+                .filter { $0.fgAttempts >= 50 }
+                .sorted { lhs, rhs in
+                    if lhs.fgPercentage != rhs.fgPercentage { return lhs.fgPercentage > rhs.fgPercentage }
+                    return lhs.fgAttempts > rhs.fgAttempts
+                }
+                .map { row in
+                    LeaderEntry(
+                        playerName: row.playerName,
+                        teamName: row.teamName,
+                        value: "\(format(row.fgPercentage))%",
+                        sub: "\(row.fgMade)/\(row.fgAttempts) FG • \(row.games) G"
+                    )
+                }
+        case .threePct:
+            return allStats
+                .filter { $0.threeAttempts >= 30 }
+                .sorted { lhs, rhs in
+                    if lhs.threePercentage != rhs.threePercentage { return lhs.threePercentage > rhs.threePercentage }
+                    return lhs.threeAttempts > rhs.threeAttempts
+                }
+                .map { row in
+                    LeaderEntry(
+                        playerName: row.playerName,
+                        teamName: row.teamName,
+                        value: "\(format(row.threePercentage))%",
+                        sub: "\(row.threeMade)/\(row.threeAttempts) 3PT • \(row.games) G"
+                    )
+                }
+        case .ftPct:
+            return allStats
+                .filter { $0.ftAttempts >= 25 }
+                .sorted { lhs, rhs in
+                    if lhs.ftPercentage != rhs.ftPercentage { return lhs.ftPercentage > rhs.ftPercentage }
+                    return lhs.ftAttempts > rhs.ftAttempts
+                }
+                .map { row in
+                    LeaderEntry(
+                        playerName: row.playerName,
+                        teamName: row.teamName,
+                        value: "\(format(row.ftPercentage))%",
+                        sub: "\(row.ftMade)/\(row.ftAttempts) FT • \(row.games) G"
+                    )
+                }
+        }
+    }
+
+    private func leaderRow(rank: Int, entry: LeaderEntry) -> some View {
+        GameCard {
+            HStack(spacing: 12) {
+                Text("\(rank)")
+                    .font(.callout.weight(.black))
+                    .foregroundStyle(rankColor(rank))
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.playerName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
+                    Text(entry.sub)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(entry.value)
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(AppTheme.ink)
+                    Text(entry.teamName)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func rankColor(_ rank: Int) -> Color {
+        if rank == 1 { return AppTheme.accent }
+        if rank <= 3 { return AppTheme.success }
+        return .secondary
+    }
+
+    private func format(_ value: Double) -> String {
+        String(format: "%.1f", value)
     }
 }
 

@@ -1388,6 +1388,32 @@ function getUserSchedule(league) {
     .sort((a, b) => a.day - b.day);
 }
 
+function getCompletedLeagueGames(league) {
+  if (!league?.schedule?.games) return [];
+  return league.schedule.games
+    .filter((game) => game?.completed && game?.result)
+    .map((game) => {
+      const siteType = normalizeGameSiteType(game);
+      return {
+        gameId: game.id,
+        day: game.day,
+        type: game.type,
+        siteType,
+        neutralSite: siteType === "neutral",
+        homeTeamId: game.homeTeamId,
+        homeTeamName: league?.teams?.byId?.[game.homeTeamId]?.name || "Home",
+        awayTeamId: game.awayTeamId,
+        awayTeamName: league?.teams?.byId?.[game.awayTeamId]?.name || "Away",
+        completed: true,
+        result: game.result,
+      };
+    })
+    .sort((a, b) => {
+      if (a.day !== b.day) return a.day - b.day;
+      return String(a.gameId || "").localeCompare(String(b.gameId || ""));
+    });
+}
+
 function buildPlayerAttributeSummary(player = {}) {
   const rating = (value) => Math.max(1, Math.round(asNumber(value, 1)));
   return {
@@ -2412,6 +2438,7 @@ module.exports = {
   setUserRotation,
   advanceToNextUserGame,
   getUserCompletedGames,
+  getCompletedLeagueGames,
   getConferenceStandings,
   getRankings,
   getLeagueSummary,
