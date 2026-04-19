@@ -778,8 +778,15 @@ private struct RosterRatingsView: View {
         "tendencyPost", "tendencyInside", "tendencyMidrange", "tendencyThreePoint", "tendencyDrive", "tendencyPickAndRoll", "tendencyPickAndPop", "tendencyShootVsPass",
     ]
 
+    private let visibleTendencyKeys: Set<String> = [
+        "tendencyThreePoint", "tendencyDrive", "tendencyShootVsPass"
+    ]
+
     private var attributeColumns: [String] {
         let keys = Set(roster.flatMap { Array(($0.attributes ?? [:]).keys) })
+            .filter { key in
+                !key.hasPrefix("tendency") || visibleTendencyKeys.contains(key)
+            }
         return preferredAttributeOrder.filter { keys.contains($0) } + keys.filter { !preferredAttributeOrder.contains($0) }.sorted()
     }
 
