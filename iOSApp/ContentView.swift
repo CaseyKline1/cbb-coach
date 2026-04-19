@@ -911,7 +911,7 @@ private struct RotationSettingsView: View {
                             )
 
                             if index < min(5, editedSlots.count) {
-                                SingleSelectDropdown(
+                                FilterDropdown(
                                     label: "Starter Position",
                                     selection: Binding(
                                         get: { editedSlots[index].position ?? starterPositions[min(index, starterPositions.count - 1)] },

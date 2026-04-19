@@ -7,9 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		02B3C00333821A59462B729C /* AppTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D7F0523C735098D20C2209 /* AppTable.swift */; };
 		47D1C9316042922091F481DC /* CBBCoachCore in Frameworks */ = {isa = PBXBuildFile; productRef = EF6CB10E6DF3EA41469DAC21 /* CBBCoachCore */; };
 		4A3F436DD523E92D203DACC6 /* CBBCoachApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 723406DE4B79EAE29077EC7F /* CBBCoachApp.swift */; };
-		9D394A79B6E24AAFA775DB6A /* AppTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = F825D4A8D0D74D5DAF643F36 /* AppTable.swift */; };
+		8E777E6698C0FD72023F14AD /* FilterDropdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF61AD187740290FDECD395 /* FilterDropdown.swift */; };
 		BAC5A2D4195FEBA68BD4F156 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A95D0E601B2745C92AF4D82E /* ContentView.swift */; };
 /* End PBXBuildFile section */
 
@@ -17,9 +18,10 @@
 		039882A13BCBBBEAFE227DE5 /* cbb-coach */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "cbb-coach"; path = .; sourceTree = SOURCE_ROOT; };
 		723406DE4B79EAE29077EC7F /* CBBCoachApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CBBCoachApp.swift; sourceTree = "<group>"; };
 		92A57274091C29C6024125B1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9FF61AD187740290FDECD395 /* FilterDropdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterDropdown.swift; sourceTree = "<group>"; };
 		A95D0E601B2745C92AF4D82E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		CAEE84DF38E8D2CAAF7CBE6A /* CBBCoachApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CBBCoachApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		F825D4A8D0D74D5DAF643F36 /* AppTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTable.swift; sourceTree = "<group>"; };
+		D0D7F0523C735098D20C2209 /* AppTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTable.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,16 +58,17 @@
 			children = (
 				723406DE4B79EAE29077EC7F /* CBBCoachApp.swift */,
 				A95D0E601B2745C92AF4D82E /* ContentView.swift */,
-				7A7CBA8BFB7D4359A59FDE7A /* Components */,
 				92A57274091C29C6024125B1 /* Info.plist */,
+				BFB4F2AC81D052E6C9972E49 /* Components */,
 			);
 			path = iOSApp;
 			sourceTree = "<group>";
 		};
-		7A7CBA8BFB7D4359A59FDE7A /* Components */ = {
+		BFB4F2AC81D052E6C9972E49 /* Components */ = {
 			isa = PBXGroup;
 			children = (
-				F825D4A8D0D74D5DAF643F36 /* AppTable.swift */,
+				D0D7F0523C735098D20C2209 /* AppTable.swift */,
+				9FF61AD187740290FDECD395 /* FilterDropdown.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -141,9 +144,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				02B3C00333821A59462B729C /* AppTable.swift in Sources */,
 				4A3F436DD523E92D203DACC6 /* CBBCoachApp.swift in Sources */,
-				9D394A79B6E24AAFA775DB6A /* AppTable.swift in Sources */,
 				BAC5A2D4195FEBA68BD4F156 /* ContentView.swift in Sources */,
+				8E777E6698C0FD72023F14AD /* FilterDropdown.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
