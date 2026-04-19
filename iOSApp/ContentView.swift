@@ -449,32 +449,32 @@ private struct CollegeLeagueHomeView: View {
                         VStack(spacing: 8) {
                             GameSectionHeader(title: "Team")
                             NavigationLink(value: LeagueMenuDestination.roster) {
-                                MenuRow(title: "Roster", subtitle: "View player ratings, traits, and details")
+                                MenuRow(title: "Roster")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.schedule) {
-                                MenuRow(title: "Schedule", subtitle: "Review upcoming and completed games")
+                                MenuRow(title: "Schedule")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.rotation) {
-                                MenuRow(title: "Rotation", subtitle: "Set starters, bench order, and minutes")
+                                MenuRow(title: "Rotation")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.playerStats) {
-                                MenuRow(title: "Player Stats", subtitle: "Sortable per-game production")
+                                MenuRow(title: "Player Stats")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.standings) {
-                                MenuRow(title: "Standings", subtitle: "Conference records and point margins")
+                                MenuRow(title: "Standings")
                             }
                             .buttonStyle(.plain)
 
                             NavigationLink(value: LeagueMenuDestination.coachingStaff) {
-                                MenuRow(title: "Coaching Staff", subtitle: "Adjust assistant priorities")
+                                MenuRow(title: "Coaching Staff")
                             }
                             .buttonStyle(.plain)
                         }
