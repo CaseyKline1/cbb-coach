@@ -1469,7 +1469,7 @@ private struct BoxScoreDetailView: View {
                         alignment: .leading,
                         font: .caption.monospacedDigit()
                     )
-                    AppTableTextCell(text: String(format: "%.1f", player.minutes), width: 44, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(Int(player.minutes.rounded()))", width: 44, font: .caption.monospacedDigit())
                     AppTableTextCell(text: "\(player.points)", width: 42, font: .caption.monospacedDigit())
                     AppTableTextCell(text: "\(player.rebounds)", width: 42, font: .caption.monospacedDigit())
                     AppTableTextCell(text: "\(player.assists)", width: 42, font: .caption.monospacedDigit())
