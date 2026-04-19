@@ -424,6 +424,7 @@ private struct CollegeLeagueHomeView: View {
     @State private var coachingStaff: UserCoachingStaffSummary?
     @State private var summary: LeagueSummary?
     @State private var conferenceStandings: [String: [ConferenceStanding]] = [:]
+    @State private var rankings: LeagueRankings?
 
     var body: some View {
         NavigationStack {
@@ -504,6 +505,11 @@ private struct CollegeLeagueHomeView: View {
                             }
                             .buttonStyle(.plain)
 
+                            NavigationLink(value: LeagueMenuDestination.rankings) {
+                                MenuRow(title: "Rankings")
+                            }
+                            .buttonStyle(.plain)
+
                             NavigationLink(value: LeagueMenuDestination.coachingStaff) {
                                 MenuRow(title: "Coaching Staff")
                             }
@@ -550,6 +556,11 @@ private struct CollegeLeagueHomeView: View {
                         standingsByConference: conferenceStandings,
                         preferredConferenceId: userConferenceId
                     )
+                case .rankings:
+                    RankingsView(
+                        rankings: rankings,
+                        userTeamId: summary?.userTeamId
+                    )
                 case .coachingStaff:
                     CoachingStaffView(
                         staff: coachingStaff,
@@ -583,7 +594,8 @@ private struct CollegeLeagueHomeView: View {
     }
 
     private var userRanking: Int? {
-        nil
+        guard let userTeamId = summary?.userTeamId else { return nil }
+        return rankings?.rankings.first(where: { $0.teamId == userTeamId })?.rank
     }
 
     private var teamHeaderText: String {
@@ -634,6 +646,7 @@ private struct CollegeLeagueHomeView: View {
             let leagueSummary = getLeagueSummary(created)
             summary = leagueSummary
             conferenceStandings = fetchConferenceStandings(created)
+            rankings = getRankings(created)
             statusText = "\(leagueSummary.userTeamName): \(leagueSummary.totalScheduledGames) total games generated"
         } catch {
             statusText = "League error: \(error.localizedDescription)"
@@ -650,6 +663,7 @@ private struct CollegeLeagueHomeView: View {
         coachingStaff = getUserCoachingStaff(currentLeague)
         summary = getLeagueSummary(currentLeague)
         conferenceStandings = fetchConferenceStandings(currentLeague)
+        rankings = getRankings(currentLeague)
         if result.done == true {
             statusText = "Season complete."
             return
@@ -702,6 +716,7 @@ private enum LeagueMenuDestination: Hashable {
     case rotation
     case playerStats
     case standings
+    case rankings
     case coachingStaff
     case boxScore(String)
 }
@@ -2333,6 +2348,102 @@ private struct ConferenceStandingsView: View {
         let gamesPlayed = wins + losses
         guard gamesPlayed > 0 else { return "0.0" }
         return String(format: "%.1f", Double(points) / Double(gamesPlayed))
+    }
+}
+
+private struct RankingsView: View {
+    let rankings: LeagueRankings?
+    let userTeamId: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if let rankings {
+                    GameCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            GameSectionHeader(title: "Ranking Model")
+                            Text("Preseason influence fades gradually to avoid jerky early-season jumps.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            HStack(spacing: 10) {
+                                StatChip(
+                                    title: "Preseason",
+                                    value: "\(Int((rankings.preseasonWeight * 100).rounded()))%"
+                                )
+                                StatChip(
+                                    title: "In-Season",
+                                    value: "\(Int((rankings.inSeasonWeight * 100).rounded()))%"
+                                )
+                                StatChip(
+                                    title: "Progress",
+                                    value: "\(Int((rankings.seasonProgress * 100).rounded()))%"
+                                )
+                            }
+                        }
+                    }
+
+                    GameCard {
+                        VStack(spacing: 0) {
+                            HStack(spacing: 0) {
+                                AppTableTextCell(text: "RANK", width: 54, font: .caption2.weight(.bold), foreground: .secondary)
+                                AppTableTextCell(text: "TEAM", width: 152, alignment: .leading, font: .caption2.weight(.bold), foreground: .secondary)
+                                AppTableTextCell(text: "REC", width: 58, font: .caption2.weight(.bold), foreground: .secondary)
+                                AppTableTextCell(text: "NET", width: 56, font: .caption2.weight(.bold), foreground: .secondary)
+                                AppTableTextCell(text: "SOS", width: 56, font: .caption2.weight(.bold), foreground: .secondary)
+                            }
+                            .padding(.vertical, 6)
+                            .background(AppTheme.cardBackground)
+                            Divider()
+
+                            ForEach(Array(rankings.rankings.enumerated()), id: \.element.id) { index, team in
+                                HStack(spacing: 0) {
+                                    AppTableTextCell(
+                                        text: "#\(team.rank)",
+                                        width: 54,
+                                        font: .caption.monospacedDigit().weight(.semibold),
+                                        foreground: team.teamId == userTeamId ? AppTheme.accent : .primary
+                                    )
+                                    AppTableTextCell(
+                                        text: team.teamName,
+                                        width: 152,
+                                        alignment: .leading,
+                                        font: .caption.weight(team.teamId == userTeamId ? .bold : .semibold),
+                                        foreground: team.teamId == userTeamId ? AppTheme.accent : .primary
+                                    )
+                                    AppTableTextCell(
+                                        text: team.record,
+                                        width: 58,
+                                        font: .caption.monospacedDigit().weight(.medium)
+                                    )
+                                    AppTableTextCell(
+                                        text: String(format: "%.1f", team.pointDifferentialPerGame),
+                                        width: 56,
+                                        font: .caption.monospacedDigit().weight(.medium)
+                                    )
+                                    AppTableTextCell(
+                                        text: String(format: "%.3f", team.strengthOfSchedule),
+                                        width: 56,
+                                        font: .caption.monospacedDigit().weight(.medium)
+                                    )
+                                }
+                                .padding(.vertical, 6)
+                                .background(team.teamId == userTeamId ? AppTheme.accent.opacity(0.08) : .clear)
+                                if index < rankings.rankings.count - 1 {
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text("Rankings unavailable.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(16)
+        }
+        .navigationTitle("Rankings")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

@@ -117,6 +117,37 @@ public struct ConferenceStanding: Codable, Equatable, Sendable {
     public var pointsAgainst: Int?
 }
 
+public struct LeagueRankingTeam: Codable, Equatable, Sendable, Identifiable {
+    public var rank: Int
+    public var teamId: String
+    public var teamName: String
+    public var conferenceId: String
+    public var record: String
+    public var wins: Int
+    public var losses: Int
+    public var gamesPlayed: Int
+    public var pointDifferentialPerGame: Double
+    public var strengthOfSchedule: Double
+    public var qualityWinRate: Double
+    public var playerSkill: Double
+    public var prestige: Double
+    public var lastYearResult: Double
+    public var coachQuality: Double
+    public var preseasonScore: Double
+    public var inSeasonScore: Double
+    public var compositeScore: Double
+
+    public var id: String { teamId }
+}
+
+public struct LeagueRankings: Codable, Equatable, Sendable {
+    public var topN: Int
+    public var seasonProgress: Double
+    public var preseasonWeight: Double
+    public var inSeasonWeight: Double
+    public var rankings: [LeagueRankingTeam]
+}
+
 public struct LeagueSummary: Codable, Equatable, Sendable {
     public var status: String
     public var currentDay: Int
@@ -309,6 +340,18 @@ public func getConferenceStandings(_ league: LeagueState, conferenceId: String? 
         return []
     } catch {
         return []
+    }
+}
+
+public func getRankings(_ league: LeagueState, topN: Int = 25) -> LeagueRankings {
+    do {
+        let options: JSONValue = .object([
+            "topN": .number(Double(topN))
+        ])
+        let raw = try JSRuntime.shared.invokeHandle(moduleId: leagueEngineModule, fn: "getRankings", handle: league.handle, restArgs: [options])
+        return try fromJSONValue(raw, as: LeagueRankings.self)
+    } catch {
+        fatalError("getRankings failed: \(error)")
     }
 }
 
