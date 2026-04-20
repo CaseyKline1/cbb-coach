@@ -321,27 +321,32 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 eventType = "turnover"
                 switchedPossession = true
             } else {
-                let isThree = random.nextUnit() < 0.34
-                let shotRatings = isThree
-                    ? ["shooting.threePointShooting", "skills.shotIQ", "athleticism.burst"]
-                    : ["shooting.closeShot", "shooting.layups", "skills.shotIQ"]
-                let shotDefenseRatings = isThree
-                    ? ["defense.shotContest", "defense.perimeterDefense", "defense.lateralQuickness"]
-                    : ["defense.shotContest", "defense.postDefense", "defense.lateralQuickness"]
+                let shooterSpot = pickShooterSpot(player: ballHandler, random: &random)
+                let shotType = chooseShotFromTendencies(shooter: ballHandler, spot: shooterSpot, random: &random)
+                let isThree = shotType == .three
+                let profile = shotProfile(for: shotType)
+                let offenseRatingsForShot: [String]
+                if isThree {
+                    let specialty = isCornerSpot(shooterSpot) ? "shooting.cornerThrees" : "shooting.upTopThrees"
+                    offenseRatingsForShot = ["shooting.threePointShooting", specialty]
+                } else {
+                    offenseRatingsForShot = profile.offenseRatings
+                }
                 let shotInteraction = resolveInteraction(
                     offensePlayer: ballHandler,
                     defensePlayer: primaryDefender,
-                    offenseRatings: shotRatings,
-                    defenseRatings: shotDefenseRatings,
+                    offenseRatings: offenseRatingsForShot,
+                    defenseRatings: profile.defenseRatings,
                     random: &random
                 )
 
-                let shotMakeBase = isThree ? 0.28 : 0.43
-                let shotMakeScale = isThree ? 0.09 : 0.11
+                let shotMakeBase = baseMakeProbability(for: shotType)
+                let shotMakeScale = makeScale(for: shotType)
+                let shotTypeEdgeBonus = shotTypeEdge(for: shotType)
                 let madeProbability = clamp(
-                    shotMakeBase + teamEdge * 0.07 + (logistic(shotInteraction.edge) - 0.5) * shotMakeScale,
-                    min: isThree ? 0.2 : 0.34,
-                    max: isThree ? 0.52 : 0.7
+                    shotMakeBase + teamEdge * 0.06 + shotTypeEdgeBonus + (logistic(shotInteraction.edge) - 0.5) * shotMakeScale,
+                    min: minMakeProbability(for: shotType),
+                    max: maxMakeProbability(for: shotType)
                 )
                 let made = random.nextUnit() < madeProbability
 
@@ -354,8 +359,19 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                     }
                 }
 
+                if !made && isRimShot(shotType) {
+                    let blockChance = clamp(
+                        0.025 + (getBaseRating(primaryDefender, path: "defense.shotBlocking") - 50) / 260,
+                        min: 0.01,
+                        max: 0.22
+                    )
+                    if random.nextUnit() < blockChance {
+                        addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: defenderIdx) { $0.blocks += 1 }
+                    }
+                }
+
                 if made {
-                    points = isThree ? 3 : 2
+                    points = profile.basePoints
                     stored.teams[offenseTeamId].score += points
                     applyPlusMinus(stored: &stored, scoringTeamId: offenseTeamId, points: points)
                     addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx) { $0.points += points }
@@ -1027,4 +1043,205 @@ private func computeLineupDefenseStrength(_ lineup: [Player]) -> Double {
         ])
     }
     return average(values)
+}
+
+// MARK: - Shot type selection and resolution
+
+enum ShotType {
+    case close
+    case midrange
+    case three
+    case layup
+    case dunk
+    case hook
+    case fadeaway
+}
+
+private struct ShotProfile {
+    var offenseRatings: [String]
+    var defenseRatings: [String]
+    var basePoints: Int
+}
+
+private func shotProfile(for shotType: ShotType) -> ShotProfile {
+    switch shotType {
+    case .close:
+        return ShotProfile(
+            offenseRatings: ["shooting.closeShot", "shooting.layups", "athleticism.burst"],
+            defenseRatings: ["defense.shotContest", "defense.perimeterDefense", "defense.postDefense"],
+            basePoints: 2
+        )
+    case .midrange:
+        return ShotProfile(
+            offenseRatings: ["shooting.midrangeShot", "skills.shotIQ", "athleticism.agility"],
+            defenseRatings: ["defense.shotContest", "defense.perimeterDefense", "defense.lateralQuickness"],
+            basePoints: 2
+        )
+    case .three:
+        return ShotProfile(
+            offenseRatings: ["shooting.threePointShooting", "skills.shotIQ"],
+            defenseRatings: ["defense.shotContest", "defense.perimeterDefense", "defense.offballDefense"],
+            basePoints: 3
+        )
+    case .layup:
+        return ShotProfile(
+            offenseRatings: ["shooting.layups", "athleticism.burst", "athleticism.vertical"],
+            defenseRatings: ["defense.shotContest", "athleticism.vertical", "defense.shotBlocking"],
+            basePoints: 2
+        )
+    case .dunk:
+        return ShotProfile(
+            offenseRatings: ["shooting.dunks", "athleticism.vertical", "athleticism.strength"],
+            defenseRatings: ["defense.shotContest", "athleticism.vertical", "defense.shotBlocking"],
+            basePoints: 2
+        )
+    case .hook:
+        return ShotProfile(
+            offenseRatings: ["postGame.postHooks", "postGame.postControl", "athleticism.strength"],
+            defenseRatings: ["defense.shotContest", "defense.postDefense", "defense.shotBlocking"],
+            basePoints: 2
+        )
+    case .fadeaway:
+        return ShotProfile(
+            offenseRatings: ["postGame.postFadeaways", "shooting.midrangeShot"],
+            defenseRatings: ["defense.shotContest", "defense.postDefense"],
+            basePoints: 2
+        )
+    }
+}
+
+private func baseMakeProbability(for shotType: ShotType) -> Double {
+    switch shotType {
+    case .three: return 0.33
+    case .midrange: return 0.38
+    case .close: return 0.45
+    case .layup: return 0.56
+    case .dunk: return 0.74
+    case .hook: return 0.44
+    case .fadeaway: return 0.40
+    }
+}
+
+private func makeScale(for shotType: ShotType) -> Double {
+    switch shotType {
+    case .three: return 0.09
+    case .midrange: return 0.10
+    case .close, .hook, .fadeaway: return 0.11
+    case .layup, .dunk: return 0.13
+    }
+}
+
+private func shotTypeEdge(for shotType: ShotType) -> Double {
+    switch shotType {
+    case .layup: return 0.02
+    case .dunk: return 0.04
+    case .midrange: return -0.04
+    case .fadeaway: return -0.02
+    case .three: return -0.04
+    case .hook: return 0.01
+    case .close: return 0
+    }
+}
+
+private func minMakeProbability(for shotType: ShotType) -> Double {
+    switch shotType {
+    case .three: return 0.22
+    case .midrange: return 0.28
+    case .close: return 0.32
+    case .layup: return 0.42
+    case .dunk: return 0.55
+    case .hook: return 0.30
+    case .fadeaway: return 0.26
+    }
+}
+
+private func maxMakeProbability(for shotType: ShotType) -> Double {
+    switch shotType {
+    case .three: return 0.52
+    case .midrange: return 0.56
+    case .close: return 0.66
+    case .layup: return 0.80
+    case .dunk: return 0.92
+    case .hook: return 0.64
+    case .fadeaway: return 0.58
+    }
+}
+
+private func isRimShot(_ shotType: ShotType) -> Bool {
+    switch shotType {
+    case .layup, .dunk, .hook, .close: return true
+    default: return false
+    }
+}
+
+private func isCornerSpot(_ spot: OffensiveSpot) -> Bool {
+    spot == .rightCorner || spot == .leftCorner
+}
+
+private func pickShooterSpot(player: Player, random: inout SeededRandom) -> OffensiveSpot {
+    let cornerWeight = getBaseRating(player, path: "shooting.cornerThrees") * 0.9
+    let upTopWeight = getBaseRating(player, path: "shooting.upTopThrees")
+    let postTend = getBaseRating(player, path: "tendencies.post")
+    let insideTend = getBaseRating(player, path: "tendencies.inside")
+    let total = cornerWeight + upTopWeight + postTend + insideTend
+    guard total > 0 else { return .topMiddle }
+    var pick = random.nextUnit() * total
+    pick -= cornerWeight
+    if pick <= 0 { return random.nextUnit() < 0.5 ? .rightCorner : .leftCorner }
+    pick -= upTopWeight
+    if pick <= 0 {
+        let picks: [OffensiveSpot] = [.topMiddle, .topRight, .topLeft]
+        return picks[random.int(0, picks.count - 1)]
+    }
+    pick -= postTend
+    if pick <= 0 { return random.nextUnit() < 0.5 ? .rightPost : .leftPost }
+    return .middlePaint
+}
+
+private func chooseShotFromTendencies(shooter: Player, spot: OffensiveSpot, random: inout SeededRandom) -> ShotType {
+    let shotIQ = getBaseRating(shooter, path: "skills.shotIQ")
+    let atRim = spot == .middlePaint || spot == .rightPost || spot == .leftPost
+
+    if atRim {
+        let hookW = getBaseRating(shooter, path: "postGame.postHooks") * 1.0
+        let fadeW = getBaseRating(shooter, path: "postGame.postFadeaways") * 0.8
+        let layupW = getBaseRating(shooter, path: "shooting.layups") * 1.1
+        let dunkW = getBaseRating(shooter, path: "shooting.dunks") * 0.9
+        let total = hookW + fadeW + layupW + dunkW
+        var pick = random.nextUnit() * max(total, 1)
+        pick -= hookW; if pick <= 0 { return .hook }
+        pick -= fadeW; if pick <= 0 { return .fadeaway }
+        pick -= layupW; if pick <= 0 { return .layup }
+        return .dunk
+    }
+
+    let isThreeSpot = spot == .topMiddle || spot == .topRight || spot == .topLeft || spot == .rightCorner || spot == .leftCorner
+
+    if isThreeSpot {
+        let threeUtility = getBaseRating(shooter, path: "shooting.threePointShooting") * 1.5
+            + getBaseRating(shooter, path: "tendencies.threePoint") * 0.9
+        let midUtility = getBaseRating(shooter, path: "shooting.midrangeShot") * 1.1
+            + getBaseRating(shooter, path: "tendencies.midrange") * 0.6
+        let closeUtility = getBaseRating(shooter, path: "shooting.closeShot") * 0.6
+            + getBaseRating(shooter, path: "tendencies.inside") * 0.5
+        if shotIQ >= 70 {
+            let items: [(ShotType, Double)] = [(.three, threeUtility), (.midrange, midUtility), (.close, closeUtility)]
+            let sorted = items.sorted { $0.1 > $1.1 }
+            return random.nextUnit() < 0.82 ? sorted[0].0 : sorted[1].0
+        }
+        let total = threeUtility + midUtility + closeUtility
+        var pick = random.nextUnit() * max(total, 1)
+        pick -= threeUtility; if pick <= 0 { return .three }
+        pick -= midUtility; if pick <= 0 { return .midrange }
+        return .close
+    }
+
+    let midW = getBaseRating(shooter, path: "shooting.midrangeShot") * 1.2
+        + getBaseRating(shooter, path: "tendencies.midrange") * 0.8
+    let closeW = getBaseRating(shooter, path: "shooting.closeShot") * 1.2
+        + getBaseRating(shooter, path: "tendencies.inside") * 0.7
+    let total = midW + closeW
+    var pick = random.nextUnit() * max(total, 1)
+    pick -= midW; if pick <= 0 { return .midrange }
+    return .close
 }

@@ -1194,7 +1194,11 @@ private func simulateScheduledGameInState(_ state: inout LeagueStore.State, sche
     }
 
     var random = SeededRandom(seed: hashString("sim:\(state.optionsSeed):\(game.gameId)"))
-    let result = simulateGame(homeTeam: state.teams[homeIndex].teamModel, awayTeam: state.teams[awayIndex].teamModel, random: &random)
+    var homeTeam = state.teams[homeIndex].teamModel
+    var awayTeam = state.teams[awayIndex].teamModel
+    applyPreGameModifiers(team: &homeTeam, isHome: true)
+    applyPreGameModifiers(team: &awayTeam, isHome: false)
+    let result = simulateGame(homeTeam: homeTeam, awayTeam: awayTeam, random: &random)
 
     let homeScore = result.home.score
     let awayScore = result.away.score
@@ -1419,4 +1423,41 @@ private func defaultRotationSlots(for team: Team) -> [UserRotationSlot] {
     }
 
     return starterSlots + benchSlots
+}
+
+private let homeCourtBoost = 1.03
+private let coachingEdgeMaxMultiplier = 0.055
+private let headCoachGameImpactWeight = 0.72
+private let gamePrepAssistantGameImpactWeight = 0.28
+
+func applyPreGameModifiers(team: inout Team, isHome: Bool) {
+    let staff = team.coachingStaff
+    let head = staff.headCoach
+    let prepIdx = staff.gamePrepAssistantIndex
+    let prep: Coach? = {
+        if let idx = prepIdx, idx >= 0, idx < staff.assistants.count { return staff.assistants[idx] }
+        return staff.assistants.first
+    }()
+
+    let headOff = Double(head.skills.offensiveCoaching)
+    let headDef = Double(head.skills.defensiveCoaching)
+    let prepOff = prep.map { Double($0.skills.offensiveCoaching) } ?? headOff
+    let prepDef = prep.map { Double($0.skills.defensiveCoaching) } ?? headDef
+
+    let offEdge = (headOff * headCoachGameImpactWeight + prepOff * gamePrepAssistantGameImpactWeight - 50) / 50
+    let defEdge = (headDef * headCoachGameImpactWeight + prepDef * gamePrepAssistantGameImpactWeight - 50) / 50
+    let offMult = 1 + max(-1, min(1, offEdge)) * coachingEdgeMaxMultiplier
+    let defMult = 1 + max(-1, min(1, defEdge)) * coachingEdgeMaxMultiplier
+    let homeMult = isHome ? homeCourtBoost : 1.0
+
+    for idx in team.players.indices {
+        team.players[idx].condition.offensiveCoachingModifier = offMult
+        team.players[idx].condition.defensiveCoachingModifier = defMult
+        team.players[idx].condition.homeCourtMultiplier = homeMult
+    }
+    for idx in team.lineup.indices {
+        team.lineup[idx].condition.offensiveCoachingModifier = offMult
+        team.lineup[idx].condition.defensiveCoachingModifier = defMult
+        team.lineup[idx].condition.homeCourtMultiplier = homeMult
+    }
 }
