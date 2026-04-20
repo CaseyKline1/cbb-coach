@@ -69,6 +69,73 @@ git show e988ef4:Sources/CBBCoachCore/Resources/js/gameEngine.bundle.js > /tmp/j
 
 Tests: 7/7 pass. CLI sample game produced a realistic 80-69 line.
 
+### Follow-up slice (late-night continuation)
+
+- **Game-state-aware play selection** — `choosePlayType` and the per-branch
+  rating reads in `resolvePlay` (drive/post/screen/pop) now call `getRating`
+  instead of `getBaseRating`, so fatigue, clutch, coaching, and home-court
+  modifiers bite on play choice and shot selection. Hot-hand / tired-legs
+  now swing what a ball-handler tries to do, not just whether the shot goes.
+- **Take fouls** — `maybeCallNonShootingFoul` now has an intentional-foul
+  branch: when the defense is trailing by 1–9 in the final period with ≤45s
+  left, foul chance jumps to 35% (65% inside the last 20s). Still routes
+  through the existing 1-and-1 / double-bonus logic, so take-fouls correctly
+  put trailing-team opponents on the line and stop the clock.
+
+### Full-list pass (this session)
+
+All nine open items from the priority list are now ported. Short notes per
+item; browse `GameEngine.swift` for the full implementations.
+
+1. **Full interaction chains** (`zoneDistanceAdvantage`,
+   `positionMatchedDefenderIndex`, drive-and-kick on help). Zone schemes now
+   tilt shot make probability based on spot; kicked-out receivers are matched
+   to a position-appropriate defender. `dribbleDrive` rolls a help-defender
+   chance that converts the drive into a kickout via `evaluatePassTarget`.
+2. **Full P&R/P&P dynamics** (`chooseScreenNavigation`,
+   `resolvePickAndRollOutcome`, `choosePopDestination`). The defender
+   picks over/under/switch/ice against each screen; each outcome spawns a
+   different `PlayOutcome` (driver finish, roller dunk, pull-up 3,
+   post-mismatch, reset). Pick-and-pop compares expected midrange vs
+   three value to pick the destination.
+3. **Directional rebounds** (`reboundZone`, `positionProximity`,
+   extended `pickRebounderIndex`). Each miss maps to a zone by shot+spot;
+   rebounder weights multiply a zone bias by positional proximity and an
+   opposing-team boxout resistance factor.
+4. **Pass delivery** (`resolvePassInterception`). Whenever the shooter
+   differs from the ball handler, a per-defender interception roll happens
+   up front; success credits the stealer and seeds a steal-source
+   transition.
+5. **Rotation-target subs** (`computeTargetMinutesMap`,
+   `rankSubCandidates`, rewritten `runAutoSubstitutions`). Roster-wide
+   ranking by `skill*0.62 + energy*0.3 + rotationNeed*1.9` with forced
+   bench on foul trouble (4+ fouls pre-clutch, 5 always), per-team
+   25-second sub-cooldown via `lastSubElapsedGameSeconds`.
+6. **Fast break + transition window** (`maybeResolveFastBreak`,
+   `pickTransitionRunnerIndex`, `pickTransitionPointDefenderIndex`,
+   `chooseFastBreakFinish`). `StoredState.pendingTransition` is seeded by
+   defensive rebounds and steals; at the top of a chunk the transition
+   resolves push → race → finish or reverts to half-court. Made finishes
+   return `made_shot`; missed trigger a rebound contest with
+   transition-favorable defense rebounding.
+7. **Press defense** (`shouldApplyPress`, `maybeResolvePress`). Defense's
+   `tendencies.press` or late-game trailing triggers a press roll. Outcomes:
+   trap steal (turnover + steal-source transition), survived press break
+   that may seed a `press_break`-source transition, or fall-through to
+   half-court.
+8. **Off-ball relocation** (`evaluatePassTarget`). `passAroundForShot` and
+   drive-and-kick both use a scorer that blends expected shot EV, off-ball
+   movement vs matched defender, and pass-perception risk.
+9. **Foul variety**: offensive charges on drives (via `play.isDrive`),
+   loose-ball fouls in rebound contests, and `maybeCallTechnicalFoul`
+   firing on dead balls (~0.3% rate; 1 FT awarded to the opposing team's
+   best free-throw shooter).
+
+Verification: `swift build`, `swift test` (7/7), and `swift run CBBCoachCLI`
+all green. Sample box scores show healthy AST/REB/STL/BLK distribution.
+The CLI also prints per-team FG/3PT/AST/REB/STL/BLK/TO/PF totals for
+quick hand-eye.
+
 ## What still needs to be ported, in priority order
 
 Each item points to the relevant JS line range in `/tmp/jsengine.js`.

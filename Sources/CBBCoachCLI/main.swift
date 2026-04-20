@@ -27,6 +27,21 @@ let result = simulateGame(homeTeam: home, awayTeam: away, random: &random)
 
 print("\(result.away.name) \(result.away.score) - \(result.home.name) \(result.home.score)")
 print("Winner: \(result.winner ?? "Tie")")
+
+for team in result.boxScore ?? [] {
+    let total3a = team.players.reduce(0) { $0 + $1.threeAttempts }
+    let total3m = team.players.reduce(0) { $0 + $1.threeMade }
+    let totalFga = team.players.reduce(0) { $0 + $1.fgAttempts }
+    let totalFgm = team.players.reduce(0) { $0 + $1.fgMade }
+    let tov = team.teamExtras?["turnovers"] ?? 0
+    let blocks = team.players.reduce(0) { $0 + $1.blocks }
+    let steals = team.players.reduce(0) { $0 + $1.steals }
+    let reb = team.players.reduce(0) { $0 + $1.rebounds }
+    let ast = team.players.reduce(0) { $0 + $1.assists }
+    let pf = team.players.reduce(0) { $0 + $1.fouls }
+    print("\(team.name): FG \(totalFgm)/\(totalFga) 3PT \(total3m)/\(total3a) AST \(ast) REB \(reb) STL \(steals) BLK \(blocks) TO \(tov) PF \(pf)")
+}
+
 print("Recent events:")
 for event in result.playByPlay.suffix(10) {
     let half = event.half ?? -1
