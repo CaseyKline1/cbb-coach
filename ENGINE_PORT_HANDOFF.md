@@ -14,7 +14,9 @@ The JS reference was preserved at commit `e988ef4` and extracted to `/tmp/jsengi
 git show e988ef4:Sources/CBBCoachCore/Resources/js/gameEngine.bundle.js > /tmp/jsengine.js
 ```
 
-## What's already restored (commit `4d2b3ad` and earlier)
+## What's already restored
+
+### Earlier sessions (commits `4d2b3ad` and earlier)
 
 - `NativeGameStateStore` with handle-based state, multi-team trackers
 - `resolveInteraction` with weighted skill scores, mobility-size edge,
@@ -22,8 +24,7 @@ git show e988ef4:Sources/CBBCoachCore/Resources/js/gameEngine.bundle.js > /tmp/j
 - `getRating` with fatigue, clutch, coaching, and home-court modifiers
   (JS ~632–665)
 - Possession loop, shot-clock tracking, plus-minus, minutes/energy
-- Assist picker (simple), rebound picker (simple, not directional), basic
-  auto-substitutions, clamp/logistic/average utilities
+- Assist picker (simple), rebound picker (simple), basic auto-substitutions
 - Shot-type selection from player tendencies + court spot
   (`chooseShotFromTendencies`, `pickShooterSpot`) covering layup/dunk/hook/
   fadeaway/close/midrange/three
@@ -32,77 +33,117 @@ git show e988ef4:Sources/CBBCoachCore/Resources/js/gameEngine.bundle.js > /tmp/j
 - Blocks on missed rim attempts
 - `applyPreGameModifiers` in LeagueEngine sets `homeCourtMultiplier`,
   `offensiveCoachingModifier`, `defensiveCoachingModifier` on each player
-  before sim — so the existing rating pipeline actually uses them
+  before sim
+
+### This session
+
+- **Play-type dispatcher** (`choosePlayType`, `resolvePlay`) — each possession
+  now picks one of `dribbleDrive`, `postUp`, `pickAndRoll`, `pickAndPop`,
+  `passAroundForShot` weighted by player + formation biases. Each branch
+  picks its own shooter/defender/shot-type/spot and returns edge/make/foul
+  bonuses and assist candidate indices. Drives rim-attack with foul bonus;
+  post-up picks the best post-capable teammate and shoots hooks/fades/layups;
+  P&R picks a screener, resolves screen effectiveness, then the roller may
+  finish or the ball-handler keeps it; P&P has the screener pop for mid/3;
+  pass-around finds the best open-shot teammate.
+- **Directional rebounds** — `pickRebounderIndex` now takes the shot type and
+  biases toward guards/speed on three-point misses and bigs/strength on rim
+  misses.
+- **Dead-ball subs + timeouts** — `runAutoSubstitutions` now only fires after
+  made shots, turnovers, fouls, and bonus fouls (not every chunk). New
+  `maybeCallTimeout` fires when trailing late in the game or when starters
+  are gassed; a timeout decrements `team.timeouts` and restores energy to the
+  on-court lineup.
+- **Clutch sync** — `syncClutchTime` flips each on-court player's
+  `condition.clutchTime` each chunk based on half + time + score margin
+  (final 5:00, margin ≤ 8).
+- **Team fouls + bonus FTs** — `teamFoulsInHalf` is tracked on the stored
+  state; `registerDefensiveFoul` increments on every shooting/non-shooting
+  foul. A new `maybeCallNonShootingFoul` hook runs on `setup` chunks and
+  awards 1-and-1 at 7+ team fouls, double bonus at 10+. Team fouls reset at
+  halftime and each overtime.
+- **Halftime energy recovery** — `recoverAllPlayersForHalftime` restores 40
+  energy to every roster player between halves and between overtimes.
+- **Formation cycle** — `advanceOffensiveFormation` cycles
+  `team.formation` through `team.formations` each possession.
+
+Tests: 7/7 pass. CLI sample game produced a realistic 80-69 line.
 
 ## What still needs to be ported, in priority order
 
 Each item points to the relevant JS line range in `/tmp/jsengine.js`.
 
-### 1. Play-type dispatcher — HIGH IMPACT (JS 1128–1217, 3882–5367)
-The core of the JS possession model. `choosePlayType` weighs player tendencies
-and team tendencies, then dispatches one of five branches inside
-`resolveActionChunk`:
-- `dribble_drive` (JS 3971–4250): drive → help defender → pass/shot
-- `pick_and_roll` (JS ~4250–4650): screener dynamics, roller shot, ball-
-  handler shot, short-roll pass
-- `pick_and_pop` (JS ~4650–4920): screener pops to elbow/3, spot selection
-- `pass_around_for_shot` (JS ~4920–5200): ball movement, pass receiver
-  open-shot evaluation, `maybeRelocateOffBallPlayers`
-- `post_up` (JS ~5200–5367): post control interaction, hook/fadeaway/layup/
-  dunk shot tiers
+### 1. Full interaction chains — HIGH IMPACT (JS 3882–5367)
 
-Pre-reqs: `assignOffensiveSpots` (JS 853–868), `getOnBallDefender`
-(JS 870–903), `zoneDistanceAdvantage` (JS 1095–1108).
+The current play-type dispatcher is simplified: it picks a shooter and fires a
+single shot interaction with per-play edge/make/foul bonuses. The JS version
+chains multiple interactions (drive → help defender → pass → shot) with each
+stage possibly kicking the ball to another branch. To get there we'd need:
 
-### 2. Pick-and-roll / screen dynamics (JS 1219–1423)
-`pickScreenerIndex`, `choosePopDestination`, `resolvePickActionDynamics` —
-computes screen effectiveness, ball-handler pressure, screener pressure,
-drive-focus splits. Needed by the pick_and_roll/pick_and_pop branches.
+- `assignOffensiveSpots` (JS 853–868) to place each offensive player at a
+  spot for the possession
+- `getOnBallDefender` (JS 870–903) for proper defender matching by position
+- `zoneDistanceAdvantage` (JS 1095–1108) to modify spot shooting efficacy
+  based on defense scheme
+- Stage-specific `resolveDriveInteraction`, `resolveHelpInteraction`,
+  `resolvePostControlInteraction` that each return a branch decision
 
-### 3. Directional rebound system (JS 969–1108, 2600–2900)
-`pickReboundDirection`, `buildReboundLandingSpot`, `resolveBoxoutPositioning`,
-`collectReboundCandidates`. The current Swift rebounder pick is a simple
-weighted draw; the JS version places a landing coordinate based on shot
-location + shot type (long rebounds on threes), then picks from candidates
-within radius whose boxout multipliers weight the outcome.
+### 2. Full pick-and-roll/pick-and-pop dynamics (JS 1219–1423)
+
+Current P&R/P&P uses a simplified `screenEffectiveness` helper.
+The JS version computes separate `screenProfile`, `ballHandlerAssist`,
+`defenseNavigation`, roller/pop threats, and picks a short-roll pass option.
+`choosePopDestination` selects elbow vs top-of-key 3 via expected shot value.
+
+### 3. Full directional rebound system (JS 969–1108, 2600–2900)
+
+Current Swift rebounder weights by shot type but doesn't compute a landing
+spot. JS `pickReboundDirection`, `buildReboundLandingSpot`,
+`resolveBoxoutPositioning`, `collectReboundCandidates` place a coordinate and
+pick from candidates within a radius weighted by boxout multipliers.
 
 ### 4. Pass delivery chain (JS 1657–1676, 2050–2350)
-`resolvePass`, `resolvePassDelivery`, `evaluatePassTarget`. Multi-defender
-interception model with wingspan bonus, loose-ball branch. Currently the
-Swift engine has no real pass resolution — passes are implicit in "possession
-continues".
 
-### 5. Substitutions with rotation targets + timeouts (JS 384–581)
-`getTargetMinutesMap`, `rankLineupCandidates`, `runDeadBallSubstitutions`,
-`maybeTakeTimeout`. Existing Swift `runAutoSubstitutions` is minute-/energy-
-driven but doesn't respect explicit `team.rotation.minuteTargets`, doesn't
-force out fouled-out players at dead balls, and never calls timeouts.
-Dead-ball subs should fire on made shots and free throws, not every chunk.
+`resolvePass`, `resolvePassDelivery`, `evaluatePassTarget`. Multi-defender
+interception model with wingspan bonus, loose-ball branch. Currently Swift
+has no pass resolution — passes are implicit. Would enable realistic
+assist-turnover counts and deflection plays.
+
+### 5. Rotation-target-driven substitutions (JS 384–581)
+
+`runAutoSubstitutions` fires on dead balls now, but it still uses a simple
+"compare energy + current minutes vs target" heuristic. JS
+`getTargetMinutesMap`, `rankLineupCandidates`, `runDeadBallSubstitutions`
+build a weighted ranking against coach-preferred rotation patterns, respect
+foul trouble (4+ fouls late, 5 = out), and dynamically adjust targets based
+on game script.
 
 ### 6. Fast break + transition window (JS 2850–3350)
+
 `pickTransitionRunner`, `chooseFastBreakFinishType`, `resolveFastBreakWindow`,
 `resolveTransitionMissRebound`. Triggered by `state.pendingTransition` set by
-defensive rebounds/steals. Currently every possession is half-court.
+defensive rebounds/steals. Currently every possession is half-court — no
+transition bonus for defensive rebound or steal.
 
 ### 7. Press defense + backcourt (JS 3350–3742)
-`shouldApplyPressThisPossession`, `pickPressTrapDefenders`, `pickPressReceiver`,
-`pickPressStealer`, `resolveBackcourtLooseBallRecovery`,
-`resolvePressTrapInteraction`, `resolvePressBreakWindow`. Driven by
-`team.tendencies.press` and `trapRate`. Currently no press logic.
 
-### 8. Clutch sync + energy recovery hooks (JS 205–355)
-`syncClutchTimeState` — already effectively in Swift via
-`player.condition.clutchTime`, but isn't toggled each chunk based on game
-state. `recoverAllPlayers` at halftime/timeout also not wired.
+`shouldApplyPressThisPossession`, `pickPressTrapDefenders`,
+`pickPressReceiver`, `pickPressStealer`,
+`resolveBackcourtLooseBallRecovery`, `resolvePressTrapInteraction`,
+`resolvePressBreakWindow`. Driven by `team.tendencies.press` and `trapRate`.
+Currently no press logic.
 
-### 9. Formation cycle advance (JS 766–805)
-`normalizeFormationCycle`, `advanceTeamOffensiveFormation`,
-`getCurrentOffensiveFormation`. Each possession in JS uses the team's current
-formation in a cycle; Swift currently ignores `team.formations`.
+### 8. Off-ball movement + open-shot relocation (JS 4920–5200)
 
-### 10. Non-shooting fouls + bonus free throws (JS ~1900–2100)
-Currently only shooting fouls draw FTs in Swift. JS tracks team fouls per
-half and awards bonus FTs on 7+ team fouls.
+`maybeRelocateOffBallPlayers` repositions off-ball offensive players based on
+ball position and formation, then `evaluatePassTarget` scores pass options.
+Currently `passAroundForShot` just picks the single-best open-shot teammate.
+
+### 9. Non-shooting fouls (more variety)
+
+Current hook only fires on `setup` chunks at a flat 4%. JS has loose-ball
+fouls, offensive charges, take fouls late in game (intentional foul when
+trailing), and technicals. All currently missing.
 
 ## Architectural notes for the follow-up
 
@@ -111,12 +152,17 @@ half and awards bonus FTs on 7+ team fouls.
   track players by `(teamId, rosterIndex)` pairs, not by `Player` equality.
 - `getRating` already applies fatigue/clutch/coaching/home-court correctly.
   New logic should call `getRating` (not `getBaseRating`) for any computation
-  that should respect game state.
+  that should respect game state — note that much of the play-type dispatcher
+  added this session uses `getBaseRating` for simplicity; upgrading those
+  call sites to `getRating` would make fatigue/clutch bite on play selection.
 - `condition.possessionRole` is toggled each chunk by `syncPossessionRoles`.
-  Keep this invariant so the coaching modifier hits the right side.
+  `condition.clutchTime` is toggled each chunk by `syncClutchTime`.
 - The JS engine uses `Map<Player, T>` keyed on object identity for
   involvement/box-score lookups. In Swift use `(teamId, rosterIndex)` tuples
   or small int maps instead — `Player` is a struct and `==` is deep-equal.
+- New state fields on `StoredState`:
+  - `teamFoulsInHalf: [Int]` — resets each half/OT
+  - `formationCycleIndex: [Int]` — rotates through `team.formations`
 
 ## Public API that must stay stable
 
@@ -125,6 +171,8 @@ half and awards bonus FTs on 7+ team fouls.
 `SimulatedGameResult.playByPlay` events with `half` set. `LeagueEngine.swift`
 calls `simulateGame(homeTeam:awayTeam:random:)`. These shapes must be
 preserved.
+
+New event types added this session: `non_shooting_foul`, `bonus_foul`.
 
 ## Verification
 
