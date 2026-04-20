@@ -1631,10 +1631,22 @@ private struct RosterRatingsView: View {
     }
 
     private func combinedThreePointValue(from attributes: [String: Int]) -> Int? {
-        let values = threePointComponentKeys.compactMap { attributes[$0] }
-        guard !values.isEmpty else { return nil }
-        let average = Double(values.reduce(0, +)) / Double(values.count)
-        return Int(average.rounded())
+        var weightedTotal = 0
+        var totalWeight = 0
+        if let threePointShooting = attributes["threePointShooting"] {
+            weightedTotal += threePointShooting * 2
+            totalWeight += 2
+        }
+        if let cornerThrees = attributes["cornerThrees"] {
+            weightedTotal += cornerThrees
+            totalWeight += 1
+        }
+        if let upTopThrees = attributes["upTopThrees"] {
+            weightedTotal += upTopThrees
+            totalWeight += 1
+        }
+        guard totalWeight > 0 else { return nil }
+        return Int((Double(weightedTotal) / Double(totalWeight)).rounded())
     }
 }
 
@@ -2038,10 +2050,22 @@ private struct PlayerCardDetailView: View {
     }
 
     private func combinedThreePointValue(from attributes: [String: Int]) -> Int? {
-        let values = threePointComponentKeys.compactMap { attributes[$0] }
-        guard !values.isEmpty else { return nil }
-        let average = Double(values.reduce(0, +)) / Double(values.count)
-        return Int(average.rounded())
+        var weightedTotal = 0
+        var totalWeight = 0
+        if let threePointShooting = attributes["threePointShooting"] {
+            weightedTotal += threePointShooting * 2
+            totalWeight += 2
+        }
+        if let cornerThrees = attributes["cornerThrees"] {
+            weightedTotal += cornerThrees
+            totalWeight += 1
+        }
+        if let upTopThrees = attributes["upTopThrees"] {
+            weightedTotal += upTopThrees
+            totalWeight += 1
+        }
+        guard totalWeight > 0 else { return nil }
+        return Int((Double(weightedTotal) / Double(totalWeight)).rounded())
     }
 
     private func score(_ values: Int?...) -> Double {
