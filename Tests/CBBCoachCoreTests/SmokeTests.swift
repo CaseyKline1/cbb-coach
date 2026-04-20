@@ -49,6 +49,15 @@ func simulateGameSmoke() {
     #expect(result.home.score >= 0)
     #expect(result.away.score >= 0)
     #expect(!result.playByPlay.isEmpty)
+    #expect(result.home.score <= 140)
+    #expect(result.away.score <= 140)
+    #expect(result.boxScore?.count == 2)
+    if let homeBox = result.home.boxScore {
+        #expect(homeBox.players.reduce(0) { $0 + $1.points } == result.home.score)
+    }
+    if let awayBox = result.away.boxScore {
+        #expect(awayBox.players.reduce(0) { $0 + $1.points } == result.away.score)
+    }
 }
 
 @Test("Native resolveInteraction favors stronger offensive profile")
@@ -89,4 +98,31 @@ func leagueFlowSmoke() throws {
     #expect(before.totalScheduledGames > 0)
 
     _ = advanceToNextUserGame(&league)
+}
+
+@Test("Completed league games include box score payload for stat views")
+func completedLeagueGamesCarryBoxScore() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "box-score-tests"))
+    autoFillUserNonConferenceOpponents(&league)
+    generateSeasonSchedule(&league)
+    _ = advanceToNextUserGame(&league)
+
+    let completed = getCompletedLeagueGames(league)
+    #expect(!completed.isEmpty)
+    guard let firstResult = completed.first?.result else {
+        Issue.record("Missing result payload on completed game")
+        return
+    }
+
+    guard case let .object(resultObject) = firstResult else {
+        Issue.record("Result payload should be an object")
+        return
+    }
+
+    guard let boxScoreValue = resultObject["boxScore"], case let .array(boxArray) = boxScoreValue else {
+        Issue.record("Missing boxScore array in completed game result")
+        return
+    }
+
+    #expect(boxArray.count == 2)
 }

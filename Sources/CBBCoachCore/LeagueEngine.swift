@@ -244,6 +244,8 @@ private struct LeagueStore {
         var homeScore: Int
         var awayScore: Int
         var winnerTeamId: String?
+        var wentToOvertime: Bool
+        var boxScore: [TeamBoxScore]?
     }
 
     struct TeamState: Codable, Equatable, Sendable {
@@ -951,11 +953,16 @@ private func userSummaryFromGame(_ game: LeagueStore.ScheduledGame, userTeamId: 
     let opponentName = isHome ? game.awayTeamName : game.homeTeamName
     let resultValue: JSONValue?
     if let result = game.result {
-        resultValue = .object([
+        var resultObject: [String: JSONValue] = [
             "homeScore": .number(Double(result.homeScore)),
             "awayScore": .number(Double(result.awayScore)),
             "winnerTeamId": result.winnerTeamId.map(JSONValue.string) ?? .null,
-        ])
+            "wentToOvertime": .bool(result.wentToOvertime),
+        ]
+        if let box = result.boxScore {
+            resultObject["boxScore"] = boxScoreJSONValue(box)
+        }
+        resultValue = .object(resultObject)
     } else {
         resultValue = nil
     }
@@ -982,11 +989,16 @@ private func userSummaryFromGame(_ game: LeagueStore.ScheduledGame, userTeamId: 
 private func leagueSummaryFromGame(_ game: LeagueStore.ScheduledGame) -> LeagueGameSummary {
     let resultValue: JSONValue?
     if let result = game.result {
-        resultValue = .object([
+        var resultObject: [String: JSONValue] = [
             "homeScore": .number(Double(result.homeScore)),
             "awayScore": .number(Double(result.awayScore)),
             "winnerTeamId": result.winnerTeamId.map(JSONValue.string) ?? .null,
-        ])
+            "wentToOvertime": .bool(result.wentToOvertime),
+        ]
+        if let box = result.boxScore {
+            resultObject["boxScore"] = boxScoreJSONValue(box)
+        }
+        resultValue = .object(resultObject)
     } else {
         resultValue = nil
     }
@@ -1004,6 +1016,46 @@ private func leagueSummaryFromGame(_ game: LeagueStore.ScheduledGame) -> LeagueG
         completed: game.completed,
         result: resultValue
     )
+}
+
+private func boxScoreJSONValue(_ boxScore: [TeamBoxScore]) -> JSONValue {
+    .array(boxScore.map(teamBoxScoreJSONValue))
+}
+
+private func teamBoxScoreJSONValue(_ team: TeamBoxScore) -> JSONValue {
+    var object: [String: JSONValue] = [
+        "name": .string(team.name),
+        "players": .array(team.players.map(playerBoxScoreJSONValue)),
+    ]
+    if let teamExtras = team.teamExtras {
+        object["teamExtras"] = .object(teamExtras.mapValues { .number(Double($0)) })
+    }
+    return .object(object)
+}
+
+private func playerBoxScoreJSONValue(_ player: PlayerBoxScore) -> JSONValue {
+    .object([
+        "playerName": .string(player.playerName),
+        "position": .string(player.position),
+        "minutes": .number(player.minutes),
+        "points": .number(Double(player.points)),
+        "fgMade": .number(Double(player.fgMade)),
+        "fgAttempts": .number(Double(player.fgAttempts)),
+        "threeMade": .number(Double(player.threeMade)),
+        "threeAttempts": .number(Double(player.threeAttempts)),
+        "ftMade": .number(Double(player.ftMade)),
+        "ftAttempts": .number(Double(player.ftAttempts)),
+        "rebounds": .number(Double(player.rebounds)),
+        "offensiveRebounds": .number(Double(player.offensiveRebounds)),
+        "defensiveRebounds": .number(Double(player.defensiveRebounds)),
+        "assists": .number(Double(player.assists)),
+        "steals": .number(Double(player.steals)),
+        "blocks": .number(Double(player.blocks)),
+        "turnovers": .number(Double(player.turnovers)),
+        "fouls": .number(Double(player.fouls)),
+        "plusMinus": player.plusMinus.map { .number(Double($0)) } ?? .null,
+        "energy": player.energy.map(JSONValue.number) ?? .null,
+    ])
 }
 
 private func autoFillUserNonConferenceOpponentsInState(_ state: inout LeagueStore.State, seed: String) {
@@ -1154,7 +1206,13 @@ private func simulateScheduledGameInState(_ state: inout LeagueStore.State, sche
     }
 
     state.schedule[scheduleIndex].completed = true
-    state.schedule[scheduleIndex].result = LeagueStore.GameResult(homeScore: homeScore, awayScore: awayScore, winnerTeamId: winnerTeamId)
+    state.schedule[scheduleIndex].result = LeagueStore.GameResult(
+        homeScore: homeScore,
+        awayScore: awayScore,
+        winnerTeamId: winnerTeamId,
+        wentToOvertime: result.playByPlay.contains(where: { ($0.half ?? 0) > 2 }),
+        boxScore: result.boxScore
+    )
 
     state.teams[homeIndex].pointsFor += homeScore
     state.teams[homeIndex].pointsAgainst += awayScore
