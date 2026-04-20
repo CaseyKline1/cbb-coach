@@ -1404,26 +1404,26 @@ private func sampleHeightInches(for position: PlayerPosition, random: inout Seed
 
     switch position {
     case .pg:
-        minHeight = 71; maxHeight = 77
-        buckets = [.init(inches: 73, weight: 2), .init(inches: 74, weight: 4), .init(inches: 75, weight: 3), .init(inches: 76, weight: 1)]
+        minHeight = 69; maxHeight = 77
+        buckets = [.init(inches: 71, weight: 2), .init(inches: 72, weight: 4), .init(inches: 73, weight: 4), .init(inches: 74, weight: 3), .init(inches: 75, weight: 1)]
     case .sg:
-        minHeight = 72; maxHeight = 79
-        buckets = [.init(inches: 74, weight: 2), .init(inches: 75, weight: 3), .init(inches: 76, weight: 3), .init(inches: 77, weight: 2)]
+        minHeight = 70; maxHeight = 79
+        buckets = [.init(inches: 72, weight: 2), .init(inches: 73, weight: 3), .init(inches: 74, weight: 4), .init(inches: 75, weight: 3), .init(inches: 76, weight: 2)]
     case .cg:
-        minHeight = 72; maxHeight = 78
-        buckets = [.init(inches: 74, weight: 2), .init(inches: 75, weight: 4), .init(inches: 76, weight: 3), .init(inches: 77, weight: 1)]
+        minHeight = 70; maxHeight = 78
+        buckets = [.init(inches: 72, weight: 2), .init(inches: 73, weight: 4), .init(inches: 74, weight: 4), .init(inches: 75, weight: 3), .init(inches: 76, weight: 1)]
     case .sf, .wing:
-        minHeight = 74; maxHeight = 81
-        buckets = [.init(inches: 76, weight: 2), .init(inches: 77, weight: 3), .init(inches: 78, weight: 3), .init(inches: 79, weight: 2)]
+        minHeight = 72; maxHeight = 81
+        buckets = [.init(inches: 74, weight: 2), .init(inches: 75, weight: 3), .init(inches: 76, weight: 4), .init(inches: 77, weight: 3), .init(inches: 78, weight: 2)]
     case .f:
-        minHeight = 76; maxHeight = 82
-        buckets = [.init(inches: 77, weight: 2), .init(inches: 78, weight: 3), .init(inches: 79, weight: 3), .init(inches: 80, weight: 2)]
+        minHeight = 74; maxHeight = 82
+        buckets = [.init(inches: 76, weight: 2), .init(inches: 77, weight: 3), .init(inches: 78, weight: 4), .init(inches: 79, weight: 3), .init(inches: 80, weight: 1)]
     case .pf:
-        minHeight = 77; maxHeight = 84
-        buckets = [.init(inches: 79, weight: 2), .init(inches: 80, weight: 3), .init(inches: 81, weight: 3), .init(inches: 82, weight: 2)]
+        minHeight = 75; maxHeight = 84
+        buckets = [.init(inches: 77, weight: 2), .init(inches: 78, weight: 3), .init(inches: 79, weight: 4), .init(inches: 80, weight: 3), .init(inches: 81, weight: 1)]
     case .c, .big:
-        minHeight = 79; maxHeight = 86
-        buckets = [.init(inches: 80, weight: 1), .init(inches: 81, weight: 2), .init(inches: 82, weight: 3), .init(inches: 83, weight: 3), .init(inches: 84, weight: 2)]
+        minHeight = 77; maxHeight = 85
+        buckets = [.init(inches: 79, weight: 2), .init(inches: 80, weight: 4), .init(inches: 81, weight: 4), .init(inches: 82, weight: 3), .init(inches: 83, weight: 1)]
     }
 
     let sampled = sampleWeightedHeight(buckets, random: &random) + random.int(-1, 1)
