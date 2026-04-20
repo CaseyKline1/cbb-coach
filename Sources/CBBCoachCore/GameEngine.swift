@@ -1815,7 +1815,7 @@ private func resolvePlay(
             .max() ?? 50
         let visionScore = getRating(ballHandler, path: "skills.passingVision") * 0.6
             + getRating(ballHandler, path: "skills.shotIQ") * 0.4
-        let kickChance = clamp(0.18 + (helpScore - visionScore) / 260, min: 0.06, max: 0.45)
+        let kickChance = clamp(0.3 + (helpScore - visionScore) / 240, min: 0.12, max: 0.65)
         if random.nextUnit() < kickChance && offenseLineup.count > 1 {
             let receiverIdx = evaluatePassTarget(
                 offenseLineup: offenseLineup,
@@ -1939,6 +1939,39 @@ private func resolvePlay(
             screenerDefender: screenerDefender
         )
         let popDest = choosePopDestination(screener: screener, random: &random)
+        let offBallKickChance = clamp(
+            0.24
+                + (100 - getRating(pickActionBallHandler, path: "tendencies.shootVsPass")) / 260
+                + (getRating(pickActionBallHandler, path: "skills.passingVision") - 50) / 320,
+            min: 0.12,
+            max: 0.5
+        )
+        let alternateShooterIdx: Int? = {
+            guard offenseLineup.count > 2 && random.nextUnit() < offBallKickChance else { return nil }
+            let idx = evaluatePassTarget(
+                offenseLineup: offenseLineup,
+                defenseLineup: defenseLineup,
+                ballHandlerIdx: pickActionBallHandlerIdx,
+                random: &random
+            )
+            return (idx != pickActionBallHandlerIdx && idx != screenerIdx) ? idx : nil
+        }()
+        if let receiverIdx = alternateShooterIdx {
+            let shooter = offenseLineup[receiverIdx]
+            let spot = pickShooterSpot(player: shooter, random: &random)
+            let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
+            return PlayOutcome(
+                shooterLineupIndex: receiverIdx,
+                defenderLineupIndex: min(receiverIdx, defenseLineup.count - 1),
+                shotType: shotType,
+                spot: spot,
+                edgeBonus: screenEdge * 0.22 + 0.08,
+                makeBonus: 0.02,
+                foulBonus: 0,
+                assistCandidateIndices: [pickActionBallHandlerIdx],
+                assistForceChance: 0.74
+            )
+        }
         return PlayOutcome(
             shooterLineupIndex: screenerIdx,
             defenderLineupIndex: screenerDefenderIdx,
@@ -2137,11 +2170,18 @@ private func resolvePickAndRollOutcome(
 ) -> PlayOutcome {
     let ballHandler = offenseLineup[ballHandlerIdx]
     let screener = offenseLineup[screenerIdx]
+    let passLean = clamp(
+        0.55
+            + (50 - getRating(ballHandler, path: "tendencies.shootVsPass")) / 150
+            + (getRating(ballHandler, path: "skills.passingVision") - 50) / 300,
+        min: 0.4,
+        max: 0.82
+    )
 
     switch navigation {
     case .over:
         // Ball handler drives off the screen; roller threat pulls help.
-        let rollerFinishChance = clamp(0.36 + screenEdge * 0.28, min: 0.15, max: 0.65)
+        let rollerFinishChance = clamp(0.44 + screenEdge * 0.3 + (passLean - 0.55) * 0.2, min: 0.2, max: 0.75)
         if random.nextUnit() < rollerFinishChance {
             let takesDunk = getRating(screener, path: "shooting.dunks") > 65 && random.nextUnit() < 0.45
             return PlayOutcome(
@@ -2154,6 +2194,29 @@ private func resolvePickAndRollOutcome(
                 foulBonus: 0.03,
                 assistCandidateIndices: [ballHandlerIdx],
                 assistForceChance: 0.82,
+                isDrive: false
+            )
+        }
+        if random.nextUnit() < clamp(passLean * 0.34, min: 0.12, max: 0.42) {
+            let receiverIdx = evaluatePassTarget(
+                offenseLineup: offenseLineup,
+                defenseLineup: defenseLineup,
+                ballHandlerIdx: ballHandlerIdx,
+                random: &random
+            )
+            let shooter = offenseLineup[receiverIdx]
+            let spot = pickShooterSpot(player: shooter, random: &random)
+            let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
+            return PlayOutcome(
+                shooterLineupIndex: receiverIdx,
+                defenderLineupIndex: min(receiverIdx, defenseLineup.count - 1),
+                shotType: shotType,
+                spot: spot,
+                edgeBonus: screenEdge * 0.24 + 0.06,
+                makeBonus: 0.02,
+                foulBonus: 0,
+                assistCandidateIndices: [ballHandlerIdx],
+                assistForceChance: 0.72,
                 isDrive: false
             )
         }
@@ -2176,6 +2239,28 @@ private func resolvePickAndRollOutcome(
         let shootsThree = threeRating >= midRating - 4
         let shotType: ShotType = shootsThree ? .three : .midrange
         let spot: OffensiveSpot = shootsThree ? .topMiddle : .rightElbow
+        if offenseLineup.count > 1 && random.nextUnit() < clamp(passLean * 0.55, min: 0.2, max: 0.62) {
+            let receiverIdx = evaluatePassTarget(
+                offenseLineup: offenseLineup,
+                defenseLineup: defenseLineup,
+                ballHandlerIdx: ballHandlerIdx,
+                random: &random
+            )
+            let shooter = offenseLineup[receiverIdx]
+            let spot = pickShooterSpot(player: shooter, random: &random)
+            let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
+            return PlayOutcome(
+                shooterLineupIndex: receiverIdx,
+                defenderLineupIndex: min(receiverIdx, defenseLineup.count - 1),
+                shotType: shotType,
+                spot: spot,
+                edgeBonus: screenEdge * 0.16 + 0.08,
+                makeBonus: 0.02,
+                foulBonus: 0,
+                assistCandidateIndices: [ballHandlerIdx],
+                assistForceChance: 0.7
+            )
+        }
         return PlayOutcome(
             shooterLineupIndex: ballHandlerIdx,
             defenderLineupIndex: defenderIdx,
@@ -2192,6 +2277,28 @@ private func resolvePickAndRollOutcome(
         let handlerBurst = getRating(ballHandler, path: "athleticism.burst")
         let bigBurst = getRating(defenseLineup[min(screenerDefenderIdx, defenseLineup.count - 1)], path: "athleticism.burst")
         if handlerBurst > bigBurst + 8 {
+            if offenseLineup.count > 1 && random.nextUnit() < clamp(passLean * 0.4, min: 0.16, max: 0.5) {
+                let receiverIdx = evaluatePassTarget(
+                    offenseLineup: offenseLineup,
+                    defenseLineup: defenseLineup,
+                    ballHandlerIdx: ballHandlerIdx,
+                    random: &random
+                )
+                let shooter = offenseLineup[receiverIdx]
+                let spot = pickShooterSpot(player: shooter, random: &random)
+                let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
+                return PlayOutcome(
+                    shooterLineupIndex: receiverIdx,
+                    defenderLineupIndex: min(receiverIdx, defenseLineup.count - 1),
+                    shotType: shotType,
+                    spot: spot,
+                    edgeBonus: 0.14,
+                    makeBonus: 0.02,
+                    foulBonus: 0,
+                    assistCandidateIndices: [ballHandlerIdx],
+                    assistForceChance: 0.68
+                )
+            }
             return PlayOutcome(
                 shooterLineupIndex: ballHandlerIdx,
                 defenderLineupIndex: screenerDefenderIdx,
@@ -2221,7 +2328,7 @@ private func resolvePickAndRollOutcome(
         }
     case .ice:
         // Defense cuts off the middle; ball handler forced sideline → tough midrange or reset to a passer.
-        if random.nextUnit() < 0.45 {
+        if random.nextUnit() < clamp(0.58 + (passLean - 0.55) * 0.25, min: 0.42, max: 0.72) {
             // Reset pass to best-open teammate for a shot.
             let receiverIdx = offenseLineup.indices
                 .filter { $0 != ballHandlerIdx && $0 != screenerIdx }
