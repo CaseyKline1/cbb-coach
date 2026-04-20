@@ -1424,10 +1424,12 @@ private struct RosterRatingsView: View {
     let userTeamName: String
     @State private var sortColumn: String = "overall"
     @State private var isAscending: Bool = false
+    private let combinedThreePointKey = "combinedThreePointShooting"
+    private let threePointComponentKeys: Set<String> = ["threePointShooting", "cornerThrees", "upTopThrees"]
 
     private let preferredAttributeOrder: [String] = [
         "potential", "speed", "agility", "burst", "strength", "vertical", "stamina", "durability",
-        "layups", "dunks", "closeShot", "midrangeShot", "threePointShooting", "cornerThrees", "upTopThrees", "drawFoul", "freeThrows",
+        "layups", "dunks", "closeShot", "midrangeShot", "combinedThreePointShooting", "drawFoul", "freeThrows",
         "postControl", "postFadeaways", "postHooks",
         "ballHandling", "ballSafety", "passingAccuracy", "passingVision", "passingIQ", "shotIQ", "offballOffense", "hands", "hustle", "clutch",
         "perimeterDefense", "postDefense", "shotBlocking", "shotContest", "steals", "lateralQuickness", "offballDefense", "passPerception", "defensiveControl",
@@ -1444,7 +1446,12 @@ private struct RosterRatingsView: View {
             .filter { key in
                 !key.hasPrefix("tendency") || visibleTendencyKeys.contains(key)
             }
-        return preferredAttributeOrder.filter { keys.contains($0) } + keys.filter { !preferredAttributeOrder.contains($0) }.sorted()
+        let hasThreePointComponents = !keys.intersection(threePointComponentKeys).isEmpty
+        var displayKeys = keys.subtracting(threePointComponentKeys)
+        if hasThreePointComponents {
+            displayKeys.insert(combinedThreePointKey)
+        }
+        return preferredAttributeOrder.filter { displayKeys.contains($0) } + displayKeys.filter { !preferredAttributeOrder.contains($0) }.sorted()
     }
 
     private var sortedRoster: [UserRosterPlayerSummary] {
@@ -1501,7 +1508,7 @@ private struct RosterRatingsView: View {
                     AppTableTextCell(text: player.year, width: 30)
                     AppTableTextCell(text: "\(player.overall)", width: 38)
                     ForEach(attributeColumns, id: \.self) { key in
-                        let value = player.attributes?[key] ?? 0
+                        let value = attributeValue(for: key, player: player)
                         AppTableTextCell(text: "\(value)", width: 44)
                     }
                 }
@@ -1534,7 +1541,7 @@ private struct RosterRatingsView: View {
         case "overall":
             return numericCompare(lhs: lhs.overall, rhs: rhs.overall)
         default:
-            return numericCompare(lhs: lhs.attributes?[column] ?? 0, rhs: rhs.attributes?[column] ?? 0)
+            return numericCompare(lhs: attributeValue(for: column, player: lhs), rhs: attributeValue(for: column, player: rhs))
         }
     }
 
@@ -1545,6 +1552,7 @@ private struct RosterRatingsView: View {
 
     private func attributeLabel(_ key: String) -> String {
         switch key {
+        case "combinedThreePointShooting": "3PT"
         case "potential": "POT"
         case "speed": "SPD"
         case "agility": "AGI"
@@ -1613,6 +1621,21 @@ private struct RosterRatingsView: View {
         }
         return String(result.prefix(4))
     }
+
+    private func attributeValue(for key: String, player: UserRosterPlayerSummary) -> Int {
+        let attributes = player.attributes ?? [:]
+        if key == combinedThreePointKey {
+            return combinedThreePointValue(from: attributes) ?? 0
+        }
+        return attributes[key] ?? 0
+    }
+
+    private func combinedThreePointValue(from attributes: [String: Int]) -> Int? {
+        let values = threePointComponentKeys.compactMap { attributes[$0] }
+        guard !values.isEmpty else { return nil }
+        let average = Double(values.reduce(0, +)) / Double(values.count)
+        return Int(average.rounded())
+    }
 }
 
 private struct PlayerCareerTotals: Hashable {
@@ -1664,9 +1687,18 @@ private struct PlayerCardDetailView: View {
     let player: UserRosterPlayerSummary
     let schedule: [UserGameSummary]
     let userTeamName: String
+    private let combinedThreePointKey = "combinedThreePointShooting"
+    private let threePointComponentKeys: Set<String> = ["threePointShooting", "cornerThrees", "upTopThrees"]
 
     private var sortedRatings: [(key: String, value: Int)] {
-        (player.attributes ?? [:])
+        var ratings = player.attributes ?? [:]
+        if let combinedThreePoint = combinedThreePointValue(from: ratings) {
+            ratings[combinedThreePointKey] = combinedThreePoint
+        }
+        for key in threePointComponentKeys {
+            ratings.removeValue(forKey: key)
+        }
+        return ratings
             .map { ($0.key, $0.value) }
             .sorted { lhs, rhs in
                 if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
@@ -1949,6 +1981,7 @@ private struct PlayerCardDetailView: View {
 
     private func ratingLabel(_ key: String) -> String {
         switch key {
+        case "combinedThreePointShooting": "3PT Shooting"
         case "potential": "Potential"
         case "speed": "Speed"
         case "agility": "Agility"
@@ -2002,6 +2035,13 @@ private struct PlayerCardDetailView: View {
         default:
             key
         }
+    }
+
+    private func combinedThreePointValue(from attributes: [String: Int]) -> Int? {
+        let values = threePointComponentKeys.compactMap { attributes[$0] }
+        guard !values.isEmpty else { return nil }
+        let average = Double(values.reduce(0, +)) / Double(values.count)
+        return Int(average.rounded())
     }
 
     private func score(_ values: Int?...) -> Double {
