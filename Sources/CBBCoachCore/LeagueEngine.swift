@@ -375,8 +375,10 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
 
     for (conference, teamRef) in allTeams {
         let isUser = teamRef.id == userTeamRef.id
+        let teamPrestige = prestigeForTeam(teamId: teamRef.id, conferenceId: conference.id)
+        let teamLastYearResult = lastYearResultForTeam(teamId: teamRef.id, conferenceId: conference.id)
         var rosterRandom = random
-        let roster = buildTeamRoster(teamName: teamRef.name, random: &rosterRandom)
+        let roster = buildTeamRoster(teamName: teamRef.name, prestige: teamPrestige, random: &rosterRandom)
 
         var createTeamOptions = CreateTeamOptions(name: teamRef.name, players: roster)
         createTeamOptions.formation = random.choose(OffensiveFormation.allCases) ?? .motion
@@ -407,8 +409,8 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
                 conferenceId: conference.id,
                 conferenceName: conference.name,
                 teamModel: model,
-                prestige: clamp(0.25 + random.nextUnit() * 0.7, min: 0, max: 1),
-                lastYearResult: clamp(0.2 + random.nextUnit() * 0.75, min: 0, max: 1),
+                prestige: teamPrestige,
+                lastYearResult: teamLastYearResult,
                 wins: 0,
                 losses: 0,
                 conferenceWins: 0,
@@ -1331,6 +1333,176 @@ private func resetTeamRecords(_ state: inout LeagueStore.State) {
     }
 }
 
+private func prestigeForTeam(teamId: String, conferenceId: String) -> Double {
+    let historical = historicalPrestigeByTeamId[teamId]
+        ?? clamp(historicalConferenceBaseline(for: conferenceId) + deterministicSpread(teamId: teamId, salt: "hist", amplitude: 0.12), min: 0.22, max: 0.85)
+    let recent = recentSuccessByTeamId[teamId]
+        ?? clamp(recentConferenceBaseline(for: conferenceId) + deterministicSpread(teamId: teamId, salt: "recent", amplitude: 0.18), min: 0.18, max: 0.9)
+    return clamp(historical * 0.7 + recent * 0.3, min: 0.2, max: 0.98)
+}
+
+private func lastYearResultForTeam(teamId: String, conferenceId: String) -> Double {
+    let recent = recentSuccessByTeamId[teamId]
+        ?? clamp(recentConferenceBaseline(for: conferenceId) + deterministicSpread(teamId: teamId, salt: "recent", amplitude: 0.18), min: 0.18, max: 0.9)
+    let yearToYearForm = deterministicSpread(teamId: teamId, salt: "last-year", amplitude: 0.12)
+    return clamp(recent * 0.9 + yearToYearForm, min: 0.12, max: 0.98)
+}
+
+private func historicalConferenceBaseline(for conferenceId: String) -> Double {
+    switch conferenceId {
+    case "acc", "big-12", "big-east", "big-ten", "sec":
+        return 0.58
+    case "atlantic-10", "american", "mountain-west", "mvc", "wcc":
+        return 0.47
+    case "america-east", "asun", "big-sky", "big-south", "big-west", "caa", "cusa", "horizon", "ivy-league", "maac", "mac", "meac", "nec", "ovc", "patriot", "socon", "southland", "summit-league", "sun-belt", "swac", "wac":
+        return 0.36
+    default:
+        return 0.36
+    }
+}
+
+private func recentConferenceBaseline(for conferenceId: String) -> Double {
+    switch conferenceId {
+    case "acc", "big-12", "big-east", "big-ten", "sec":
+        return 0.56
+    case "atlantic-10", "american", "mountain-west", "mvc", "wcc":
+        return 0.48
+    case "america-east", "asun", "big-sky", "big-south", "big-west", "caa", "cusa", "horizon", "ivy-league", "maac", "mac", "meac", "nec", "ovc", "patriot", "socon", "southland", "summit-league", "sun-belt", "swac", "wac":
+        return 0.39
+    default:
+        return 0.39
+    }
+}
+
+private func deterministicSpread(teamId: String, salt: String, amplitude: Double) -> Double {
+    var random = SeededRandom(seed: hashString("\(salt):\(teamId)"))
+    let centered = random.nextUnit() - 0.5
+    return centered * amplitude
+}
+
+private let historicalPrestigeByTeamId: [String: Double] = [
+    "big-12-kansas": 0.99,
+    "sec-kentucky": 0.99,
+    "acc-duke": 0.98,
+    "acc-north-carolina": 0.98,
+    "big-ten-ucla": 0.98,
+    "big-ten-indiana": 0.95,
+    "big-east-uconn": 0.95,
+    "big-east-villanova": 0.92,
+    "acc-louisville": 0.91,
+    "acc-syracuse": 0.9,
+    "big-12-arizona": 0.9,
+    "big-ten-michigan-st": 0.9,
+    "big-ten-purdue": 0.88,
+    "acc-virginia": 0.88,
+    "sec-florida": 0.87,
+    "big-ten-michigan": 0.87,
+    "big-east-georgetown": 0.86,
+    "sec-arkansas": 0.85,
+    "sec-tennessee": 0.85,
+    "sec-alabama": 0.84,
+    "big-east-st-john-and-039-s-ny": 0.84,
+    "big-12-baylor": 0.84,
+    "sec-lsu": 0.84,
+    "acc-notre-dame": 0.83,
+    "big-east-xavier": 0.83,
+    "big-east-providence": 0.82,
+    "big-east-seton-hall": 0.81,
+    "big-east-marquette": 0.81,
+    "big-east-creighton": 0.8,
+    "big-12-houston": 0.8,
+    "wcc-gonzaga": 0.8,
+    "sec-texas": 0.8,
+    "sec-texas-a-and-amp-m": 0.8,
+    "acc-nc-state": 0.79,
+    "big-ten-ohio-st": 0.79,
+    "acc-florida-st": 0.78,
+    "sec-auburn": 0.78,
+    "acc-pittsburgh": 0.77,
+    "sec-oklahoma": 0.77,
+    "big-12-west-virginia": 0.77,
+    "big-12-texas-tech": 0.77,
+    "big-12-kansas-st": 0.76,
+    "big-12-iowa-st": 0.76,
+    "big-ten-illinois": 0.76,
+    "big-ten-wisconsin": 0.76,
+    "big-ten-maryland": 0.75,
+    "sec-mississippi-st": 0.74,
+    "sec-ole-miss": 0.73,
+    "american-memphis": 0.73,
+    "mountain-west-san-diego-st": 0.73,
+    "atlantic-10-dayton": 0.72,
+    "atlantic-10-vcu": 0.71,
+    "mountain-west-utah-st": 0.7,
+    "mountain-west-boise-st": 0.7,
+    "mountain-west-new-mexico": 0.7,
+    "wcc-san-francisco": 0.69,
+    "big-east-butler": 0.69,
+    "big-12-byu": 0.69,
+    "big-12-tcu": 0.68,
+    "big-12-utah": 0.66,
+]
+
+private let recentSuccessByTeamId: [String: Double] = [
+    "big-east-uconn": 0.98,
+    "big-12-houston": 0.95,
+    "sec-alabama": 0.93,
+    "big-12-baylor": 0.92,
+    "big-12-kansas": 0.92,
+    "sec-auburn": 0.91,
+    "big-ten-purdue": 0.91,
+    "sec-tennessee": 0.9,
+    "wcc-gonzaga": 0.9,
+    "big-east-marquette": 0.89,
+    "big-east-creighton": 0.88,
+    "big-12-arizona": 0.88,
+    "big-12-iowa-st": 0.88,
+    "big-ten-illinois": 0.87,
+    "acc-duke": 0.87,
+    "acc-north-carolina": 0.87,
+    "sec-kentucky": 0.86,
+    "sec-florida": 0.86,
+    "sec-arkansas": 0.85,
+    "big-ten-michigan-st": 0.85,
+    "big-ten-ucla": 0.84,
+    "big-ten-wisconsin": 0.84,
+    "big-12-texas-tech": 0.84,
+    "big-12-byu": 0.83,
+    "sec-texas-a-and-amp-m": 0.83,
+    "acc-clemson": 0.83,
+    "acc-louisville": 0.82,
+    "acc-virginia": 0.82,
+    "acc-miami-fl": 0.82,
+    "sec-mississippi-st": 0.82,
+    "sec-ole-miss": 0.81,
+    "sec-missouri": 0.8,
+    "sec-oklahoma": 0.79,
+    "sec-texas": 0.79,
+    "big-ten-maryland": 0.78,
+    "big-ten-oregon": 0.78,
+    "big-ten-southern-california": 0.77,
+    "big-12-tcu": 0.77,
+    "big-12-kansas-st": 0.77,
+    "big-12-west-virginia": 0.76,
+    "big-east-st-john-and-039-s-ny": 0.76,
+    "big-east-xavier": 0.75,
+    "big-east-providence": 0.74,
+    "big-east-villanova": 0.74,
+    "american-memphis": 0.74,
+    "american-fla-atlantic": 0.73,
+    "mountain-west-san-diego-st": 0.73,
+    "mountain-west-utah-st": 0.72,
+    "mountain-west-new-mexico": 0.72,
+    "mountain-west-boise-st": 0.71,
+    "mountain-west-nevada": 0.7,
+    "atlantic-10-dayton": 0.7,
+    "atlantic-10-vcu": 0.69,
+    "atlantic-10-loyola-chicago": 0.67,
+    "mvc-drake": 0.67,
+    "southland-mcneese": 0.66,
+    "mountain-west-grand-canyon": 0.66,
+]
+
 private let rosterFirstNames: [String] = [
     "Jalen", "Marcus", "Eli", "Noah", "Ty", "Jordan", "Malik", "Darius", "Caleb", "Cameron",
     "Anthony", "Isaiah", "Trey", "Xavier", "Devin", "Brandon", "Tyler", "Kyle", "Jaden", "Amir",
@@ -1351,9 +1523,11 @@ private let rosterLastNames: [String] = [
     "Wood", "Barnes", "Ross", "Henderson", "Coleman", "Jenkins", "Perry", "Powell", "Long", "Patterson"
 ]
 
-private func buildTeamRoster(teamName: String, random: inout SeededRandom) -> [Player] {
+private func buildTeamRoster(teamName: String, prestige: Double, random: inout SeededRandom) -> [Player] {
     let positionCycle: [PlayerPosition] = [.pg, .sg, .sf, .pf, .c, .cg, .wing, .f, .big, .pg, .sg, .sf, .pf]
     let yearCycle: [PlayerYear] = [.fr, .so, .jr, .sr]
+    let normalizedPrestige = clamp(prestige, min: 0, max: 1)
+    let teamQualityBaseline = Int((52 + normalizedPrestige * 24).rounded())
 
     var usedNames = Set<String>()
     return (0..<13).map { idx in
@@ -1371,7 +1545,13 @@ private func buildTeamRoster(teamName: String, random: inout SeededRandom) -> [P
         player.bio.home = ["CA", "TX", "FL", "NY", "NC", "IL", "GA", "PA"][idx % 8]
         player.bio.redshirtUsed = false
 
-        let base = clamp(58 + random.int(-8, 18), min: 35, max: 92)
+        let tierAdjustment: Int
+        switch idx {
+        case 0...2: tierAdjustment = random.int(2, 8)
+        case 3...7: tierAdjustment = random.int(-2, 4)
+        default: tierAdjustment = random.int(-8, 2)
+        }
+        let base = clamp(teamQualityBaseline + tierAdjustment + random.int(-9, 9), min: 35, max: 92)
         player.bio.potential = clamp(base + random.int(-6, 14), min: 25, max: 99)
         applyRatings(&player, base: base, random: &random)
 
