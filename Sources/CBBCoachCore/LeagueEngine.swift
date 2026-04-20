@@ -1249,13 +1249,41 @@ private func resetTeamRecords(_ state: inout LeagueStore.State) {
     }
 }
 
+private let rosterFirstNames: [String] = [
+    "Jalen", "Marcus", "Eli", "Noah", "Ty", "Jordan", "Malik", "Darius", "Caleb", "Cameron",
+    "Anthony", "Isaiah", "Trey", "Xavier", "Devin", "Brandon", "Tyler", "Kyle", "Jaden", "Amir",
+    "Tariq", "Zion", "Khalil", "Keenan", "Jace", "Tristan", "Evan", "Gabe", "Micah", "Elijah",
+    "Julian", "Omar", "Rashid", "Desmond", "Terrance", "DeAndre", "Bryce", "Chase", "Grant", "Hunter",
+    "Jaxon", "Kai", "Luka", "Mason", "Nate", "Parker", "Quincy", "Reggie", "Silas", "Tobias",
+    "Victor", "Wyatt", "Andre", "Bo", "Chris", "Dante", "Emmett", "Finn", "Garrett", "Hakeem",
+    "Ivan", "Jamal", "Kendrick", "Lamar", "Miles", "Nico", "Owen", "Preston", "Raheem", "Solomon"
+]
+
+private let rosterLastNames: [String] = [
+    "Carter", "Brooks", "Davis", "Coleman", "Thomas", "Hill", "Moore", "Young", "Turner", "Jenkins",
+    "Washington", "Johnson", "Williams", "Jackson", "Harris", "Martin", "Thompson", "Robinson", "Clark", "Lewis",
+    "Walker", "Hall", "Allen", "Wright", "Scott", "Green", "Baker", "Adams", "Nelson", "Hill",
+    "Mitchell", "Campbell", "Roberts", "Phillips", "Evans", "Parker", "Edwards", "Collins", "Stewart", "Morris",
+    "Rogers", "Reed", "Cook", "Bell", "Bailey", "Rivera", "Cooper", "Richardson", "Cox", "Howard",
+    "Ward", "Torres", "Peterson", "Gray", "Ramirez", "James", "Watson", "Kim", "Price", "Bennett",
+    "Wood", "Barnes", "Ross", "Henderson", "Coleman", "Jenkins", "Perry", "Powell", "Long", "Patterson"
+]
+
 private func buildTeamRoster(teamName: String, random: inout SeededRandom) -> [Player] {
     let positionCycle: [PlayerPosition] = [.pg, .sg, .sf, .pf, .c, .cg, .wing, .f, .big, .pg, .sg, .sf, .pf]
     let yearCycle: [PlayerYear] = [.fr, .so, .jr, .sr]
 
+    var usedNames = Set<String>()
     return (0..<13).map { idx in
         var player = createPlayer()
-        player.bio.name = "\(teamName) Player \(idx + 1)"
+        var name = ""
+        repeat {
+            let first = rosterFirstNames[random.int(0, rosterFirstNames.count - 1)]
+            let last = rosterLastNames[random.int(0, rosterLastNames.count - 1)]
+            name = "\(first) \(last)"
+        } while usedNames.contains(name)
+        usedNames.insert(name)
+        player.bio.name = name
         player.bio.position = positionCycle[idx % positionCycle.count]
         player.bio.year = yearCycle[idx % yearCycle.count]
         player.bio.home = ["CA", "TX", "FL", "NY", "NC", "IL", "GA", "PA"][idx % 8]
