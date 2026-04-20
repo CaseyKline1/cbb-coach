@@ -688,6 +688,39 @@ private func pickLineupIndexForBallHandler(lineup: [Player], random: inout Seede
     }
 }
 
+private func isPointGuardLike(_ player: Player) -> Bool {
+    switch player.bio.position {
+    case .pg: return true
+    case .cg: return true
+    default: return false
+    }
+}
+
+private func isFourFiveLike(_ player: Player) -> Bool {
+    switch player.bio.position {
+    case .pf, .c, .big: return true
+    default: return false
+    }
+}
+
+private func pickLineupIndexForPickActionBallHandler(lineup: [Player], random: inout SeededRandom) -> Int {
+    guard !lineup.isEmpty else { return 0 }
+    return weightedRandomIndex(
+        lineup: lineup,
+        random: &random
+    ) { player in
+        let base = getBaseRating(player, path: "skills.ballHandling") * 0.34
+            + getBaseRating(player, path: "skills.passingVision") * 0.16
+            + getBaseRating(player, path: "skills.passingIQ") * 0.14
+            + getBaseRating(player, path: "skills.shotIQ") * 0.1
+            + getBaseRating(player, path: "athleticism.burst") * 0.08
+            + getBaseRating(player, path: "tendencies.pickAndRoll") * 0.1
+            + getBaseRating(player, path: "tendencies.pickAndPop") * 0.08
+        let positionMultiplier: Double = isPointGuardLike(player) ? 2.6 : (player.bio.position == .sg ? 0.95 : 0.58)
+        return max(1, base * positionMultiplier)
+    }
+}
+
 private func pickAssistLineupIndex(
     lineup: [Player],
     shooterIndex: Int,
@@ -1655,6 +1688,14 @@ private func resolvePlay(
 ) -> PlayOutcome {
     let ballHandler = offenseLineup[ballHandlerIdx]
     let playType = choosePlayType(offenseTeam: team, ballHandler: ballHandler, random: &random)
+    let pickActionBallHandlerIdx: Int
+    if playType == .pickAndRoll || playType == .pickAndPop {
+        pickActionBallHandlerIdx = pickLineupIndexForPickActionBallHandler(lineup: offenseLineup, random: &random)
+    } else {
+        pickActionBallHandlerIdx = ballHandlerIdx
+    }
+    let pickActionDefenderIdx = min(pickActionBallHandlerIdx, defenseLineup.count - 1)
+    let pickActionBallHandler = offenseLineup[pickActionBallHandlerIdx]
 
     switch playType {
     case .dribbleDrive:
@@ -1758,13 +1799,13 @@ private func resolvePlay(
         )
 
     case .pickAndRoll:
-        let screenerIdx = pickScreenerIndex(lineup: offenseLineup, excluding: ballHandlerIdx)
+        let screenerIdx = pickScreenerIndex(lineup: offenseLineup, excluding: pickActionBallHandlerIdx, random: &random)
         let screener = offenseLineup[screenerIdx]
-        let onBallDefender = defenseLineup[defenderIdx]
+        let onBallDefender = defenseLineup[pickActionDefenderIdx]
         let screenerDefenderIdx = min(screenerIdx, defenseLineup.count - 1)
         let screenerDefender = defenseLineup[screenerDefenderIdx]
         let screenEdge = screenEffectiveness(
-            ballHandler: ballHandler,
+            ballHandler: pickActionBallHandler,
             screener: screener,
             onBallDefender: onBallDefender,
             screenerDefender: screenerDefender
@@ -1778,8 +1819,8 @@ private func resolvePlay(
         return resolvePickAndRollOutcome(
             offenseLineup: offenseLineup,
             defenseLineup: defenseLineup,
-            ballHandlerIdx: ballHandlerIdx,
-            defenderIdx: defenderIdx,
+            ballHandlerIdx: pickActionBallHandlerIdx,
+            defenderIdx: pickActionDefenderIdx,
             screenerIdx: screenerIdx,
             screenerDefenderIdx: screenerDefenderIdx,
             screenEdge: screenEdge,
@@ -1788,13 +1829,13 @@ private func resolvePlay(
         )
 
     case .pickAndPop:
-        let screenerIdx = pickScreenerIndex(lineup: offenseLineup, excluding: ballHandlerIdx)
+        let screenerIdx = pickScreenerIndex(lineup: offenseLineup, excluding: pickActionBallHandlerIdx, random: &random)
         let screener = offenseLineup[screenerIdx]
-        let onBallDefender = defenseLineup[defenderIdx]
+        let onBallDefender = defenseLineup[pickActionDefenderIdx]
         let screenerDefenderIdx = min(screenerIdx, defenseLineup.count - 1)
         let screenerDefender = defenseLineup[screenerDefenderIdx]
         let screenEdge = screenEffectiveness(
-            ballHandler: ballHandler,
+            ballHandler: pickActionBallHandler,
             screener: screener,
             onBallDefender: onBallDefender,
             screenerDefender: screenerDefender
@@ -1808,7 +1849,7 @@ private func resolvePlay(
             edgeBonus: screenEdge * 0.35 + popDest.edgeBonus,
             makeBonus: 0.02,
             foulBonus: 0,
-            assistCandidateIndices: [ballHandlerIdx],
+            assistCandidateIndices: [pickActionBallHandlerIdx],
             assistForceChance: 0.72
         )
 
@@ -1936,20 +1977,27 @@ private func openShotUtility(_ player: Player) -> Double {
         + getBaseRating(player, path: "skills.offballOffense") * 0.2
 }
 
-private func pickScreenerIndex(lineup: [Player], excluding: Int) -> Int {
-    var best = excluding
-    var bestScore = -Double.infinity
-    for idx in lineup.indices where idx != excluding {
+private func pickScreenerIndex(lineup: [Player], excluding: Int, random: inout SeededRandom) -> Int {
+    let candidates = lineup.indices.filter { $0 != excluding }
+    guard !candidates.isEmpty else { return excluding }
+
+    let weights = candidates.map { idx -> Double in
         let p = lineup[idx]
-        let score = getBaseRating(p, path: "athleticism.strength") * 0.6
-            + getBaseRating(p, path: "skills.offballOffense") * 0.15
-            + getBaseRating(p, path: "skills.hands") * 0.1
-        if score > bestScore {
-            bestScore = score
-            best = idx
+        let base = getBaseRating(p, path: "athleticism.strength") * 0.58
+            + getBaseRating(p, path: "postGame.postControl") * 0.17
+            + getBaseRating(p, path: "skills.offballOffense") * 0.14
+            + getBaseRating(p, path: "skills.hands") * 0.11
+        let positionMultiplier: Double
+        if isFourFiveLike(p) {
+            positionMultiplier = 2.9
+        } else if p.bio.position == .f || p.bio.position == .sf || p.bio.position == .wing {
+            positionMultiplier = 0.8
+        } else {
+            positionMultiplier = 0.18
         }
+        return max(0.1, base * positionMultiplier)
     }
-    return best
+    return candidates[weightedChoiceIndex(weights: weights, random: &random)]
 }
 
 private enum ScreenNavigation {
@@ -2595,4 +2643,3 @@ private func maybeResolveFastBreak(
         return (event: "missed_shot", switchedPossession: true, points: 0)
     }
 }
-
