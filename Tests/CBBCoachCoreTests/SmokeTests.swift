@@ -100,6 +100,40 @@ func leagueFlowSmoke() throws {
     _ = advanceToNextUserGame(&league)
 }
 
+@Test("User schedule plays non-conference games before conference games")
+func nonConferenceBeforeConferenceOrdering() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "nonconf-before-conf"))
+    autoFillUserNonConferenceOpponents(&league)
+    generateSeasonSchedule(&league)
+
+    let summary = getLeagueSummary(league)
+    let teamOptions = listCareerTeamOptions()
+    let conferenceByTeamId = Dictionary(uniqueKeysWithValues: teamOptions.map { ($0.teamId, $0.conferenceId) })
+    guard let userConferenceId = conferenceByTeamId[summary.userTeamId] else {
+        Issue.record("Missing user conference for schedule ordering test")
+        return
+    }
+
+    let userSchedule = getUserSchedule(league).sorted {
+        let lhsDay = $0.day ?? Int.max
+        let rhsDay = $1.day ?? Int.max
+        if lhsDay != rhsDay { return lhsDay < rhsDay }
+        return ($0.gameId ?? "") < ($1.gameId ?? "")
+    }
+
+    var seenConferenceGame = false
+    for game in userSchedule {
+        guard let opponentId = game.opponentTeamId, let opponentConferenceId = conferenceByTeamId[opponentId] else { continue }
+        let isConferenceGame = opponentConferenceId == userConferenceId
+        if isConferenceGame {
+            seenConferenceGame = true
+        } else if seenConferenceGame {
+            Issue.record("Found a non-conference game after conference play started")
+            break
+        }
+    }
+}
+
 @Test("Advancing user game also simulates CPU-only games on that day")
 func advancingUserGameSimulatesLeagueDay() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "league-day-tests", totalRegularSeasonGames: 3))

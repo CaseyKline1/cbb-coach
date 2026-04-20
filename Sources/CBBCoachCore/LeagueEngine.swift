@@ -1142,15 +1142,6 @@ private func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
     var random = SeededRandom(seed: hashString("schedule:\(state.optionsSeed):\(user.teamId)"))
     var userOpponents: [String] = []
 
-    let confGames = min(user.targetConferenceGames, state.totalRegularSeasonGames)
-    if !confOpponents.isEmpty {
-        var i = 0
-        while userOpponents.count < confGames {
-            userOpponents.append(confOpponents[i % confOpponents.count])
-            i += 1
-        }
-    }
-
     var nonConf = state.userSelectedOpponentIds
     if nonConf.count < state.requiredUserNonConferenceGames {
         let remainingPool = state.teams
@@ -1162,7 +1153,18 @@ private func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
             nonConf.append(pool.remove(at: idx))
         }
     }
+
+    // Play non-conference games first, then conference games.
     userOpponents.append(contentsOf: nonConf.prefix(max(0, state.totalRegularSeasonGames - userOpponents.count)))
+
+    let confGames = min(user.targetConferenceGames, state.totalRegularSeasonGames)
+    if !confOpponents.isEmpty {
+        var i = 0
+        while userOpponents.count < state.totalRegularSeasonGames, i < confGames {
+            userOpponents.append(confOpponents[i % confOpponents.count])
+            i += 1
+        }
+    }
 
     let fillerPool = state.teams.filter { $0.teamId != user.teamId }.map(\ .teamId)
     var fillerIndex = 0
