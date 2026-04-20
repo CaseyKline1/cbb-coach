@@ -805,6 +805,7 @@ private struct CollegeLeagueHomeView: View {
         guard var currentLeague = league else { return }
         var completedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
         var seasonCompleted = false
+        var gameRecaps: [String] = []
 
         while completedGames < targetCompletedGames {
             guard let result = advanceToNextUserGame(&currentLeague) else { break }
@@ -813,21 +814,83 @@ private struct CollegeLeagueHomeView: View {
                 break
             }
             completedGames += 1
+            let recap = skipAheadGameRecap(for: result)
+            gameRecaps.append(recap)
         }
 
         league = currentLeague
         refreshFromLeague(currentLeague)
 
         if seasonCompleted {
-            statusText = "Season complete."
+            if gameRecaps.isEmpty {
+                statusText = "Season complete."
+            } else {
+                statusText = (gameRecaps + ["Season complete."]).joined(separator: "\n")
+            }
             return
         }
 
-        if targetCompletedGames == 15 {
-            statusText = "Advanced to midseason (between Weeks 15 and 16)."
-        } else {
-            statusText = "Advanced to end of regular season (after Game 31)."
+        let checkpointMessage = targetCompletedGames == 15
+            ? "Advanced to midseason (between Weeks 15 and 16)."
+            : "Advanced to end of regular season (after Game 31)."
+
+        if gameRecaps.isEmpty {
+            statusText = checkpointMessage
+            return
         }
+
+        statusText = ([checkpointMessage] + gameRecaps).joined(separator: "\n")
+    }
+
+    private func skipAheadGameRecap(for result: UserGameSummary) -> String {
+        let userScore = result.score?.numberValue(for: "user")?.roundedInt ?? 0
+        let oppScore = result.score?.numberValue(for: "opponent")?.roundedInt ?? 0
+        let opponent = result.opponentName ?? "Unknown"
+        let leaders = userLeadersFromResult(result)
+        let gameLabel = gameNumber(for: result)
+        return "Game \(gameLabel) vs \(opponent): \(userScore)-\(oppScore) | PTS: \(leaders.points) | REB: \(leaders.rebounds) | AST: \(leaders.assists)"
+    }
+
+    private func userLeadersFromResult(_ result: UserGameSummary) -> (points: String, rebounds: String, assists: String) {
+        let teamBox = ParsedTeamBoxScore.parse(from: result.result)
+        guard let userBox = resolveUserTeamBox(from: teamBox, for: result) else {
+            return ("N/A", "N/A", "N/A")
+        }
+
+        let pointsLeader = topLeader(in: userBox.players, stat: \.points)
+        let reboundsLeader = topLeader(in: userBox.players, stat: \.rebounds)
+        let assistsLeader = topLeader(in: userBox.players, stat: \.assists)
+
+        return (
+            pointsLeader.map { "\($0.player.playerName) \($0.value)" } ?? "N/A",
+            reboundsLeader.map { "\($0.player.playerName) \($0.value)" } ?? "N/A",
+            assistsLeader.map { "\($0.player.playerName) \($0.value)" } ?? "N/A"
+        )
+    }
+
+    private func resolveUserTeamBox(from teams: [ParsedTeamBoxScore], for result: UserGameSummary) -> ParsedTeamBoxScore? {
+        guard !teams.isEmpty else { return nil }
+
+        if let userTeamName = summary?.userTeamName ?? league.map({ getLeagueSummary($0).userTeamName }),
+           let exact = teams.first(where: { $0.name.caseInsensitiveCompare(userTeamName) == .orderedSame }) {
+            return exact
+        }
+
+        if let opponentName = result.opponentName,
+           let notOpponent = teams.first(where: { $0.name.caseInsensitiveCompare(opponentName) != .orderedSame }) {
+            return notOpponent
+        }
+
+        return teams.first
+    }
+
+    private func topLeader(in players: [ParsedPlayerBoxScore], stat: KeyPath<ParsedPlayerBoxScore, Int>) -> (player: ParsedPlayerBoxScore, value: Int)? {
+        players
+            .map { ($0, $0[keyPath: stat]) }
+            .max { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
+                return lhs.0.playerName.localizedCaseInsensitiveCompare(rhs.0.playerName) == .orderedDescending
+            }
     }
 
     private func refreshFromLeague(_ league: LeagueState) {
