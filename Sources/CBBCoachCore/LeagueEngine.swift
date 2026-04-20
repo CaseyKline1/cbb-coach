@@ -1291,15 +1291,24 @@ private func buildTeamRoster(teamName: String, random: inout SeededRandom) -> [P
         player.bio.position = positionCycle[idx % positionCycle.count]
         player.bio.year = yearCycle[idx % yearCycle.count]
         player.bio.home = ["CA", "TX", "FL", "NY", "NC", "IL", "GA", "PA"][idx % 8]
+        player.bio.redshirtUsed = false
 
         let base = clamp(58 + random.int(-8, 18), min: 35, max: 92)
+        player.bio.potential = clamp(base + random.int(-6, 14), min: 25, max: 99)
         applyRatings(&player, base: base, random: &random)
 
         let height = 72 + idx % 7
         player.size.height = "\(height / 12)-\(height % 12)"
         player.size.weight = "\(190 + idx * 4)"
         player.size.wingspan = "\((height + 3) / 12)-\((height + 3) % 12)"
+
         player.condition.energy = 100
+        player.condition.clutchTime = false
+        player.condition.fouledOut = false
+        player.condition.homeCourtMultiplier = 1
+        player.condition.possessionRole = nil
+        player.condition.offensiveCoachingModifier = 1
+        player.condition.defensiveCoachingModifier = 1
         return player
     }
 }
