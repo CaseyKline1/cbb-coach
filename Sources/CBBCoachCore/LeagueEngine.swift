@@ -1375,10 +1375,11 @@ private func buildTeamRoster(teamName: String, random: inout SeededRandom) -> [P
         player.bio.potential = clamp(base + random.int(-6, 14), min: 25, max: 99)
         applyRatings(&player, base: base, random: &random)
 
-        let height = 72 + idx % 7
-        player.size.height = "\(height / 12)-\(height % 12)"
-        player.size.weight = "\(190 + idx * 4)"
-        player.size.wingspan = "\((height + 3) / 12)-\((height + 3) % 12)"
+        let height = sampleHeightInches(for: player.bio.position, random: &random)
+        player.size.height = formatHeight(inches: height)
+        player.size.weight = "\(sampleWeightPounds(for: player.bio.position, heightInches: height, random: &random))"
+        let wingspan = height + sampleWingspanDelta(for: player.bio.position, random: &random)
+        player.size.wingspan = formatHeight(inches: wingspan)
 
         player.condition.energy = 100
         player.condition.clutchTime = false
@@ -1389,6 +1390,91 @@ private func buildTeamRoster(teamName: String, random: inout SeededRandom) -> [P
         player.condition.defensiveCoachingModifier = 1
         return player
     }
+}
+
+private struct HeightBucket {
+    let inches: Int
+    let weight: Int
+}
+
+private func sampleHeightInches(for position: PlayerPosition, random: inout SeededRandom) -> Int {
+    let minHeight: Int
+    let maxHeight: Int
+    let buckets: [HeightBucket]
+
+    switch position {
+    case .pg:
+        minHeight = 71; maxHeight = 77
+        buckets = [.init(inches: 73, weight: 2), .init(inches: 74, weight: 4), .init(inches: 75, weight: 3), .init(inches: 76, weight: 1)]
+    case .sg:
+        minHeight = 72; maxHeight = 79
+        buckets = [.init(inches: 74, weight: 2), .init(inches: 75, weight: 3), .init(inches: 76, weight: 3), .init(inches: 77, weight: 2)]
+    case .cg:
+        minHeight = 72; maxHeight = 78
+        buckets = [.init(inches: 74, weight: 2), .init(inches: 75, weight: 4), .init(inches: 76, weight: 3), .init(inches: 77, weight: 1)]
+    case .sf, .wing:
+        minHeight = 74; maxHeight = 81
+        buckets = [.init(inches: 76, weight: 2), .init(inches: 77, weight: 3), .init(inches: 78, weight: 3), .init(inches: 79, weight: 2)]
+    case .f:
+        minHeight = 76; maxHeight = 82
+        buckets = [.init(inches: 77, weight: 2), .init(inches: 78, weight: 3), .init(inches: 79, weight: 3), .init(inches: 80, weight: 2)]
+    case .pf:
+        minHeight = 77; maxHeight = 84
+        buckets = [.init(inches: 79, weight: 2), .init(inches: 80, weight: 3), .init(inches: 81, weight: 3), .init(inches: 82, weight: 2)]
+    case .c, .big:
+        minHeight = 79; maxHeight = 86
+        buckets = [.init(inches: 80, weight: 1), .init(inches: 81, weight: 2), .init(inches: 82, weight: 3), .init(inches: 83, weight: 3), .init(inches: 84, weight: 2)]
+    }
+
+    let sampled = sampleWeightedHeight(buckets, random: &random) + random.int(-1, 1)
+    return clamp(sampled, min: minHeight, max: maxHeight)
+}
+
+private func sampleWeightedHeight(_ buckets: [HeightBucket], random: inout SeededRandom) -> Int {
+    let total = buckets.reduce(0) { $0 + max(1, $1.weight) }
+    guard total > 0 else { return 76 }
+    var pick = random.int(1, total)
+    for bucket in buckets {
+        pick -= max(1, bucket.weight)
+        if pick <= 0 { return bucket.inches }
+    }
+    return buckets.last?.inches ?? 76
+}
+
+private func sampleWeightPounds(for position: PlayerPosition, heightInches: Int, random: inout SeededRandom) -> Int {
+    let weight: Int
+    switch position {
+    case .pg, .cg:
+        weight = 170 + (heightInches - 72) * 8 + random.int(-10, 12)
+        return clamp(weight, min: 155, max: 220)
+    case .sg:
+        weight = 180 + (heightInches - 74) * 9 + random.int(-10, 14)
+        return clamp(weight, min: 165, max: 230)
+    case .sf, .wing:
+        weight = 195 + (heightInches - 76) * 10 + random.int(-12, 14)
+        return clamp(weight, min: 180, max: 245)
+    case .f, .pf:
+        weight = 212 + (heightInches - 78) * 11 + random.int(-12, 16)
+        return clamp(weight, min: 195, max: 265)
+    case .c, .big:
+        weight = 228 + (heightInches - 80) * 12 + random.int(-14, 18)
+        return clamp(weight, min: 215, max: 290)
+    }
+}
+
+private func sampleWingspanDelta(for position: PlayerPosition, random: inout SeededRandom) -> Int {
+    switch position {
+    case .pg, .sg, .cg:
+        return random.int(2, 6)
+    case .sf, .wing, .f:
+        return random.int(3, 7)
+    case .pf, .c, .big:
+        return random.int(4, 9)
+    }
+}
+
+private func formatHeight(inches: Int) -> String {
+    "\(inches / 12)-\(inches % 12)"
 }
 
 private func applyRatings(_ player: inout Player, base: Int, random: inout SeededRandom) {
