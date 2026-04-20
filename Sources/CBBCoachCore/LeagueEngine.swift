@@ -342,7 +342,86 @@ private struct LoadedD1Data {
         }
 
         let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(D1Snapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(D1Snapshot.self, from: data)
+        return normalizeSnapshot(decoded)
+    }
+
+    private static func normalizeSnapshot(_ snapshot: D1Snapshot) -> D1Snapshot {
+        D1Snapshot(
+            conferences: snapshot.conferences.map { conference in
+                D1Snapshot.Conference(
+                    id: conference.id,
+                    name: decodeHTMLEntities(in: conference.name),
+                    teams: conference.teams.map { team in
+                        D1Snapshot.Conference.TeamRef(
+                            id: team.id,
+                            name: decodeHTMLEntities(in: team.name)
+                        )
+                    },
+                    inferredConferenceGames: conference.inferredConferenceGames
+                )
+            }
+        )
+    }
+
+    private static func decodeHTMLEntities(in text: String) -> String {
+        guard text.contains("&") else { return text }
+
+        var output = ""
+        output.reserveCapacity(text.count)
+
+        var index = text.startIndex
+        while index < text.endIndex {
+            if text[index] == "&", let semicolon = text[index...].firstIndex(of: ";") {
+                let entityStart = text.index(after: index)
+                let entityBody = String(text[entityStart..<semicolon])
+                if let decoded = decodeEntityBody(entityBody) {
+                    output.append(decoded)
+                    index = text.index(after: semicolon)
+                    continue
+                }
+            }
+
+            output.append(text[index])
+            index = text.index(after: index)
+        }
+
+        return output
+    }
+
+    private static func decodeEntityBody(_ body: String) -> String? {
+        switch body {
+        case "amp":
+            return "&"
+        case "apos":
+            return "'"
+        case "quot":
+            return "\""
+        case "lt":
+            return "<"
+        case "gt":
+            return ">"
+        default:
+            break
+        }
+
+        if body.hasPrefix("#x") || body.hasPrefix("#X") {
+            let hex = String(body.dropFirst(2))
+            if let value = UInt32(hex, radix: 16), let scalar = UnicodeScalar(value) {
+                return String(scalar)
+            }
+            return nil
+        }
+
+        if body.hasPrefix("#") {
+            let decimal = String(body.dropFirst())
+            if let value = UInt32(decimal, radix: 10), let scalar = UnicodeScalar(value) {
+                return String(scalar)
+            }
+            return nil
+        }
+
+        return nil
     }
 }
 

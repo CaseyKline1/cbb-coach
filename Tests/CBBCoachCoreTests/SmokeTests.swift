@@ -100,6 +100,14 @@ func leagueFlowSmoke() throws {
     _ = advanceToNextUserGame(&league)
 }
 
+@Test("Career team options decode HTML entities")
+func careerTeamOptionsDecodeEntities() {
+    let options = listCareerTeamOptions()
+    #expect(options.contains(where: { $0.teamName == "William & Mary" }))
+    #expect(options.contains(where: { $0.teamName == "Saint Joseph's" }))
+    #expect(options.allSatisfy { !$0.teamName.contains("&amp;") && !$0.teamName.contains("&#039;") })
+}
+
 @Test("User schedule plays non-conference games before conference games")
 func nonConferenceBeforeConferenceOrdering() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "nonconf-before-conf"))
