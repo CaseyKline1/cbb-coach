@@ -126,3 +126,49 @@ func completedLeagueGamesCarryBoxScore() throws {
 
     #expect(boxArray.count == 2)
 }
+
+@Test("Simulation uses substitutions and bench players log minutes")
+func substitutionFlowUsesBenchMinutes() {
+    var random = SeededRandom(seed: 2026)
+
+    func makeTeam(name: String) -> Team {
+        var players: [Player] = []
+        for idx in 0..<8 {
+            var p = createPlayer()
+            p.bio.name = "\(name) P\(idx + 1)"
+            p.bio.position = [.pg, .sg, .sf, .pf, .c, .cg, .wing, .big][idx]
+            p.condition.energy = idx < 5 ? 85 : 100
+            p.skills.shotIQ = 65 + idx
+            p.skills.ballHandling = 60 + idx
+            p.defense.perimeterDefense = 58 + idx
+            p.defense.lateralQuickness = 58 + idx
+            p.shooting.closeShot = 62 + idx
+            p.shooting.threePointShooting = 60 + idx
+            players.append(p)
+        }
+
+        var options = CreateTeamOptions(name: name, players: players)
+        options.lineup = Array(players.prefix(5))
+        options.rotation = TeamRotation(
+            minuteTargets: [
+                "\(name) P1": 18, "\(name) P2": 18, "\(name) P3": 18, "\(name) P4": 18, "\(name) P5": 18,
+                "\(name) P6": 24, "\(name) P7": 24, "\(name) P8": 20,
+            ]
+        )
+        return createTeam(options: options, random: &random)
+    }
+
+    let home = makeTeam(name: "Home")
+    let away = makeTeam(name: "Away")
+    let result = simulateGame(homeTeam: home, awayTeam: away, random: &random)
+
+    let homeBenchMinutes = result.home.boxScore?.players
+        .filter { ["Home P6", "Home P7", "Home P8"].contains($0.playerName) }
+        .reduce(0.0) { $0 + $1.minutes } ?? 0
+    let awayBenchMinutes = result.away.boxScore?.players
+        .filter { ["Away P6", "Away P7", "Away P8"].contains($0.playerName) }
+        .reduce(0.0) { $0 + $1.minutes } ?? 0
+
+    #expect(homeBenchMinutes > 0)
+    #expect(awayBenchMinutes > 0)
+}

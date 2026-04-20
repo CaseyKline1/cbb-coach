@@ -260,8 +260,8 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
         let possessionSeconds = possessionDurationSeconds(for: stored.teams[offenseTeamId].team.pace, random: &random)
         applyChunkMinutesAndEnergy(stored: &stored, possessionSeconds: possessionSeconds)
 
-        let offenseStrength = computeTeamOffenseStrength(stored.teams[offenseTeamId].team)
-        let defenseStrength = computeTeamDefenseStrength(stored.teams[defenseTeamId].team)
+        let offenseStrength = computeLineupOffenseStrength(stored.teams[offenseTeamId].activeLineup)
+        let defenseStrength = computeLineupDefenseStrength(stored.teams[defenseTeamId].activeLineup)
         let teamEdge = (offenseStrength - defenseStrength) / 22 + (random.nextUnit() * 0.2 - 0.1)
 
         let ballHandlerIdx = pickLineupIndexForBallHandler(lineup: stored.teams[offenseTeamId].activeLineup, random: &random)
@@ -474,6 +474,8 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
         } else {
             stored.shotClockRemaining = max(0, stored.shotClockRemaining - possessionSeconds)
         }
+        runAutoSubstitutions(stored: &stored, teamId: offenseTeamId, random: &random)
+        runAutoSubstitutions(stored: &stored, teamId: defenseTeamId, random: &random)
         return eventType
     }) else {
         fatalError("resolveActionChunk failed: unknown game handle \(state.handle)")
@@ -577,8 +579,79 @@ private func applyChunkMinutesAndEnergy(stored: inout NativeGameStateStore.Store
                     line.energy = max(0, energy - energyDelta)
                 }
             }
+            let boxIndex = stored.teams[teamId].activeLineupBoxIndices[lineupIndex]
+            guard boxIndex >= 0, boxIndex < stored.teams[teamId].boxPlayers.count else { continue }
+            let latestEnergy = stored.teams[teamId].boxPlayers[boxIndex].energy ?? 100
+            stored.teams[teamId].activeLineup[lineupIndex].condition.energy = latestEnergy
+            if boxIndex < stored.teams[teamId].team.players.count {
+                stored.teams[teamId].team.players[boxIndex].condition.energy = latestEnergy
+            }
         }
+        stored.teams[teamId].team.lineup = stored.teams[teamId].activeLineup
     }
+}
+
+private func runAutoSubstitutions(stored: inout NativeGameStateStore.StoredState, teamId: Int, random: inout SeededRandom) {
+    guard teamId >= 0, teamId < stored.teams.count else { return }
+    guard stored.teams[teamId].activeLineup.count == 5 else { return }
+    let rosterCount = stored.teams[teamId].team.players.count
+    guard rosterCount > 5 else { return }
+
+    let inGame = Set(stored.teams[teamId].activeLineupBoxIndices)
+    var bench = Array(0..<rosterCount).filter { !inGame.contains($0) }
+    guard !bench.isEmpty else { return }
+
+    var swapsRemaining = 2
+    while swapsRemaining > 0 {
+        var bestSwap: (lineupSlot: Int, benchIndex: Int, gain: Double)?
+        for lineupSlot in stored.teams[teamId].activeLineup.indices {
+            let currentIndex = stored.teams[teamId].activeLineupBoxIndices[lineupSlot]
+            guard currentIndex >= 0, currentIndex < stored.teams[teamId].boxPlayers.count else { continue }
+            let currentStats = stored.teams[teamId].boxPlayers[currentIndex]
+            let currentMinutes = currentStats.minutes
+            let currentEnergy = currentStats.energy ?? 100
+            let currentTarget = minuteTarget(for: stored.teams[teamId], rosterIndex: currentIndex, isStarterSlot: lineupSlot < 5)
+            let shouldConsider = currentMinutes > currentTarget + 1.0 || currentEnergy < 60
+            if !shouldConsider { continue }
+
+            let currentValue = currentEnergy + (currentTarget - currentMinutes) * 1.2
+            for benchIndex in bench {
+                guard benchIndex < stored.teams[teamId].boxPlayers.count else { continue }
+                let benchStats = stored.teams[teamId].boxPlayers[benchIndex]
+                let benchMinutes = benchStats.minutes
+                let benchEnergy = benchStats.energy ?? 100
+                let benchTarget = minuteTarget(for: stored.teams[teamId], rosterIndex: benchIndex, isStarterSlot: false)
+                let benchValue = benchEnergy + (benchTarget - benchMinutes) * 1.8 + random.nextUnit() * 0.5
+                let gain = benchValue - currentValue
+                if gain > 5, (bestSwap == nil || gain > bestSwap!.gain) {
+                    bestSwap = (lineupSlot, benchIndex, gain)
+                }
+            }
+        }
+
+        guard let swap = bestSwap else { break }
+        let outgoingIndex = stored.teams[teamId].activeLineupBoxIndices[swap.lineupSlot]
+        let incomingIndex = swap.benchIndex
+        guard incomingIndex < stored.teams[teamId].team.players.count else { break }
+        stored.teams[teamId].activeLineupBoxIndices[swap.lineupSlot] = incomingIndex
+        stored.teams[teamId].activeLineup[swap.lineupSlot] = stored.teams[teamId].team.players[incomingIndex]
+        stored.teams[teamId].team.lineup = stored.teams[teamId].activeLineup
+
+        bench.removeAll { $0 == incomingIndex }
+        if outgoingIndex >= 0 {
+            bench.append(outgoingIndex)
+        }
+        swapsRemaining -= 1
+    }
+}
+
+private func minuteTarget(for tracker: NativeGameStateStore.TeamTracker, rosterIndex: Int, isStarterSlot: Bool) -> Double {
+    guard rosterIndex >= 0, rosterIndex < tracker.team.players.count else { return isStarterSlot ? 30 : 14 }
+    let playerName = tracker.team.players[rosterIndex].bio.name
+    if let target = tracker.team.rotation?.minuteTargets[playerName], target.isFinite {
+        return clamp(target, min: 4, max: 40)
+    }
+    return isStarterSlot ? 30 : 14
 }
 
 private func addTeamExtra(stored: inout NativeGameStateStore.StoredState, teamId: Int, key: String, amount: Int) {
@@ -920,6 +993,10 @@ private func getMobilitySizeEdge(
 
 private func computeTeamOffenseStrength(_ team: Team) -> Double {
     let lineup = Array(team.lineup.prefix(5))
+    return computeLineupOffenseStrength(lineup)
+}
+
+private func computeLineupOffenseStrength(_ lineup: [Player]) -> Double {
     guard !lineup.isEmpty else { return 50 }
     let values = lineup.map { player in
         average([
@@ -935,6 +1012,10 @@ private func computeTeamOffenseStrength(_ team: Team) -> Double {
 
 private func computeTeamDefenseStrength(_ team: Team) -> Double {
     let lineup = Array(team.lineup.prefix(5))
+    return computeLineupDefenseStrength(lineup)
+}
+
+private func computeLineupDefenseStrength(_ lineup: [Player]) -> Double {
     guard !lineup.isEmpty else { return 50 }
     let values = lineup.map { player in
         average([
