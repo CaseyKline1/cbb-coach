@@ -770,6 +770,88 @@ private func reboundZone(for shotType: ShotType, spot: OffensiveSpot) -> Rebound
     }
 }
 
+private func reboundZoneWithShortBias(
+    initialZone: ReboundZone,
+    shotType: ShotType,
+    random: inout SeededRandom
+) -> ReboundZone {
+    let shortChance: Double
+    switch shotType {
+    case .three:
+        shortChance = 0.42
+    case .midrange, .fadeaway:
+        shortChance = 0.56
+    case .layup, .dunk, .hook, .close:
+        shortChance = 0.72
+    }
+    guard random.nextUnit() < shortChance else { return initialZone }
+
+    switch initialZone {
+    case .leftPerimeter:
+        return random.nextUnit() < 0.75 ? .leftBlock : .paint
+    case .rightPerimeter:
+        return random.nextUnit() < 0.75 ? .rightBlock : .paint
+    case .topPerimeter:
+        return .paint
+    case .leftBlock:
+        return random.nextUnit() < 0.7 ? .leftBlock : .paint
+    case .rightBlock:
+        return random.nextUnit() < 0.7 ? .rightBlock : .paint
+    case .paint:
+        return .paint
+    }
+}
+
+private func postSideAffinity(_ player: Player, isLeft: Bool) -> Double {
+    switch player.bio.position {
+    case .pf:
+        return isLeft ? 1.0 : 0.75
+    case .c, .big:
+        return isLeft ? 0.25 : 1.0
+    case .sf, .f, .wing:
+        return isLeft ? 0.8 : 0.45
+    case .sg, .cg:
+        return 0.2
+    case .pg:
+        return 0.1
+    }
+}
+
+private func zonePresenceAffinity(_ player: Player, zone: ReboundZone) -> Double {
+    switch zone {
+    case .paint:
+        switch player.bio.position {
+        case .c, .big:
+            return 1.0
+        case .pf, .f:
+            return 0.85
+        case .sf, .wing:
+            return 0.45
+        case .sg, .cg:
+            return 0.18
+        case .pg:
+            return 0.1
+        }
+    case .leftBlock:
+        return postSideAffinity(player, isLeft: true)
+    case .rightBlock:
+        return postSideAffinity(player, isLeft: false)
+    case .leftPerimeter, .rightPerimeter, .topPerimeter:
+        return 0
+    }
+}
+
+private func fallbackZones(for zone: ReboundZone) -> [ReboundZone] {
+    switch zone {
+    case .paint:
+        return [.leftBlock, .rightBlock]
+    case .leftBlock, .rightBlock:
+        return [.paint]
+    case .leftPerimeter, .rightPerimeter, .topPerimeter:
+        return []
+    }
+}
+
 private func positionProximity(_ player: Player, zone: ReboundZone) -> Double {
     let positionTag = player.bio.position.rawValue.uppercased()
     let isBig = positionTag.contains("C") || positionTag.contains("PF") || positionTag.contains("F")
@@ -795,7 +877,8 @@ private func pickRebounderIndex(
     opposingLineup: [Player] = []
 ) -> Int {
     guard !lineup.isEmpty else { return 0 }
-    let zone = reboundZone(for: shotType, spot: spot)
+    let initialZone = reboundZone(for: shotType, spot: spot)
+    let zone = reboundZoneWithShortBias(initialZone: initialZone, shotType: shotType, random: &random)
     let opposingBoxoutAvg: Double
     if opposingLineup.isEmpty {
         opposingBoxoutAvg = 50
@@ -804,6 +887,12 @@ private func pickRebounderIndex(
     }
     // Offense crashing against tall boxouts is suppressed; defense enjoys a boost when boxing out well.
     let boxoutResistance = clamp((opposingBoxoutAvg - 50) / 60, min: -0.2, max: 0.35)
+    let targetPresence = lineup.reduce(0) { $0 + zonePresenceAffinity($1, zone: zone) }
+    let fallbackPresence: Double = fallbackZones(for: zone).reduce(0) { total, fallbackZone in
+        total + lineup.reduce(0) { $0 + zonePresenceAffinity($1, zone: fallbackZone) }
+    }
+    let needsZoneFallback = !fallbackZones(for: zone).isEmpty && targetPresence < 1.0 && fallbackPresence > 0.8
+
     return weightedRandomIndex(lineup: lineup, random: &random) { player in
         let reboundRating = offensive
             ? getBaseRating(player, path: "rebounding.offensiveRebounding")
@@ -823,7 +912,16 @@ private func pickRebounderIndex(
         }
         let proximity = positionProximity(player, zone: zone)
         let crashingPenalty = offensive ? (1 - boxoutResistance) : (1 + boxoutResistance * 0.5)
-        return max(1, (baseScore + zoneBias * 0.45) * proximity * crashingPenalty)
+        let zoneFallbackBoost: Double
+        if needsZoneFallback {
+            let fallbackAffinity = fallbackZones(for: zone).reduce(0) { total, fallbackZone in
+                total + zonePresenceAffinity(player, zone: fallbackZone)
+            }
+            zoneFallbackBoost = 1 + fallbackAffinity * 0.32
+        } else {
+            zoneFallbackBoost = 1
+        }
+        return max(1, (baseScore + zoneBias * 0.45) * proximity * crashingPenalty * zoneFallbackBoost)
     }
 }
 
