@@ -474,7 +474,16 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                     addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: play.shooterLineupIndex) { $0.points += points }
                     switchedPossession = true
 
-                    let assistPool = play.assistCandidateIndices ?? Array(stored.teams[offenseTeamId].activeLineup.indices).filter { $0 != play.shooterLineupIndex }
+                    let assistPool: [Int]
+                    if let explicitCandidates = play.assistCandidateIndices {
+                        assistPool = explicitCandidates
+                    } else if play.shooterLineupIndex != ballHandlerIdx {
+                        // Direct pass-to-shot chain with no explicit override.
+                        assistPool = [ballHandlerIdx]
+                    } else {
+                        // Self-created shot with no pass interaction.
+                        assistPool = []
+                    }
                     if let assistIdx = pickAssistLineupIndex(
                         lineup: stored.teams[offenseTeamId].activeLineup,
                         shooterIndex: play.shooterLineupIndex,
@@ -680,11 +689,14 @@ private func pickLineupIndexForBallHandler(lineup: [Player], random: inout Seede
         lineup: lineup,
         random: &random
     ) { player in
-        getBaseRating(player, path: "skills.ballHandling") * 0.35
-            + getBaseRating(player, path: "skills.shotIQ") * 0.2
-            + getBaseRating(player, path: "tendencies.shootVsPass") * 0.2
-            + getBaseRating(player, path: "athleticism.burst") * 0.15
-            + getBaseRating(player, path: "tendencies.threePoint") * 0.1
+        let base = getBaseRating(player, path: "skills.ballHandling") * 0.33
+            + getBaseRating(player, path: "skills.passingVision") * 0.2
+            + getBaseRating(player, path: "skills.passingIQ") * 0.15
+            + (100 - getBaseRating(player, path: "tendencies.shootVsPass")) * 0.14
+            + getBaseRating(player, path: "skills.shotIQ") * 0.1
+            + getBaseRating(player, path: "athleticism.burst") * 0.08
+        let positionMultiplier: Double = isPointGuardLike(player) ? 1.35 : (player.bio.position == .sg ? 1.05 : 0.84)
+        return max(1, base * positionMultiplier)
     }
 }
 
@@ -1883,7 +1895,6 @@ private func resolvePlay(
         else { shotType = .dunk }
         // The post defender is usually the matching slot; approximate by same index.
         let postDefenderIdx = min(postIdx, defenseLineup.count - 1)
-        let assistPool = offenseLineup.indices.filter { $0 != postIdx }
         return PlayOutcome(
             shooterLineupIndex: postIdx,
             defenderLineupIndex: postDefenderIdx,
@@ -1892,7 +1903,7 @@ private func resolvePlay(
             edgeBonus: 0.04,
             makeBonus: 0,
             foulBonus: isRimShot(shotType) ? 0.03 : 0,
-            assistCandidateIndices: assistPool,
+            assistCandidateIndices: postIdx == ballHandlerIdx ? nil : [ballHandlerIdx],
             assistForceChance: 0.45
         )
 
