@@ -371,6 +371,14 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                     team: stored.teams[offenseTeamId].team,
                     random: &random
                 )
+                if let forcedStealerIdx = play.forcedTurnoverStealerLineupIndex {
+                    addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx) { $0.turnovers += 1 }
+                    addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: forcedStealerIdx) { $0.steals += 1 }
+                    addTeamExtra(stored: &stored, teamId: offenseTeamId, key: "turnovers", amount: 1)
+                    eventType = "turnover"
+                    switchedPossession = true
+                    stored.pendingTransition = NativeGameStateStore.PendingTransition(source: "steal")
+                } else {
                 let shooter = stored.teams[offenseTeamId].activeLineup[play.shooterLineupIndex]
                 let shotDefender = stored.teams[defenseTeamId].activeLineup[play.defenderLineupIndex]
 
@@ -586,6 +594,7 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 }
                 } // close: if !tookCharge
                 } // close: if !passIntercepted
+                } // close: forced drive-turnover branch
             }
         }
 
@@ -1752,6 +1761,7 @@ private struct PlayOutcome {
     var assistCandidateIndices: [Int]?
     var assistForceChance: Double?
     var isDrive: Bool = false
+    var forcedTurnoverStealerLineupIndex: Int? = nil
 }
 
 private func choosePlayType(offenseTeam: Team, ballHandler: Player, random: inout SeededRandom) -> PlayType {
@@ -1811,9 +1821,47 @@ private func resolvePlay(
     case .dribbleDrive:
         // Ball handler attacks the rim. Higher foul draw, shots favor rim.
         let driveRating = getRating(ballHandler, path: "tendencies.drive") + getRating(ballHandler, path: "athleticism.burst")
-        let defenderPerim = getRating(defenseLineup[defenderIdx], path: "defense.perimeterDefense")
-            + getRating(defenseLineup[defenderIdx], path: "defense.lateralQuickness")
+        let onBallDefender = defenseLineup[defenderIdx]
+        let defenderPerim = getRating(onBallDefender, path: "defense.perimeterDefense")
+            + getRating(onBallDefender, path: "defense.lateralQuickness")
         let driveEdge = (driveRating - defenderPerim) / 400
+        let driveOutcomeRoll = driveEdge + (random.nextUnit() - 0.5) * 0.72
+        let driveTier: Int
+        if driveOutcomeRoll <= -0.23 {
+            driveTier = -1 // decisive loss
+        } else if driveOutcomeRoll <= 0.03 {
+            driveTier = 0 // no clear advantage
+        } else if driveOutcomeRoll <= 0.29 {
+            driveTier = 1 // wins, but not decisively
+        } else {
+            driveTier = 2 // decisive win
+        }
+
+        // Decisive loss on the drive: on-ball defender gets an active steal chance.
+        if driveTier == -1 {
+            let defenderDisruption = getRating(onBallDefender, path: "defense.steals") * 0.46
+                + getRating(onBallDefender, path: "skills.hands") * 0.28
+                + getRating(onBallDefender, path: "defense.lateralQuickness") * 0.26
+            let handlerSecurity = getRating(ballHandler, path: "skills.ballHandling") * 0.52
+                + getRating(ballHandler, path: "skills.ballSafety") * 0.3
+                + getRating(ballHandler, path: "skills.shotIQ") * 0.18
+            let stealChance = clamp(0.11 + (defenderDisruption - handlerSecurity) / 230 + max(0, -driveEdge) * 0.16, min: 0.04, max: 0.36)
+            if random.nextUnit() < stealChance {
+                return PlayOutcome(
+                    shooterLineupIndex: ballHandlerIdx,
+                    defenderLineupIndex: defenderIdx,
+                    shotType: .midrange,
+                    spot: .topMiddle,
+                    edgeBonus: -0.12,
+                    makeBonus: 0,
+                    foulBonus: 0,
+                    assistCandidateIndices: nil,
+                    assistForceChance: 0.2,
+                    isDrive: false,
+                    forcedTurnoverStealerLineupIndex: defenderIdx
+                )
+            }
+        }
 
         // Help-defender chain: after beating the on-ball defender, help can force a kickout.
         // Weighted by passing vision vs weak-side defenders' help tendencies.
@@ -1827,32 +1875,55 @@ private func resolvePlay(
             .max() ?? 50
         let visionScore = getRating(ballHandler, path: "skills.passingVision") * 0.6
             + getRating(ballHandler, path: "skills.shotIQ") * 0.4
-        let kickChance = clamp(0.3 + (helpScore - visionScore) / 240, min: 0.12, max: 0.65)
+        let sagBonus: Double
+        let baseKickChance: Double
+        switch driveTier {
+        case 2:
+            sagBonus = 0.17
+            baseKickChance = 0.45
+        case 1:
+            sagBonus = 0.08
+            baseKickChance = 0.28
+        default:
+            sagBonus = 0
+            baseKickChance = 0.18
+        }
+        let kickChance = clamp(
+            baseKickChance
+                + (helpScore - visionScore) / 265
+                + max(0, driveEdge) * 0.22,
+            min: driveTier == 2 ? 0.28 : (driveTier == 1 ? 0.18 : 0.1),
+            max: driveTier == 2 ? 0.82 : 0.64
+        )
         if random.nextUnit() < kickChance && offenseLineup.count > 1 {
             let receiverIdx = evaluatePassTarget(
                 offenseLineup: offenseLineup,
                 defenseLineup: defenseLineup,
                 ballHandlerIdx: ballHandlerIdx,
-                random: &random
+                random: &random,
+                opennessBonus: sagBonus
             )
             let shooter = offenseLineup[receiverIdx]
             let spot = pickShooterSpot(player: shooter, random: &random)
             let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
             let shotDefenderIdx = positionMatchedDefenderIndex(shooter: shooter, defenseLineup: defenseLineup, fallback: receiverIdx)
+            let kickEdgeBonus = driveTier == 2 ? 0.2 : (driveTier == 1 ? 0.14 : 0.1)
+            let kickMakeBonus = driveTier == 2 ? 0.03 : (driveTier == 1 ? 0.015 : 0.01)
             return PlayOutcome(
                 shooterLineupIndex: receiverIdx,
                 defenderLineupIndex: shotDefenderIdx,
                 shotType: shotType,
                 spot: spot,
-                edgeBonus: 0.18, // drive-and-kick typically generates quality looks
-                makeBonus: 0.03,
+                edgeBonus: kickEdgeBonus, // decisive wins collapse more help than non-decisive wins
+                makeBonus: kickMakeBonus,
                 foulBonus: 0,
                 assistCandidateIndices: [ballHandlerIdx],
-                assistForceChance: 0.82
+                assistForceChance: driveTier == 2 ? 0.82 : 0.73
             )
         }
 
-        let takesRim = random.nextUnit() < clamp(0.55 + driveEdge, min: 0.25, max: 0.8)
+        let rimBase = driveTier == 2 ? 0.68 : (driveTier == 1 ? 0.58 : (driveTier == 0 ? 0.5 : 0.38))
+        let takesRim = random.nextUnit() < clamp(rimBase + driveEdge * 0.42, min: 0.2, max: 0.86)
         let spot: OffensiveSpot = takesRim ? .middlePaint : pickShooterSpot(player: ballHandler, random: &random)
         let shotType: ShotType
         if takesRim {
@@ -1867,9 +1938,9 @@ private func resolvePlay(
             defenderLineupIndex: defenderIdx,
             shotType: shotType,
             spot: spot,
-            edgeBonus: 0.08,
+            edgeBonus: driveTier == 2 ? 0.12 : (driveTier == 1 ? 0.08 : (driveTier == 0 ? 0.04 : -0.06)),
             makeBonus: 0,
-            foulBonus: takesRim ? 0.04 : 0,
+            foulBonus: takesRim ? (driveTier == 2 ? 0.05 : (driveTier == 1 ? 0.04 : 0.02)) : 0,
             assistCandidateIndices: nil,
             assistForceChance: 0.35,
             isDrive: takesRim
@@ -2077,7 +2148,8 @@ private func evaluatePassTarget(
     offenseLineup: [Player],
     defenseLineup: [Player],
     ballHandlerIdx: Int,
-    random: inout SeededRandom
+    random: inout SeededRandom,
+    opennessBonus: Double = 0
 ) -> Int {
     var bestIdx = ballHandlerIdx
     var bestScore = -Double.infinity
@@ -2101,7 +2173,7 @@ private func evaluatePassTarget(
         let defensivePressure = getRating(defender, path: "defense.shotContest") * 0.35
             + getRating(defender, path: "defense.perimeterDefense") * 0.25
             + getRating(defender, path: "defense.offballDefense") * 0.4
-        let openness = clamp((movement - defensivePressure) / 60, min: -0.4, max: 0.8)
+        let openness = clamp((movement - defensivePressure) / 60 + opennessBonus, min: -0.4, max: 0.92)
         let passRisk = clamp((getRating(defender, path: "defense.passPerception") - 55) / 220, min: 0, max: 0.15)
         let score = shotUtility * 12 + openness * 18 - passRisk * 8 + random.nextUnit() * 2
         if score > bestScore {
