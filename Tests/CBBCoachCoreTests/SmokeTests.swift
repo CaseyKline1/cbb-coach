@@ -100,6 +100,22 @@ func leagueFlowSmoke() throws {
     _ = advanceToNextUserGame(&league)
 }
 
+@Test("Advancing user game also simulates CPU-only games on that day")
+func advancingUserGameSimulatesLeagueDay() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "league-day-tests", totalRegularSeasonGames: 3))
+    autoFillUserNonConferenceOpponents(&league)
+    generateSeasonSchedule(&league)
+    let summary = getLeagueSummary(league)
+    #expect(summary.totalScheduledGames > 3)
+
+    _ = advanceToNextUserGame(&league)
+    let completed = getCompletedLeagueGames(league)
+    let cpuOnlyCompleted = completed.filter { game in
+        game.homeTeamId != summary.userTeamId && game.awayTeamId != summary.userTeamId
+    }
+    #expect(!cpuOnlyCompleted.isEmpty)
+}
+
 @Test("Completed league games include box score payload for stat views")
 func completedLeagueGamesCarryBoxScore() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "box-score-tests"))

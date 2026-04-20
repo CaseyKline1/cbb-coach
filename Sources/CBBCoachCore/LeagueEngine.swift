@@ -1121,8 +1121,10 @@ private func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
         fillerIndex += 1
     }
 
+    let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
+
     for (index, opponentId) in userOpponents.enumerated() {
-        guard let opp = state.teams.first(where: { $0.teamId == opponentId }) else { continue }
+        guard let opp = teamById[opponentId] else { continue }
         let day = index + 1
         let userHome = random.nextUnit() < 0.52
         let homeId = userHome ? user.teamId : opp.teamId
@@ -1145,29 +1147,53 @@ private func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
             )
         )
 
-        let cpuPool = state.teams.filter { $0.teamId != user.teamId && $0.teamId != opp.teamId }
-        if cpuPool.count >= 2 {
-            let a = cpuPool[random.int(0, cpuPool.count - 1)]
-            var b = cpuPool[random.int(0, cpuPool.count - 1)]
-            if b.teamId == a.teamId, let alt = cpuPool.first(where: { $0.teamId != a.teamId }) {
-                b = alt
+        var availableCPUIds = state.teams
+            .map(\.teamId)
+            .filter { $0 != user.teamId && $0 != opp.teamId }
+
+        if availableCPUIds.count >= 2 {
+            var dayRandom = SeededRandom(seed: hashString("schedule:\(state.optionsSeed):day:\(day)"))
+            for idx in stride(from: availableCPUIds.count - 1, through: 1, by: -1) {
+                let swapIdx = dayRandom.int(0, idx)
+                if swapIdx != idx {
+                    availableCPUIds.swapAt(idx, swapIdx)
+                }
             }
-            if a.teamId != b.teamId {
+
+            var gameNumber = 1
+            var pairIndex = 0
+            while pairIndex + 1 < availableCPUIds.count {
+                let teamAId = availableCPUIds[pairIndex]
+                let teamBId = availableCPUIds[pairIndex + 1]
+                pairIndex += 2
+
+                guard
+                    let teamA = teamById[teamAId],
+                    let teamB = teamById[teamBId]
+                else {
+                    continue
+                }
+
+                let teamAHome = dayRandom.nextUnit() < 0.5
+                let homeTeam = teamAHome ? teamA : teamB
+                let awayTeam = teamAHome ? teamB : teamA
+
                 state.schedule.append(
                     LeagueStore.ScheduledGame(
-                        gameId: "g_\(day)_cpu",
+                        gameId: "g_\(day)_cpu_\(gameNumber)",
                         day: day,
                         type: "regular_season",
                         siteType: "home",
                         neutralSite: false,
-                        homeTeamId: a.teamId,
-                        homeTeamName: a.teamName,
-                        awayTeamId: b.teamId,
-                        awayTeamName: b.teamName,
+                        homeTeamId: homeTeam.teamId,
+                        homeTeamName: homeTeam.teamName,
+                        awayTeamId: awayTeam.teamId,
+                        awayTeamName: awayTeam.teamName,
                         completed: false,
                         result: nil
                     )
                 )
+                gameNumber += 1
             }
         }
     }
