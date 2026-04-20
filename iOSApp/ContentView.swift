@@ -523,6 +523,9 @@ private struct CollegeLeagueHomeView: View {
     @State private var rankings: LeagueRankings?
     @State private var completedLeagueGames: [LeagueGameSummary] = []
     @State private var showingSkipAheadOptions = false
+    @State private var isSkipAheadInProgress = false
+    @State private var skipAheadTitle = ""
+    @State private var skipAheadGameRecaps: [String] = []
 
     var body: some View {
         NavigationStack {
@@ -561,6 +564,7 @@ private struct CollegeLeagueHomeView: View {
                             playNextGame()
                         }
                         .buttonStyle(GameButtonStyle(variant: .primary))
+                        .disabled(isSkipAheadInProgress)
 
                         Button("Skip Ahead") {
                             if canSkipToMidseason || canSkipToEndRegularSeason {
@@ -570,6 +574,7 @@ private struct CollegeLeagueHomeView: View {
                             }
                         }
                         .buttonStyle(GameButtonStyle(variant: .secondary))
+                        .disabled(isSkipAheadInProgress)
                     }
 
                     if let summary {
@@ -634,6 +639,7 @@ private struct CollegeLeagueHomeView: View {
                         onCreateNewCoach()
                     }
                     .buttonStyle(GameButtonStyle(variant: .danger, size: .compact))
+                    .disabled(isSkipAheadInProgress)
                 }
                 .padding(20)
             }
@@ -692,17 +698,25 @@ private struct CollegeLeagueHomeView: View {
             .confirmationDialog("Skip Ahead", isPresented: $showingSkipAheadOptions, titleVisibility: .visible) {
                 if canSkipToMidseason {
                     Button("Midseason") {
-                        skipAhead(toCompletedGames: 15)
+                        startSkipAhead(target: .midseason)
                     }
                 }
 
                 if canSkipToEndRegularSeason {
                     Button("End of Regular Season") {
-                        skipAhead(toCompletedGames: 31)
+                        startSkipAhead(target: .endOfRegularSeason)
                     }
                 }
 
                 Button("Cancel", role: .cancel) {}
+            }
+            .overlay {
+                if isSkipAheadInProgress {
+                    SkipAheadOverlayView(
+                        title: skipAheadTitle,
+                        recaps: skipAheadGameRecaps
+                    )
+                }
             }
         }
     }
@@ -801,13 +815,29 @@ private struct CollegeLeagueHomeView: View {
         statusText = "Game \(gameLabel): \(result.opponentName ?? "Unknown") \(userScore)-\(oppScore) (\(result.won == true ? "W" : "L"))"
     }
 
-    private func skipAhead(toCompletedGames targetCompletedGames: Int) {
-        guard var currentLeague = league else { return }
+    private func startSkipAhead(target: SkipAheadTarget) {
+        guard !isSkipAheadInProgress else { return }
+        isSkipAheadInProgress = true
+        skipAheadTitle = target.overlayTitle
+        skipAheadGameRecaps = []
+
+        Task {
+            await runSkipAhead(target: target)
+        }
+    }
+
+    @MainActor
+    private func runSkipAhead(target: SkipAheadTarget) async {
+        guard var currentLeague = league else {
+            isSkipAheadInProgress = false
+            return
+        }
+
         var completedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
         var seasonCompleted = false
-        var gameRecaps: [String] = []
+        var recaps: [String] = []
 
-        while completedGames < targetCompletedGames {
+        while completedGames < target.completedGames {
             guard let result = advanceToNextUserGame(&currentLeague) else { break }
             if result.done == true {
                 seasonCompleted = true
@@ -815,31 +845,20 @@ private struct CollegeLeagueHomeView: View {
             }
             completedGames += 1
             let recap = skipAheadGameRecap(for: result)
-            gameRecaps.append(recap)
+            recaps.append(recap)
+            skipAheadGameRecaps = recaps
+            await Task.yield()
         }
 
         league = currentLeague
         refreshFromLeague(currentLeague)
 
         if seasonCompleted {
-            if gameRecaps.isEmpty {
-                statusText = "Season complete."
-            } else {
-                statusText = (gameRecaps + ["Season complete."]).joined(separator: "\n")
-            }
-            return
+            statusText = "Season complete."
+        } else {
+            statusText = target.completionMessage
         }
-
-        let checkpointMessage = targetCompletedGames == 15
-            ? "Advanced to midseason (between Weeks 15 and 16)."
-            : "Advanced to end of regular season (after Game 31)."
-
-        if gameRecaps.isEmpty {
-            statusText = checkpointMessage
-            return
-        }
-
-        statusText = ([checkpointMessage] + gameRecaps).joined(separator: "\n")
+        isSkipAheadInProgress = false
     }
 
     private func skipAheadGameRecap(for result: UserGameSummary) -> String {
@@ -948,6 +967,84 @@ private struct CollegeLeagueHomeView: View {
         setUserAssistantFocus(&currentLeague, assistantIndex: assistantIndex, focus: focus)
         league = currentLeague
         coachingStaff = getUserCoachingStaff(currentLeague)
+    }
+}
+
+private enum SkipAheadTarget {
+    case midseason
+    case endOfRegularSeason
+
+    var completedGames: Int {
+        switch self {
+        case .midseason: 15
+        case .endOfRegularSeason: 31
+        }
+    }
+
+    var overlayTitle: String {
+        switch self {
+        case .midseason: "Simulating to Midseason..."
+        case .endOfRegularSeason: "Simulating to End of Regular Season..."
+        }
+    }
+
+    var completionMessage: String {
+        switch self {
+        case .midseason: "Advanced to midseason (between Weeks 15 and 16)."
+        case .endOfRegularSeason: "Advanced to end of regular season (after Game 31)."
+        }
+    }
+}
+
+private struct SkipAheadOverlayView: View {
+    let title: String
+    let recaps: [String]
+
+    var body: some View {
+        ZStack {
+            AppTheme.background.opacity(0.95)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(title)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
+                }
+
+                Text("User game results will appear here as they finish.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if recaps.isEmpty {
+                    Text("Simulating...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(recaps.enumerated()), id: \.offset) { _, recap in
+                                Text(recap)
+                                    .font(.footnote.monospacedDigit())
+                                    .foregroundStyle(.primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .padding(18)
+            .background(AppTheme.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+            )
+            .padding(20)
+        }
     }
 }
 
