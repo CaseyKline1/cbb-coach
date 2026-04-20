@@ -798,8 +798,11 @@ private struct CollegeLeagueHomeView: View {
 
     private func fetchConferenceStandings(_ league: LeagueState) -> (standings: [String: [ConferenceStanding]], conferenceNames: [String: String]) {
         let conferenceOptions = listCareerTeamOptions()
-        let conferenceNames = Dictionary(uniqueKeysWithValues: conferenceOptions.map { ($0.conferenceId, $0.conferenceName) })
-        let conferenceIds = Array(Set(conferenceOptions.map(\.conferenceId))).sorted {
+        let conferenceNames = Dictionary(
+            conferenceOptions.map { ($0.conferenceId, $0.conferenceName) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let conferenceIds = Array(conferenceNames.keys).sorted {
             let lhsName = conferenceNames[$0] ?? $0
             let rhsName = conferenceNames[$1] ?? $1
             return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
