@@ -522,6 +522,7 @@ private struct CollegeLeagueHomeView: View {
     @State private var conferenceNamesById: [String: String] = [:]
     @State private var rankings: LeagueRankings?
     @State private var completedLeagueGames: [LeagueGameSummary] = []
+    @State private var showingSkipAheadOptions = false
 
     var body: some View {
         NavigationStack {
@@ -561,8 +562,12 @@ private struct CollegeLeagueHomeView: View {
                         }
                         .buttonStyle(GameButtonStyle(variant: .primary))
 
-                        Button("Choose Team") {
-                            onChooseDifferentTeam()
+                        Button("Skip Ahead") {
+                            if canSkipToMidseason || canSkipToEndRegularSeason {
+                                showingSkipAheadOptions = true
+                            } else {
+                                statusText = "Already past midseason and end of regular season checkpoints."
+                            }
                         }
                         .buttonStyle(GameButtonStyle(variant: .secondary))
                     }
@@ -684,6 +689,21 @@ private struct CollegeLeagueHomeView: View {
                     createLeague()
                 }
             }
+            .confirmationDialog("Skip Ahead", isPresented: $showingSkipAheadOptions, titleVisibility: .visible) {
+                if canSkipToMidseason {
+                    Button("Midseason") {
+                        skipAhead(toCompletedGames: 15)
+                    }
+                }
+
+                if canSkipToEndRegularSeason {
+                    Button("End of Regular Season") {
+                        skipAhead(toCompletedGames: 31)
+                    }
+                }
+
+                Button("Cancel", role: .cancel) {}
+            }
         }
     }
 
@@ -737,6 +757,18 @@ private struct CollegeLeagueHomeView: View {
         listCareerTeamOptions().first(where: { $0.teamName == teamName })?.conferenceId
     }
 
+    private var completedUserGameCount: Int {
+        schedule.filter { $0.completed == true }.count
+    }
+
+    private var canSkipToMidseason: Bool {
+        completedUserGameCount < 15
+    }
+
+    private var canSkipToEndRegularSeason: Bool {
+        completedUserGameCount < 31
+    }
+
     private func createLeague() {
         do {
             var options = CreateLeagueOptions(userTeamName: teamName, seed: "ios-league-\(profile.fullName)-\(teamName)")
@@ -746,17 +778,8 @@ private struct CollegeLeagueHomeView: View {
             options.userHeadCoachPipelineState = profile.pipelineState
             let created = try createD1League(options: options)
             league = created
-            roster = getUserRoster(created)
-            schedule = getUserSchedule(created)
-            rotationSlots = getUserRotation(created)
-            coachingStaff = getUserCoachingStaff(created)
-            let leagueSummary = getLeagueSummary(created)
-            summary = leagueSummary
-            let standingsData = fetchConferenceStandings(created)
-            conferenceStandings = standingsData.standings
-            conferenceNamesById = standingsData.conferenceNames
-            rankings = getRankings(created)
-            completedLeagueGames = getCompletedLeagueGames(created)
+            refreshFromLeague(created)
+            let leagueSummary = summary ?? getLeagueSummary(created)
             statusText = "\(leagueSummary.userTeamName): \(leagueSummary.totalScheduledGames) total games generated"
         } catch {
             statusText = "League error: \(error.localizedDescription)"
@@ -767,16 +790,7 @@ private struct CollegeLeagueHomeView: View {
         guard var currentLeague = league else { return }
         guard let result = advanceToNextUserGame(&currentLeague) else { return }
         league = currentLeague
-        roster = getUserRoster(currentLeague)
-        schedule = getUserSchedule(currentLeague)
-        rotationSlots = getUserRotation(currentLeague)
-        coachingStaff = getUserCoachingStaff(currentLeague)
-        summary = getLeagueSummary(currentLeague)
-        let standingsData = fetchConferenceStandings(currentLeague)
-        conferenceStandings = standingsData.standings
-        conferenceNamesById = standingsData.conferenceNames
-        rankings = getRankings(currentLeague)
-        completedLeagueGames = getCompletedLeagueGames(currentLeague)
+        refreshFromLeague(currentLeague)
         if result.done == true {
             statusText = "Season complete."
             return
@@ -785,6 +799,48 @@ private struct CollegeLeagueHomeView: View {
         let oppScore = result.score?.numberValue(for: "opponent")?.roundedInt ?? 0
         let gameLabel = gameNumber(for: result)
         statusText = "Game \(gameLabel): \(result.opponentName ?? "Unknown") \(userScore)-\(oppScore) (\(result.won == true ? "W" : "L"))"
+    }
+
+    private func skipAhead(toCompletedGames targetCompletedGames: Int) {
+        guard var currentLeague = league else { return }
+        var completedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
+        var seasonCompleted = false
+
+        while completedGames < targetCompletedGames {
+            guard let result = advanceToNextUserGame(&currentLeague) else { break }
+            if result.done == true {
+                seasonCompleted = true
+                break
+            }
+            completedGames += 1
+        }
+
+        league = currentLeague
+        refreshFromLeague(currentLeague)
+
+        if seasonCompleted {
+            statusText = "Season complete."
+            return
+        }
+
+        if targetCompletedGames == 15 {
+            statusText = "Advanced to midseason (between Weeks 15 and 16)."
+        } else {
+            statusText = "Advanced to end of regular season (after Game 31)."
+        }
+    }
+
+    private func refreshFromLeague(_ league: LeagueState) {
+        roster = getUserRoster(league)
+        schedule = getUserSchedule(league)
+        rotationSlots = getUserRotation(league)
+        coachingStaff = getUserCoachingStaff(league)
+        summary = getLeagueSummary(league)
+        let standingsData = fetchConferenceStandings(league)
+        conferenceStandings = standingsData.standings
+        conferenceNamesById = standingsData.conferenceNames
+        rankings = getRankings(league)
+        completedLeagueGames = getCompletedLeagueGames(league)
     }
 
     private func resultSummaryText(for game: UserGameSummary) -> String {
