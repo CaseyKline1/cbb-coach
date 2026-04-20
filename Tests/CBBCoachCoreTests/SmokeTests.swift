@@ -188,3 +188,26 @@ func substitutionFlowUsesBenchMinutes() {
     #expect(homeBenchMinutes > 0)
     #expect(awayBenchMinutes > 0)
 }
+
+@Test("User roster summary includes full player rating payload")
+func userRosterIncludesFullAttributeSet() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "roster-attributes"))
+    let roster = getUserRoster(league)
+    guard let player = roster.first, let attributes = player.attributes else {
+        Issue.record("Expected roster player with attributes payload")
+        return
+    }
+
+    let expectedKeys: Set<String> = [
+        "potential",
+        "speed", "agility", "burst", "strength", "vertical", "stamina", "durability",
+        "layups", "dunks", "closeShot", "midrangeShot", "threePointShooting", "cornerThrees", "upTopThrees", "drawFoul", "freeThrows",
+        "postControl", "postFadeaways", "postHooks",
+        "ballHandling", "ballSafety", "passingAccuracy", "passingVision", "passingIQ", "shotIQ", "offballOffense", "hands", "hustle", "clutch",
+        "perimeterDefense", "postDefense", "shotBlocking", "shotContest", "steals", "lateralQuickness", "offballDefense", "passPerception", "defensiveControl",
+        "offensiveRebounding", "defensiveRebound", "boxouts",
+        "tendencyPost", "tendencyInside", "tendencyMidrange", "tendencyThreePoint", "tendencyDrive", "tendencyPickAndRoll", "tendencyPickAndPop", "tendencyShootVsPass",
+    ]
+
+    #expect(Set(attributes.keys) == expectedKeys)
+}
