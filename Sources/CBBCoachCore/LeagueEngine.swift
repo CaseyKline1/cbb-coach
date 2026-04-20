@@ -1793,7 +1793,22 @@ private func applyRatings(_ player: inout Player, base: Int, random: inout Seede
     player.tendencies.drive = r(1)
     player.tendencies.pickAndRoll = r(1)
     player.tendencies.pickAndPop = r(0)
-    player.tendencies.shootVsPass = r(0)
+    let shootVsPassBase: Int
+    switch player.bio.position {
+    case .pg:
+        shootVsPassBase = 43
+    case .cg:
+        shootVsPassBase = 47
+    case .sg:
+        shootVsPassBase = 50
+    case .sf, .wing:
+        shootVsPassBase = 52
+    case .f, .pf:
+        shootVsPassBase = 54
+    case .c, .big:
+        shootVsPassBase = 56
+    }
+    player.tendencies.shootVsPass = clamp(shootVsPassBase + random.int(-8, 8), min: 25, max: 99)
 }
 
 private func playerOverall(_ player: Player) -> Int {
