@@ -519,6 +519,7 @@ private struct CollegeLeagueHomeView: View {
     @State private var coachingStaff: UserCoachingStaffSummary?
     @State private var summary: LeagueSummary?
     @State private var conferenceStandings: [String: [ConferenceStanding]] = [:]
+    @State private var conferenceNamesById: [String: String] = [:]
     @State private var rankings: LeagueRankings?
     @State private var completedLeagueGames: [LeagueGameSummary] = []
 
@@ -657,6 +658,7 @@ private struct CollegeLeagueHomeView: View {
                 case .standings:
                     ConferenceStandingsView(
                         standingsByConference: conferenceStandings,
+                        conferenceNamesById: conferenceNamesById,
                         preferredConferenceId: userConferenceId
                     )
                 case .rankings:
@@ -750,7 +752,9 @@ private struct CollegeLeagueHomeView: View {
             coachingStaff = getUserCoachingStaff(created)
             let leagueSummary = getLeagueSummary(created)
             summary = leagueSummary
-            conferenceStandings = fetchConferenceStandings(created)
+            let standingsData = fetchConferenceStandings(created)
+            conferenceStandings = standingsData.standings
+            conferenceNamesById = standingsData.conferenceNames
             rankings = getRankings(created)
             completedLeagueGames = getCompletedLeagueGames(created)
             statusText = "\(leagueSummary.userTeamName): \(leagueSummary.totalScheduledGames) total games generated"
@@ -768,7 +772,9 @@ private struct CollegeLeagueHomeView: View {
         rotationSlots = getUserRotation(currentLeague)
         coachingStaff = getUserCoachingStaff(currentLeague)
         summary = getLeagueSummary(currentLeague)
-        conferenceStandings = fetchConferenceStandings(currentLeague)
+        let standingsData = fetchConferenceStandings(currentLeague)
+        conferenceStandings = standingsData.standings
+        conferenceNamesById = standingsData.conferenceNames
         rankings = getRankings(currentLeague)
         completedLeagueGames = getCompletedLeagueGames(currentLeague)
         if result.done == true {
@@ -790,8 +796,14 @@ private struct CollegeLeagueHomeView: View {
         return "\(userScore > opponentScore ? "W" : "L") \(userScore)-\(opponentScore)"
     }
 
-    private func fetchConferenceStandings(_ league: LeagueState) -> [String: [ConferenceStanding]] {
-        let conferenceIds = ["acc", "sec", "big-ten", "big-12", "big-east"]
+    private func fetchConferenceStandings(_ league: LeagueState) -> (standings: [String: [ConferenceStanding]], conferenceNames: [String: String]) {
+        let conferenceOptions = listCareerTeamOptions()
+        let conferenceNames = Dictionary(uniqueKeysWithValues: conferenceOptions.map { ($0.conferenceId, $0.conferenceName) })
+        let conferenceIds = Array(Set(conferenceOptions.map(\.conferenceId))).sorted {
+            let lhsName = conferenceNames[$0] ?? $0
+            let rhsName = conferenceNames[$1] ?? $1
+            return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
+        }
         var result: [String: [ConferenceStanding]] = [:]
         for id in conferenceIds {
             let rows = getConferenceStandings(league, conferenceId: id)
@@ -799,7 +811,7 @@ private struct CollegeLeagueHomeView: View {
                 result[id] = rows
             }
         }
-        return result
+        return (standings: result, conferenceNames: conferenceNames)
     }
 
     private func saveRotation(_ updated: [UserRotationSlot]) {
@@ -2709,6 +2721,7 @@ private struct StatLeadersView: View {
 
 private struct ConferenceStandingsView: View {
     let standingsByConference: [String: [ConferenceStanding]]
+    let conferenceNamesById: [String: String]
     let preferredConferenceId: String?
 
     private var orderedConferences: [String] {
@@ -2789,14 +2802,13 @@ private struct ConferenceStandingsView: View {
     }
 
     private func conferenceTitle(_ id: String) -> String {
-        switch id {
-        case "acc": "ACC"
-        case "sec": "SEC"
-        case "big-ten": "Big Ten"
-        case "big-12": "Big 12"
-        case "big-east": "Big East"
-        default: id.uppercased()
+        if let knownName = conferenceNamesById[id] {
+            return knownName
         }
+        return id
+            .split(separator: "-")
+            .map { String($0).capitalized }
+            .joined(separator: " ")
     }
 
     private func formatPerGame(points: Int, wins: Int, losses: Int) -> String {
