@@ -465,6 +465,7 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 stored.pendingTransition = NativeGameStateStore.PendingTransition(source: "steal")
             } else {
                 let play = resolvePlay(
+                    stored: &stored,
                     offenseLineup: stored.teams[offenseTeamId].activeLineup,
                     defenseLineup: stored.teams[defenseTeamId].activeLineup,
                     ballHandlerIdx: ballHandlerIdx,
@@ -2165,6 +2166,7 @@ private func choosePlayType(offenseTeam: Team, ballHandler: Player, random: inou
 }
 
 private func resolvePlay(
+    stored: inout NativeGameStateStore.StoredState,
     offenseLineup: [Player],
     defenseLineup: [Player],
     ballHandlerIdx: Int,
@@ -2186,18 +2188,23 @@ private func resolvePlay(
     switch playType {
     case .dribbleDrive:
         // Ball handler attacks the rim. Higher foul draw, shots favor rim.
-        let driveRating = getRating(ballHandler, path: "tendencies.drive") + getRating(ballHandler, path: "athleticism.burst")
         let onBallDefender = defenseLineup[defenderIdx]
-        let defenderPerim = getRating(onBallDefender, path: "defense.perimeterDefense")
-            + getRating(onBallDefender, path: "defense.lateralQuickness")
-        let driveEdge = (driveRating - defenderPerim) / 400
-        let driveOutcomeRoll = driveEdge + (random.nextUnit() - 0.5) * 0.72
+        let driveInteraction = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "drive_advantage",
+            offensePlayer: ballHandler,
+            defensePlayer: onBallDefender,
+            offenseRatings: ["athleticism.burst", "skills.ballHandling", "shooting.layups", "tendencies.drive"],
+            defenseRatings: ["defense.perimeterDefense", "defense.lateralQuickness", "defense.defensiveControl"],
+            random: &random
+        )
+        let driveControl = logistic(driveInteraction.edge)
         let driveTier: Int
-        if driveOutcomeRoll <= -0.23 {
+        if driveControl <= 0.28 {
             driveTier = -1 // decisive loss
-        } else if driveOutcomeRoll <= 0.03 {
+        } else if driveControl <= 0.5 {
             driveTier = 0 // no clear advantage
-        } else if driveOutcomeRoll <= 0.29 {
+        } else if driveControl <= 0.72 {
             driveTier = 1 // wins, but not decisively
         } else {
             driveTier = 2 // decisive win
@@ -2205,13 +2212,17 @@ private func resolvePlay(
 
         // Decisive loss on the drive: on-ball defender gets an active steal chance.
         if driveTier == -1 {
-            let defenderDisruption = getRating(onBallDefender, path: "defense.steals") * 0.46
-                + getRating(onBallDefender, path: "skills.hands") * 0.28
-                + getRating(onBallDefender, path: "defense.lateralQuickness") * 0.26
-            let handlerSecurity = getRating(ballHandler, path: "skills.ballHandling") * 0.52
-                + getRating(ballHandler, path: "skills.ballSafety") * 0.3
-                + getRating(ballHandler, path: "skills.shotIQ") * 0.18
-            let stealChance = clamp(0.11 + (defenderDisruption - handlerSecurity) / 230 + max(0, -driveEdge) * 0.16, min: 0.04, max: 0.36)
+            let stripInteraction = resolveInteractionWithTrace(
+                stored: &stored,
+                label: "drive_strip",
+                offensePlayer: ballHandler,
+                defensePlayer: onBallDefender,
+                offenseRatings: ["skills.ballHandling", "skills.ballSafety", "skills.hands"],
+                defenseRatings: ["defense.steals", "skills.hands", "defense.lateralQuickness"],
+                random: &random
+            )
+            let stripDefenseControl = 1 - logistic(stripInteraction.edge)
+            let stealChance = clamp(0.08 + stripDefenseControl * 0.35, min: 0.04, max: 0.36)
             if random.nextUnit() < stealChance {
                 return PlayOutcome(
                     shooterLineupIndex: ballHandlerIdx,
@@ -2230,35 +2241,41 @@ private func resolvePlay(
         }
 
         // Help-defender chain: after beating the on-ball defender, help can force a kickout.
-        // Weighted by passing vision vs weak-side defenders' help tendencies.
-        let helpScore = defenseLineup.enumerated()
+        // Choose strongest helper, then resolve helper-vs-ballhandler interaction.
+        let helpCandidates = defenseLineup.enumerated()
             .filter { $0.offset != defenderIdx }
-            .map { _, d in
-                getRating(d, path: "defense.offballDefense") * 0.55
-                    + getRating(d, path: "defense.shotContest") * 0.3
-                    + getRating(d, path: "defense.lateralQuickness") * 0.15
-            }
-            .max() ?? 50
-        let visionScore = getRating(ballHandler, path: "skills.passingVision") * 0.6
-            + getRating(ballHandler, path: "skills.shotIQ") * 0.4
+        let helpIdx = helpCandidates.max { lhs, rhs in
+            let l = getRating(lhs.element, path: "defense.offballDefense") * 0.55
+                + getRating(lhs.element, path: "defense.shotContest") * 0.3
+                + getRating(lhs.element, path: "defense.lateralQuickness") * 0.15
+            let r = getRating(rhs.element, path: "defense.offballDefense") * 0.55
+                + getRating(rhs.element, path: "defense.shotContest") * 0.3
+                + getRating(rhs.element, path: "defense.lateralQuickness") * 0.15
+            return l < r
+        }?.offset ?? defenderIdx
+        let helper = defenseLineup[helpIdx]
+        let helpInteraction = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "help_rotation",
+            offensePlayer: ballHandler,
+            defensePlayer: helper,
+            offenseRatings: ["skills.passingVision", "skills.shotIQ", "skills.ballHandling"],
+            defenseRatings: ["defense.offballDefense", "defense.shotContest", "defense.lateralQuickness"],
+            random: &random
+        )
+        let helpDefenseControl = 1 - logistic(helpInteraction.edge)
         let sagBonus: Double
-        let baseKickChance: Double
         switch driveTier {
         case 2:
-            sagBonus = 0.17
-            baseKickChance = 0.45
+            sagBonus = 0.1 + helpDefenseControl * 0.12
         case 1:
-            sagBonus = 0.08
-            baseKickChance = 0.28
+            sagBonus = 0.04 + helpDefenseControl * 0.08
         default:
-            sagBonus = 0
-            baseKickChance = 0.18
+            sagBonus = helpDefenseControl * 0.05
         }
         let kickChance = clamp(
-            baseKickChance
-                + (helpScore - visionScore) / 265
-                + max(0, driveEdge) * 0.22,
-            min: driveTier == 2 ? 0.28 : (driveTier == 1 ? 0.18 : 0.1),
+            0.12 + helpDefenseControl * 0.55 + max(0, driveControl - 0.5) * 0.18,
+            min: driveTier == 2 ? 0.24 : (driveTier == 1 ? 0.16 : 0.08),
             max: driveTier == 2 ? 0.82 : 0.64
         )
         if random.nextUnit() < kickChance && offenseLineup.count > 1 {
@@ -2288,8 +2305,12 @@ private func resolvePlay(
             )
         }
 
-        let rimBase = driveTier == 2 ? 0.68 : (driveTier == 1 ? 0.58 : (driveTier == 0 ? 0.5 : 0.38))
-        let takesRim = random.nextUnit() < clamp(rimBase + driveEdge * 0.42, min: 0.2, max: 0.86)
+        let rimChance = clamp(
+            0.34 + driveControl * 0.5 - helpDefenseControl * 0.22,
+            min: 0.2,
+            max: 0.86
+        )
+        let takesRim = random.nextUnit() < rimChance
         let spot: OffensiveSpot = takesRim ? .middlePaint : pickShooterSpot(player: ballHandler, random: &random)
         let shotType: ShotType
         if takesRim {
@@ -2357,12 +2378,16 @@ private func resolvePlay(
             screenerDefender: screenerDefender
         )
         let nav = chooseScreenNavigation(
+            stored: &stored,
+            ballHandler: pickActionBallHandler,
+            screener: screener,
             onBallDefender: onBallDefender,
             screenerDefender: screenerDefender,
             screenEdge: screenEdge,
             random: &random
         )
         return resolvePickAndRollOutcome(
+            stored: &stored,
             offenseLineup: offenseLineup,
             defenseLineup: defenseLineup,
             ballHandlerIdx: pickActionBallHandlerIdx,
@@ -2585,19 +2610,38 @@ private enum ScreenNavigation {
 }
 
 private func chooseScreenNavigation(
+    stored: inout NativeGameStateStore.StoredState,
+    ballHandler: Player,
+    screener: Player,
     onBallDefender: Player,
     screenerDefender: Player,
     screenEdge: Double,
     random: inout SeededRandom
 ) -> ScreenNavigation {
-    let navIQ = getBaseRating(onBallDefender, path: "defense.perimeterDefense") * 0.4
-        + getBaseRating(onBallDefender, path: "defense.lateralQuickness") * 0.35
-        + getBaseRating(onBallDefender, path: "skills.shotIQ") * 0.25
-    let bigMobility = getBaseRating(screenerDefender, path: "defense.lateralQuickness")
-    let overWeight = max(5, navIQ * 1.1 - screenEdge * 20)
-    let underWeight = max(5, (100 - navIQ * 0.3) * 0.5)
-    let switchWeight = max(5, bigMobility * 0.9 - 15)
-    let iceWeight = max(5, (getBaseRating(onBallDefender, path: "defense.shotContest") - 40) * 0.6)
+    let pointInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "screen_navigation_point",
+        offensePlayer: ballHandler,
+        defensePlayer: onBallDefender,
+        offenseRatings: ["skills.ballHandling", "athleticism.agility", "skills.shotIQ"],
+        defenseRatings: ["defense.perimeterDefense", "defense.lateralQuickness", "skills.shotIQ"],
+        random: &random
+    )
+    let bigInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "screen_navigation_big",
+        offensePlayer: screener,
+        defensePlayer: screenerDefender,
+        offenseRatings: ["athleticism.strength", "skills.offballOffense", "skills.hands"],
+        defenseRatings: ["defense.defensiveControl", "athleticism.strength", "defense.lateralQuickness"],
+        random: &random
+    )
+    let offenseControl = clamp(logistic(pointInteraction.edge * 0.62 + bigInteraction.edge * 0.38 + screenEdge * 0.4), min: 0.05, max: 0.95)
+    let defenseControl = 1 - offenseControl
+    let overWeight = max(1, defenseControl * 55 + getBaseRating(onBallDefender, path: "defense.perimeterDefense") * 0.18)
+    let underWeight = max(1, defenseControl * 28 + getBaseRating(onBallDefender, path: "skills.shotIQ") * 0.1)
+    let switchWeight = max(1, offenseControl * 48 + getBaseRating(screenerDefender, path: "defense.lateralQuickness") * 0.22)
+    let iceWeight = max(1, defenseControl * 36 + getBaseRating(onBallDefender, path: "defense.shotContest") * 0.16)
     let total = overWeight + underWeight + switchWeight + iceWeight
     var pick = random.nextUnit() * max(total, 1)
     pick -= overWeight; if pick <= 0 { return .over }
@@ -2607,6 +2651,7 @@ private func chooseScreenNavigation(
 }
 
 private func resolvePickAndRollOutcome(
+    stored: inout NativeGameStateStore.StoredState,
     offenseLineup: [Player],
     defenseLineup: [Player],
     ballHandlerIdx: Int,
@@ -2619,6 +2664,8 @@ private func resolvePickAndRollOutcome(
 ) -> PlayOutcome {
     let ballHandler = offenseLineup[ballHandlerIdx]
     let screener = offenseLineup[screenerIdx]
+    let onBallDefender = defenseLineup[defenderIdx]
+    let screenerDefender = defenseLineup[screenerDefenderIdx]
     let passLean = clamp(
         0.55
             + (50 - getRating(ballHandler, path: "tendencies.shootVsPass")) / 150
@@ -2630,7 +2677,32 @@ private func resolvePickAndRollOutcome(
     switch navigation {
     case .over:
         // Ball handler drives off the screen; roller threat pulls help.
-        let rollerFinishChance = clamp(0.44 + screenEdge * 0.3 + (passLean - 0.55) * 0.2, min: 0.2, max: 0.75)
+        let rollerSeal = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "roller_seal",
+            offensePlayer: screener,
+            defensePlayer: screenerDefender,
+            offenseRatings: ["postGame.postControl", "athleticism.strength", "skills.hands"],
+            defenseRatings: ["defense.postDefense", "defense.defensiveControl", "athleticism.strength"],
+            random: &random
+        )
+        let handlerRead = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "pnr_handler_read",
+            offensePlayer: ballHandler,
+            defensePlayer: onBallDefender,
+            offenseRatings: ["skills.passingVision", "skills.passingIQ", "skills.ballHandling"],
+            defenseRatings: ["defense.passPerception", "defense.lateralQuickness", "defense.perimeterDefense"],
+            random: &random
+        )
+        let rollerFinishChance = clamp(
+            0.18
+                + logistic(rollerSeal.edge + screenEdge * 0.45) * 0.46
+                + logistic(handlerRead.edge) * 0.12
+                + (passLean - 0.55) * 0.16,
+            min: 0.2,
+            max: 0.78
+        )
         if random.nextUnit() < rollerFinishChance {
             let takesDunk = getRating(screener, path: "shooting.dunks") > 65 && random.nextUnit() < 0.45
             return PlayOutcome(

@@ -10,6 +10,10 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
 - Shot make probability no longer receives global team-strength bonus.
 - Rebounds are already interaction-based from prior pass (`resolveReboundOutcome`).
 - Converted `resolvePassInterception` to interaction-driven lane contests (`pass_interception_lane` traces).
+- Converted core drive/PnR branch gates in `resolvePlay` to interaction-driven decisions:
+  - `drive_advantage`, `drive_strip`, `help_rotation`
+  - `screen_navigation_point`, `screen_navigation_big`
+  - `roller_seal`, `pnr_handler_read`
 
 ## Current interaction backbone (already in place)
 - Core interaction function: `resolveInteraction(...)`
@@ -22,12 +26,12 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
 ## Remaining non-interaction areas (priority order)
 
 ### 1) Play-branch decisions in `resolvePlay`
-Most branches still use direct probability gates and heuristic thresholds.
+Partially completed (drive + pick-and-roll done). Remaining branches still use direct probability gates and heuristic thresholds.
 
 Targets:
-- Dribble-drive tiering and kick/rim choices
-- Pick-and-roll / pick-and-pop branch selection
-- Screen navigation selection
+- Pick-and-pop branch gates
+- Post-up branch gates
+- Pass-around branch gates
 - Pop destination / shot type branch heuristics
 
 Recommended approach:
@@ -84,7 +88,7 @@ Recommended approach:
   - play-by-play still coherent
 
 ## Suggested next implementation sequence
-1. Convert `resolvePlay` branch gates to interaction-driven (drive + PNR first).
+1. Finish remaining `resolvePlay` branches (pick-and-pop, post-up, pass-around).
 2. Convert `maybeResolvePress` chain.
 3. Convert foul gates.
 4. Convert possession action gate last (hardest to tune globally).
