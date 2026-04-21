@@ -707,23 +707,25 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                         switchedPossession = true
                     } else {
                         // Loose-ball foul: rare, called on whichever side didn't secure the rebound.
-                        let zone = reboundZoneWithShortBias(
-                            initialZone: reboundZone(for: shotType, spot: play.spot),
+                        let zone = resolveReboundLandingZone(
+                            stored: &stored,
+                            offenseLineup: stored.teams[offenseTeamId].activeLineup,
+                            defenseLineup: stored.teams[defenseTeamId].activeLineup,
                             shotType: shotType,
+                            spot: play.spot,
+                            shooterIndex: play.shooterLineupIndex,
+                            shotDefenderIndex: play.defenderLineupIndex,
                             random: &random
                         )
-                        let offenseScrambleIdx = pickLikelyReboundParticipantIndex(
-                            lineup: stored.teams[offenseTeamId].activeLineup,
-                            offensive: true,
+                        let scramblePair = selectReboundScrambleParticipants(
+                            stored: &stored,
+                            offenseLineup: stored.teams[offenseTeamId].activeLineup,
+                            defenseLineup: stored.teams[defenseTeamId].activeLineup,
                             zone: zone,
                             random: &random
                         )
-                        let foulerIdx = pickLikelyReboundParticipantIndex(
-                            lineup: stored.teams[defenseTeamId].activeLineup,
-                            offensive: false,
-                            zone: zone,
-                            random: &random
-                        )
+                        let offenseScrambleIdx = scramblePair.offenseIdx
+                        let foulerIdx = scramblePair.defenseIdx
                         let looseBallInteraction = resolveInteractionWithTrace(
                             stored: &stored,
                             label: "loose_ball_scramble",
@@ -742,10 +744,13 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                             switchedPossession = false
                         } else {
                             let rebound = resolveReboundOutcome(
+                                stored: &stored,
                                 offenseLineup: stored.teams[offenseTeamId].activeLineup,
                                 defenseLineup: stored.teams[defenseTeamId].activeLineup,
                                 shotType: shotType,
                                 spot: play.spot,
+                                shooterIndex: play.shooterLineupIndex,
+                                shotDefenderIndex: play.defenderLineupIndex,
                                 offensePositioning: 1,
                                 defensePositioning: 1,
                                 random: &random
@@ -1060,33 +1065,42 @@ private func reboundZone(for shotType: ShotType, spot: OffensiveSpot) -> Rebound
     }
 }
 
-private func reboundZoneWithShortBias(
-    initialZone: ReboundZone,
+private func resolveReboundLandingZone(
+    stored: inout NativeGameStateStore.StoredState,
+    offenseLineup: [Player],
+    defenseLineup: [Player],
     shotType: ShotType,
+    spot: OffensiveSpot,
+    shooterIndex: Int,
+    shotDefenderIndex: Int,
     random: inout SeededRandom
 ) -> ReboundZone {
-    let shortChance: Double
-    switch shotType {
-    case .three:
-        shortChance = 0.42
-    case .midrange, .fadeaway:
-        shortChance = 0.56
-    case .layup, .dunk, .hook, .close:
-        shortChance = 0.72
-    }
-    guard random.nextUnit() < shortChance else { return initialZone }
+    let initialZone = reboundZone(for: shotType, spot: spot)
+    guard !offenseLineup.isEmpty, !defenseLineup.isEmpty else { return initialZone }
+    let shooter = offenseLineup[min(max(0, shooterIndex), offenseLineup.count - 1)]
+    let defender = defenseLineup[min(max(0, shotDefenderIndex), defenseLineup.count - 1)]
+    let caromControl = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "rebound_carom_direction",
+        offensePlayer: shooter,
+        defensePlayer: defender,
+        offenseRatings: ["skills.shotIQ", "skills.hands", "shooting.threePointShooting", "shooting.midrangeShot", "shooting.closeShot"],
+        defenseRatings: ["defense.shotContest", "defense.shotBlocking", "defense.defensiveControl", "skills.hustle"],
+        random: &random
+    )
+    let offenseCaromControl = logistic(caromControl.edge)
 
     switch initialZone {
     case .leftPerimeter:
-        return random.nextUnit() < 0.75 ? .leftBlock : .paint
+        return offenseCaromControl >= 0.52 ? .leftPerimeter : .leftBlock
     case .rightPerimeter:
-        return random.nextUnit() < 0.75 ? .rightBlock : .paint
+        return offenseCaromControl >= 0.52 ? .rightPerimeter : .rightBlock
     case .topPerimeter:
-        return .paint
+        return offenseCaromControl >= 0.58 ? .topPerimeter : .paint
     case .leftBlock:
-        return random.nextUnit() < 0.7 ? .leftBlock : .paint
+        return offenseCaromControl >= 0.5 ? .leftBlock : .paint
     case .rightBlock:
-        return random.nextUnit() < 0.7 ? .rightBlock : .paint
+        return offenseCaromControl >= 0.5 ? .rightBlock : .paint
     case .paint:
         return .paint
     }
@@ -1209,98 +1223,126 @@ private func defensiveReboundSkillScore(_ player: Player, zone: ReboundZone) -> 
     return core * 0.72 + movement * 0.12 + size * 0.16
 }
 
-private func defenderBoxoutPressure(_ player: Player, zone: ReboundZone) -> Double {
-    let box = getBaseRating(player, path: "rebounding.boxouts")
-    let strength = getBaseRating(player, path: "athleticism.strength")
-    let hustle = getBaseRating(player, path: "skills.hustle")
-    let vertical = getBaseRating(player, path: "athleticism.vertical")
-    let height = heightReboundRating(player)
-    let wingspan = wingspanReboundRating(player)
-    let movement: Double
-    switch zone {
-    case .paint, .leftBlock, .rightBlock:
-        movement = strength * 0.55 + vertical * 0.45
-    case .leftPerimeter, .rightPerimeter, .topPerimeter:
-        movement = getBaseRating(player, path: "athleticism.burst") * 0.54 + getBaseRating(player, path: "athleticism.speed") * 0.46
-    }
-    return box * 0.42 + movement * 0.2 + wingspan * 0.2 + height * 0.1 + hustle * 0.08
-}
-
-private func offensiveSlipPressure(_ player: Player, zone: ReboundZone) -> Double {
-    let oreb = getBaseRating(player, path: "rebounding.offensiveRebounding")
-    let burst = getBaseRating(player, path: "athleticism.burst")
-    let hustle = getBaseRating(player, path: "skills.hustle")
-    let strength = getBaseRating(player, path: "athleticism.strength")
-    let vertical = getBaseRating(player, path: "athleticism.vertical")
-    let hands = getBaseRating(player, path: "skills.hands")
-    let movement: Double
-    switch zone {
-    case .paint, .leftBlock, .rightBlock:
-        movement = vertical * 0.58 + strength * 0.42
-    case .leftPerimeter, .rightPerimeter, .topPerimeter:
-        movement = burst * 0.6 + getBaseRating(player, path: "athleticism.speed") * 0.4
-    }
-    return oreb * 0.48 + movement * 0.2 + hustle * 0.18 + strength * 0.08 + hands * 0.06
-}
-
-private func pickLikelyReboundParticipantIndex(
+private func topReboundCandidateIndices(
     lineup: [Player],
     offensive: Bool,
     zone: ReboundZone,
-    random: inout SeededRandom
-) -> Int {
-    guard !lineup.isEmpty else { return 0 }
-    return weightedRandomIndex(lineup: lineup, random: &random) { player in
+    count: Int = 2
+) -> [Int] {
+    guard !lineup.isEmpty else { return [0] }
+    let ranked = lineup.enumerated().map { idx, player in
         let base = offensive ? offensiveReboundSkillScore(player, zone: zone) : defensiveReboundSkillScore(player, zone: zone)
-        return max(1, base * reboundNearbyWeight(player, zone: zone))
+        let score = max(0.1, base * reboundNearbyWeight(player, zone: zone))
+        return (idx, score)
     }
+    return ranked.sorted { $0.1 > $1.1 }.prefix(max(1, count)).map(\.0)
+}
+
+private func selectReboundScrambleParticipants(
+    stored: inout NativeGameStateStore.StoredState,
+    offenseLineup: [Player],
+    defenseLineup: [Player],
+    zone: ReboundZone,
+    random: inout SeededRandom
+) -> (offenseIdx: Int, defenseIdx: Int) {
+    guard !offenseLineup.isEmpty, !defenseLineup.isEmpty else { return (0, 0) }
+    let offenseCandidates = topReboundCandidateIndices(lineup: offenseLineup, offensive: true, zone: zone, count: 3)
+    let defenseCandidates = topReboundCandidateIndices(lineup: defenseLineup, offensive: false, zone: zone, count: 3)
+
+    var bestPair: (Int, Int)?
+    var bestEdge = -Double.infinity
+    for offenseIdx in offenseCandidates {
+        for defenseIdx in defenseCandidates {
+            let interaction = resolveInteractionWithTrace(
+                stored: &stored,
+                label: "rebound_scramble_matchup",
+                offensePlayer: offenseLineup[offenseIdx],
+                defensePlayer: defenseLineup[defenseIdx],
+                offenseRatings: ["rebounding.offensiveRebounding", "skills.hustle", "skills.hands", "athleticism.burst", "athleticism.vertical"],
+                defenseRatings: ["rebounding.boxouts", "rebounding.defensiveRebound", "skills.hustle", "athleticism.strength", "athleticism.vertical"],
+                random: &random
+            )
+            let sizeEdge = (heightReboundRating(offenseLineup[offenseIdx]) - heightReboundRating(defenseLineup[defenseIdx])) * 0.011
+                + (wingspanReboundRating(offenseLineup[offenseIdx]) - wingspanReboundRating(defenseLineup[defenseIdx])) * 0.013
+            let adjusted = interaction.edge + sizeEdge
+            if adjusted > bestEdge {
+                bestEdge = adjusted
+                bestPair = (offenseIdx, defenseIdx)
+            }
+        }
+    }
+    return bestPair ?? (offenseCandidates[0], defenseCandidates[0])
 }
 
 private func resolveReboundOutcome(
+    stored: inout NativeGameStateStore.StoredState,
     offenseLineup: [Player],
     defenseLineup: [Player],
     shotType: ShotType,
     spot: OffensiveSpot,
+    shooterIndex: Int,
+    shotDefenderIndex: Int,
     offensePositioning: Double,
     defensePositioning: Double,
     random: inout SeededRandom
 ) -> ReboundOutcome {
     guard !offenseLineup.isEmpty else { return ReboundOutcome(offensive: false, lineupIndex: 0) }
     guard !defenseLineup.isEmpty else { return ReboundOutcome(offensive: true, lineupIndex: 0) }
-    let initialZone = reboundZone(for: shotType, spot: spot)
-    let zone = reboundZoneWithShortBias(initialZone: initialZone, shotType: shotType, random: &random)
+    let zone = resolveReboundLandingZone(
+        stored: &stored,
+        offenseLineup: offenseLineup,
+        defenseLineup: defenseLineup,
+        shotType: shotType,
+        spot: spot,
+        shooterIndex: shooterIndex,
+        shotDefenderIndex: shotDefenderIndex,
+        random: &random
+    )
+    let offenseCandidates = topReboundCandidateIndices(lineup: offenseLineup, offensive: true, zone: zone, count: 3)
+    let defenseCandidates = topReboundCandidateIndices(lineup: defenseLineup, offensive: false, zone: zone, count: 3)
 
-    let defensePressures = defenseLineup.map { defenderBoxoutPressure($0, zone: zone) * reboundNearbyWeight($0, zone: zone) }
-    let offensePressures = offenseLineup.map { offensiveSlipPressure($0, zone: zone) * reboundNearbyWeight($0, zone: zone) }
-    let topOffensePressure = offensePressures.max() ?? 0
-
-    var weights: [Double] = []
-    var outcomes: [ReboundOutcome] = []
-
-    for (idx, player) in offenseLineup.enumerated() {
-        let nearby = reboundNearbyWeight(player, zone: zone)
-        let offenseSkill = offensiveReboundSkillScore(player, zone: zone)
-        let slipPressure = offensePressures[idx]
-        let bestDefenderPressure = defensePressures.max() ?? 50
-        let defenderWinChance = clamp(logistic((bestDefenderPressure - slipPressure) / 12), min: 0.1, max: 0.92)
-        let boxoutPenalty = clamp(1.08 - defenderWinChance * 0.62, min: 0.45, max: 1.08)
-        let score = max(0.2, offenseSkill * nearby * boxoutPenalty * offensePositioning)
-        weights.append(score)
-        outcomes.append(ReboundOutcome(offensive: true, lineupIndex: idx))
+    var bestOffenseIdx = offenseCandidates[0]
+    var bestDefenseIdx = defenseCandidates[0]
+    var bestSlipEdge = -Double.infinity
+    for offenseIdx in offenseCandidates {
+        for defenseIdx in defenseCandidates {
+            let boxoutBattle = resolveInteractionWithTrace(
+                stored: &stored,
+                label: "rebound_boxout_battle",
+                offensePlayer: offenseLineup[offenseIdx],
+                defensePlayer: defenseLineup[defenseIdx],
+                offenseRatings: ["rebounding.offensiveRebounding", "skills.hustle", "athleticism.vertical", "athleticism.strength", "skills.hands"],
+                defenseRatings: ["rebounding.boxouts", "rebounding.defensiveRebound", "athleticism.strength", "athleticism.vertical", "defense.defensiveControl"],
+                random: &random
+            )
+            let sizeEdge = (heightReboundRating(offenseLineup[offenseIdx]) - heightReboundRating(defenseLineup[defenseIdx])) * 0.012
+                + (wingspanReboundRating(offenseLineup[offenseIdx]) - wingspanReboundRating(defenseLineup[defenseIdx])) * 0.014
+            let positioningEdge = (offensePositioning - defensePositioning) * 0.18
+            let adjustedSlipEdge = boxoutBattle.edge + sizeEdge + positioningEdge
+            if adjustedSlipEdge > bestSlipEdge {
+                bestSlipEdge = adjustedSlipEdge
+                bestOffenseIdx = offenseIdx
+                bestDefenseIdx = defenseIdx
+            }
+        }
     }
 
-    for (idx, player) in defenseLineup.enumerated() {
-        let nearby = reboundNearbyWeight(player, zone: zone)
-        let defenseSkill = defensiveReboundSkillScore(player, zone: zone)
-        let defenderPressure = defensePressures[idx]
-        let boxoutControl = clamp(1 + (defenderPressure - topOffensePressure) / 180, min: 0.78, max: 1.3)
-        let score = max(0.2, defenseSkill * nearby * boxoutControl * defensePositioning)
-        weights.append(score)
-        outcomes.append(ReboundOutcome(offensive: false, lineupIndex: idx))
+    let gatherBattle = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "rebound_gather_battle",
+        offensePlayer: offenseLineup[bestOffenseIdx],
+        defensePlayer: defenseLineup[bestDefenseIdx],
+        offenseRatings: ["rebounding.offensiveRebounding", "skills.hands", "skills.hustle", "athleticism.vertical", "athleticism.burst"],
+        defenseRatings: ["rebounding.defensiveRebound", "rebounding.boxouts", "skills.hands", "skills.hustle", "athleticism.vertical"],
+        random: &random
+    )
+    let gatherSizeEdge = (heightReboundRating(offenseLineup[bestOffenseIdx]) - heightReboundRating(defenseLineup[bestDefenseIdx])) * 0.012
+        + (wingspanReboundRating(offenseLineup[bestOffenseIdx]) - wingspanReboundRating(defenseLineup[bestDefenseIdx])) * 0.015
+    let finalEdge = gatherBattle.edge + gatherSizeEdge + (offensePositioning - defensePositioning) * 0.15 + bestSlipEdge * 0.35
+    if finalEdge >= 0 {
+        return ReboundOutcome(offensive: true, lineupIndex: bestOffenseIdx)
     }
-
-    let pick = weightedChoiceIndex(weights: weights, random: &random)
-    return outcomes[pick]
+    return ReboundOutcome(offensive: false, lineupIndex: bestDefenseIdx)
 }
 
 private func weightedRandomIndex(lineup: [Player], random: inout SeededRandom, weight: (Player) -> Double) -> Int {
@@ -4029,10 +4071,13 @@ private func maybeResolveFastBreak(
 
     // Missed break finish: still interaction-based, but transition positioning usually favors set defenders.
     let rebound = resolveReboundOutcome(
+        stored: &stored,
         offenseLineup: offenseLineup,
         defenseLineup: defenseLineup,
         shotType: shotType,
         spot: .middlePaint,
+        shooterIndex: runnerIdx,
+        shotDefenderIndex: leadDefIdx,
         offensePositioning: 0.88,
         defensePositioning: 1.12,
         random: &random
