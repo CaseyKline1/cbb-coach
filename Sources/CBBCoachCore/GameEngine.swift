@@ -71,6 +71,49 @@ public struct SimulatedGameResult: Codable, Equatable, Sendable {
     public var boxScore: [TeamBoxScore]?
 }
 
+public struct QAInteractionTrace: Codable, Equatable, Sendable {
+    public var label: String
+    public var offensePlayer: String
+    public var defensePlayer: String
+    public var offenseRatings: [String]
+    public var defenseRatings: [String]
+    public var offenseScore: Double
+    public var defenseScore: Double
+    public var edge: Double
+    public var successProbability: Double
+    public var offenseWon: Bool
+}
+
+public struct QAStatRecord: Codable, Equatable, Sendable {
+    public var entityType: String
+    public var teamIndex: Int
+    public var teamName: String
+    public var playerName: String?
+    public var stat: String
+    public var before: Double
+    public var after: Double
+    public var delta: Double
+}
+
+public struct QAActionTrace: Codable, Equatable, Sendable {
+    public var actionNumber: Int
+    public var half: Int
+    public var gameClockRemaining: Int
+    public var shotClockRemaining: Int
+    public var offenseTeam: String
+    public var defenseTeam: String
+    public var eventType: String
+    public var points: Int
+    public var playByPlayDescription: String?
+    public var interactions: [QAInteractionTrace]
+    public var statRecords: [QAStatRecord]
+}
+
+public struct SimulatedGameQAResult: Codable, Equatable, Sendable {
+    public var game: SimulatedGameResult
+    public var actions: [QAActionTrace]
+}
+
 public struct GameState: Codable, Equatable, Sendable {
     public var handle: String
 
@@ -113,6 +156,11 @@ private struct NativeGameStateStore {
         var formationCycleIndex: [Int]
         var pendingTransition: PendingTransition?
         var lastSubElapsedGameSeconds: [Int]
+        var traceEnabled: Bool
+        var actionCounter: Int
+        var currentActionInteractions: [QAInteractionTrace]
+        var currentActionStatRecords: [QAStatRecord]
+        var actionTraces: [QAActionTrace]
     }
 
     private static let lock = NSLock()
@@ -139,7 +187,12 @@ private struct NativeGameStateStore {
             teamFoulsInHalf: [0, 0],
             formationCycleIndex: [0, 0],
             pendingTransition: nil,
-            lastSubElapsedGameSeconds: [-9999, -9999]
+            lastSubElapsedGameSeconds: [-9999, -9999],
+            traceEnabled: false,
+            actionCounter: 0,
+            currentActionInteractions: [],
+            currentActionStatRecords: [],
+            actionTraces: []
         )
         return handle
     }
@@ -254,6 +307,40 @@ public func resolveInteraction(
     )
 }
 
+private func resolveInteractionWithTrace(
+    stored: inout NativeGameStateStore.StoredState,
+    label: String,
+    offensePlayer: Player,
+    defensePlayer: Player,
+    offenseRatings: [String],
+    defenseRatings: [String],
+    random: inout SeededRandom
+) -> InteractionResult {
+    let result = resolveInteraction(
+        offensePlayer: offensePlayer,
+        defensePlayer: defensePlayer,
+        offenseRatings: offenseRatings,
+        defenseRatings: defenseRatings,
+        random: &random
+    )
+    guard stored.traceEnabled else { return result }
+    stored.currentActionInteractions.append(
+        QAInteractionTrace(
+            label: label,
+            offensePlayer: offensePlayer.bio.name,
+            defensePlayer: defensePlayer.bio.name,
+            offenseRatings: offenseRatings,
+            defenseRatings: defenseRatings,
+            offenseScore: result.offenseScore,
+            defenseScore: result.defenseScore,
+            edge: result.edge,
+            successProbability: clamp(logistic(result.edge), min: 0.03, max: 0.97),
+            offenseWon: result.offenseWon
+        )
+    )
+    return result
+}
+
 @discardableResult
 public func resolveActionChunk(state: inout GameState, random: inout SeededRandom) -> String {
     guard let chunkType = NativeGameStateStore.withState(state.handle, { stored in
@@ -265,6 +352,11 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
         let defenseTeamId = offenseTeamId == 0 ? 1 : 0
         if stored.teams[offenseTeamId].activeLineup.isEmpty || stored.teams[defenseTeamId].activeLineup.isEmpty {
             return "period_end"
+        }
+        if stored.traceEnabled {
+            stored.actionCounter += 1
+            stored.currentActionInteractions = []
+            stored.currentActionStatRecords = []
         }
 
         syncPossessionRoles(stored: &stored)
@@ -344,7 +436,9 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 eventType = "setup"
             }
         } else {
-            let turnoverInteraction = resolveInteraction(
+            let turnoverInteraction = resolveInteractionWithTrace(
+                stored: &stored,
+                label: "turnover_check",
                 offensePlayer: ballHandler,
                 defensePlayer: primaryDefender,
                 offenseRatings: ["skills.ballHandling", "skills.ballSafety", "skills.passingIQ"],
@@ -435,7 +529,9 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 } else {
                     offenseRatingsForShot = profile.offenseRatings
                 }
-                let shotInteraction = resolveInteraction(
+                let shotInteraction = resolveInteractionWithTrace(
+                    stored: &stored,
+                    label: "half_court_shot",
                     offensePlayer: shooter,
                     defensePlayer: shotDefender,
                     offenseRatings: offenseRatingsForShot,
@@ -620,6 +716,14 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
             elapsedGameSeconds = 2 * HALF_SECONDS + (stored.currentHalf - 3) * OVERTIME_SECONDS + elapsedInPeriod
         }
 
+        let description = eventDescription(
+            eventType: eventType,
+            offenseTeam: stored.teams[offenseTeamId].team.name,
+            defenseTeam: stored.teams[defenseTeamId].team.name,
+            lineup: stored.teams[offenseTeamId].activeLineup,
+            playerIndex: ballHandlerIdx
+        )
+
         stored.playByPlay.append(
             PlayByPlayEvent(
                 half: stored.currentHalf,
@@ -631,16 +735,28 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 offenseTeam: stored.teams[offenseTeamId].team.name,
                 defenseTeam: stored.teams[defenseTeamId].team.name,
                 points: points,
-                description: eventDescription(
-                    eventType: eventType,
-                    offenseTeam: stored.teams[offenseTeamId].team.name,
-                    defenseTeam: stored.teams[defenseTeamId].team.name,
-                    lineup: stored.teams[offenseTeamId].activeLineup,
-                    playerIndex: ballHandlerIdx
-                ),
+                description: description,
                 detail: nil
             )
         )
+
+        if stored.traceEnabled {
+            stored.actionTraces.append(
+                QAActionTrace(
+                    actionNumber: stored.actionCounter,
+                    half: stored.currentHalf,
+                    gameClockRemaining: stored.gameClockRemaining,
+                    shotClockRemaining: stored.shotClockRemaining,
+                    offenseTeam: stored.teams[offenseTeamId].team.name,
+                    defenseTeam: stored.teams[defenseTeamId].team.name,
+                    eventType: eventType,
+                    points: points,
+                    playByPlayDescription: description,
+                    interactions: stored.currentActionInteractions,
+                    statRecords: stored.currentActionStatRecords
+                )
+            )
+        }
 
         stored.gameClockRemaining = max(0, stored.gameClockRemaining - possessionSeconds)
         if switchedPossession {
@@ -704,7 +820,18 @@ private func pickLineupIndexForBallHandler(lineup: [Player], random: inout Seede
             + (100 - getBaseRating(player, path: "tendencies.shootVsPass")) * 0.14
             + getBaseRating(player, path: "skills.shotIQ") * 0.1
             + getBaseRating(player, path: "athleticism.burst") * 0.08
-        let positionMultiplier: Double = isPointGuardLike(player) ? 1.35 : (player.bio.position == .sg ? 1.05 : 0.84)
+            + getBaseRating(player, path: "tendencies.drive") * 0.12
+        let positionMultiplier: Double
+        switch player.bio.position {
+        case .pg, .cg:
+            positionMultiplier = 1.15
+        case .sg:
+            positionMultiplier = 1.06
+        case .sf, .wing, .f:
+            positionMultiplier = 0.97
+        case .pf, .c, .big:
+            positionMultiplier = 0.86
+        }
         return max(1, base * positionMultiplier)
     }
 }
@@ -737,7 +864,17 @@ private func pickLineupIndexForPickActionBallHandler(lineup: [Player], random: i
             + getBaseRating(player, path: "athleticism.burst") * 0.08
             + getBaseRating(player, path: "tendencies.pickAndRoll") * 0.1
             + getBaseRating(player, path: "tendencies.pickAndPop") * 0.08
-        let positionMultiplier: Double = isPointGuardLike(player) ? 2.6 : (player.bio.position == .sg ? 0.95 : 0.58)
+        let positionMultiplier: Double
+        switch player.bio.position {
+        case .pg, .cg:
+            positionMultiplier = 1.55
+        case .sg:
+            positionMultiplier = 1.12
+        case .sf, .wing, .f:
+            positionMultiplier = 0.96
+        case .pf, .c, .big:
+            positionMultiplier = 0.74
+        }
         return max(1, base * positionMultiplier)
     }
 }
@@ -2914,7 +3051,9 @@ private func maybeResolveFastBreak(
 
     let shotType = chooseFastBreakFinish(player: runner, random: &random)
     let profile = shotProfile(for: shotType)
-    let shotInteraction = resolveInteraction(
+    let shotInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "fast_break_finish",
         offensePlayer: runner,
         defensePlayer: leadDef,
         offenseRatings: profile.offenseRatings,
