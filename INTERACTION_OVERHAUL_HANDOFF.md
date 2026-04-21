@@ -22,6 +22,9 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
   - `press_setup`
   - `trap_ball_security`
   - `break_advantage`
+- Converted foul triggers to interaction-driven gates:
+  - `non_shooting_foul_pressure`
+  - `technical_temper`
 
 ## Current interaction backbone (already in place)
 - Core interaction function: `resolveInteraction(...)`
@@ -33,16 +36,7 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
 
 ## Remaining non-interaction areas (priority order)
 
-### 1) Non-shooting/technical foul randomness
-`maybeCallTechnicalFoul` and `maybeCallNonShootingFoul` contain global random gates.
-
-Recommended approach:
-- Keep rare-event ceilings, but gate with interaction context:
-  - defender discipline vs ball-handler control
-  - fatigue/hustle/defensiveControl interactions
-- Technical fouls can remain partly stochastic but should include frustration proxies (clutch/discipline/foul load).
-
-### 2) Action attempt gate (`willAttemptAction`)
+### 1) Action attempt gate (`willAttemptAction`)
 Current possession-level shot/action attempt is formula based.
 
 Recommended approach:
@@ -64,5 +58,4 @@ Recommended approach:
   - play-by-play still coherent
 
 ## Suggested next implementation sequence
-1. Convert foul gates.
-2. Convert possession action gate last (hardest to tune globally).
+1. Convert possession action gate last (hardest to tune globally).

@@ -3039,8 +3039,62 @@ private func isDeadBall(eventType: String) -> Bool {
 }
 
 private func maybeCallTechnicalFoul(stored: inout NativeGameStateStore.StoredState, random: inout SeededRandom) {
-    guard random.nextUnit() < 0.003 else { return }
-    let offendingTeamId = random.nextUnit() < 0.5 ? 0 : 1
+    guard stored.teams.count >= 2 else { return }
+    let firstLineup = stored.teams[0].activeLineup
+    let secondLineup = stored.teams[1].activeLineup
+    guard !firstLineup.isEmpty, !secondLineup.isEmpty else { return }
+
+    func candidateForTechnical(teamId: Int, opponentTeamId: Int) -> (lineupIdx: Int, chance: Double)? {
+        let lineup = stored.teams[teamId].activeLineup
+        let opponentLineup = stored.teams[opponentTeamId].activeLineup
+        guard !lineup.isEmpty, !opponentLineup.isEmpty else { return nil }
+
+        var bestIdx = 0
+        var bestRisk = -1.0
+        for idx in lineup.indices {
+            let player = lineup[idx]
+            let boxIdx = idx < stored.teams[teamId].activeLineupBoxIndices.count ? stored.teams[teamId].activeLineupBoxIndices[idx] : -1
+            let fouls = (boxIdx >= 0 && boxIdx < stored.teams[teamId].boxPlayers.count) ? stored.teams[teamId].boxPlayers[boxIdx].fouls : 0
+            let risk = clamp(
+                (100 - player.condition.energy) * 0.5
+                    + Double(fouls) * 12
+                    + (100 - getBaseRating(player, path: "skills.shotIQ")) * 0.25
+                    + (100 - getBaseRating(player, path: "skills.clutch")) * 0.2,
+                min: 0,
+                max: 120
+            )
+            if risk > bestRisk {
+                bestRisk = risk
+                bestIdx = idx
+            }
+        }
+
+        let irritant = opponentLineup[min(bestIdx, opponentLineup.count - 1)]
+        let composureInteraction = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "technical_temper",
+            offensePlayer: lineup[bestIdx],
+            defensePlayer: irritant,
+            offenseRatings: ["skills.shotIQ", "skills.clutch", "skills.ballSafety"],
+            defenseRatings: ["defense.defensiveControl", "skills.hustle", "defense.offballDefense"],
+            random: &random
+        )
+        let temperDefenseControl = 1 - logistic(composureInteraction.edge)
+        let riskComponent = bestRisk / 120
+        let chance = clamp(0.0004 + temperDefenseControl * 0.0026 + riskComponent * 0.0014, min: 0.0002, max: 0.005)
+        return (bestIdx, chance)
+    }
+
+    guard
+        let first = candidateForTechnical(teamId: 0, opponentTeamId: 1),
+        let second = candidateForTechnical(teamId: 1, opponentTeamId: 0)
+    else { return }
+
+    let noTechWeight = max(1.0, 1.0 - (first.chance + second.chance))
+    let pick = weightedChoiceIndex(weights: [noTechWeight, first.chance, second.chance], random: &random)
+    guard pick != 0 else { return }
+    let offendingTeamId = pick == 1 ? 0 : 1
+    let offendingLineupIdx = pick == 1 ? first.lineupIdx : second.lineupIdx
     let benefitingTeamId = offendingTeamId == 0 ? 1 : 0
     guard !stored.teams[benefitingTeamId].activeLineup.isEmpty else { return }
     // Pick best FT shooter on the benefiting team's floor.
@@ -3063,8 +3117,7 @@ private func maybeCallTechnicalFoul(stored: inout NativeGameStateStore.StoredSta
         stored.teams[benefitingTeamId].score += ftMade
         applyPlusMinus(stored: &stored, scoringTeamId: benefitingTeamId, points: ftMade)
     }
-    // Tag a random defender on the offending team with the technical foul.
-    let offendingLineupIdx = random.int(0, max(0, stored.teams[offendingTeamId].activeLineup.count - 1))
+    // Tag the highest-risk on-floor player as the offender.
     addPlayerStat(stored: &stored, teamId: offendingTeamId, lineupIndex: offendingLineupIdx) { $0.fouls += 1 }
     if offendingTeamId >= 0, offendingTeamId < stored.teamFoulsInHalf.count {
         stored.teamFoulsInHalf[offendingTeamId] += 1
@@ -3173,13 +3226,27 @@ private func maybeCallNonShootingFoul(
     let isLastPeriod = stored.currentHalf >= 2
     let clockRemaining = stored.gameClockRemaining
     let takeFoulWindow = isLastPeriod && clockRemaining <= 45 && defenseDelta <= -1 && defenseDelta >= -9
-    let foulChance: Double
-    if takeFoulWindow {
-        // Aggressive intentional fouling when trailing late, especially inside 20s.
-        foulChance = clockRemaining <= 20 ? 0.65 : 0.35
-    } else {
-        foulChance = 0.04
-    }
+    let defender = stored.teams[defenseTeamId].activeLineup[min(defenderIdx, stored.teams[defenseTeamId].activeLineup.count - 1)]
+    let ballHandler = stored.teams[offenseTeamId].activeLineup[min(ballHandlerIdx, stored.teams[offenseTeamId].activeLineup.count - 1)]
+    let foulPressure = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "non_shooting_foul_pressure",
+        offensePlayer: ballHandler,
+        defensePlayer: defender,
+        offenseRatings: ["skills.ballHandling", "skills.ballSafety", "skills.passingIQ", "skills.shotIQ"],
+        defenseRatings: ["defense.defensiveControl", "skills.hustle", "defense.offballDefense", "defense.lateralQuickness"],
+        random: &random
+    )
+    let defenseControl = 1 - logistic(foulPressure.edge)
+    let discipline = getBaseRating(defender, path: "defense.defensiveControl") * 0.6
+        + getBaseRating(defender, path: "skills.shotIQ") * 0.4
+    let disciplineRelief = (discipline - 50) / 300
+    let baseIntent = takeFoulWindow ? (clockRemaining <= 20 ? 0.52 : 0.3) : 0.012
+    let foulChance = clamp(
+        baseIntent + defenseControl * 0.09 - disciplineRelief,
+        min: takeFoulWindow ? 0.2 : 0.005,
+        max: takeFoulWindow ? 0.75 : 0.12
+    )
     guard random.nextUnit() < foulChance else { return }
     registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: defenderIdx, shooting: false)
 
