@@ -607,6 +607,11 @@ private struct CollegeLeagueHomeView: View {
                             }
                             .buttonStyle(.plain)
 
+                            NavigationLink(value: LeagueMenuDestination.teamStats) {
+                                MenuRow(title: "Team Stats")
+                            }
+                            .buttonStyle(.plain)
+
                             NavigationLink(value: LeagueMenuDestination.statLeaders) {
                                 MenuRow(title: "Stat Leaders")
                             }
@@ -664,6 +669,13 @@ private struct CollegeLeagueHomeView: View {
                     )
                 case .playerStats:
                     PlayerStatsView(schedule: schedule, userTeamName: summary?.userTeamName ?? teamName)
+                case .teamStats:
+                    TeamStatsView(
+                        games: completedLeagueGames,
+                        userTeamId: summary?.userTeamId,
+                        userConferenceId: userConferenceId,
+                        conferenceIdByTeamId: conferenceIdByTeamId
+                    )
                 case .statLeaders:
                     StatLeadersView(games: completedLeagueGames)
                 case .standings:
@@ -771,6 +783,16 @@ private struct CollegeLeagueHomeView: View {
         listCareerTeamOptions().first(where: { $0.teamName == teamName })?.conferenceId
     }
 
+    private var conferenceIdByTeamId: [String: String] {
+        var result: [String: String] = [:]
+        for rows in conferenceStandings.values {
+            for row in rows {
+                result[row.teamId] = row.conferenceId
+            }
+        }
+        return result
+    }
+
     private var completedUserGameCount: Int {
         schedule.filter { $0.completed == true }.count
     }
@@ -817,22 +839,25 @@ private struct CollegeLeagueHomeView: View {
 
     private func startSkipAhead(target: SkipAheadTarget) {
         guard !isSkipAheadInProgress else { return }
+        guard let startingLeague = league else { return }
         isSkipAheadInProgress = true
         skipAheadTitle = target.overlayTitle
         skipAheadGameRecaps = []
 
-        Task {
-            await runSkipAhead(target: target)
+        Task(priority: .userInitiated) {
+            let result = await runSkipAhead(from: startingLeague, target: target)
+            await MainActor.run {
+                league = result.league
+                refreshFromLeague(result.league)
+                skipAheadGameRecaps = result.recaps
+                statusText = result.seasonCompleted ? "Season complete." : target.completionMessage
+                isSkipAheadInProgress = false
+            }
         }
     }
 
-    @MainActor
-    private func runSkipAhead(target: SkipAheadTarget) async {
-        guard var currentLeague = league else {
-            isSkipAheadInProgress = false
-            return
-        }
-
+    private func runSkipAhead(from league: LeagueState, target: SkipAheadTarget) async -> SkipAheadSimulationResult {
+        var currentLeague = league
         var completedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
         var seasonCompleted = false
         var recaps: [String] = []
@@ -844,72 +869,30 @@ private struct CollegeLeagueHomeView: View {
                 break
             }
             completedGames += 1
-            let recap = skipAheadGameRecap(for: result)
+            let recap = Self.skipAheadGameRecap(for: result, gameNumber: completedGames)
             recaps.append(recap)
-            skipAheadGameRecaps = recaps
+            if recaps.count % 2 == 0 {
+                let snapshot = recaps
+                await MainActor.run {
+                    skipAheadGameRecaps = snapshot
+                }
+            }
             await Task.yield()
         }
 
-        league = currentLeague
-        refreshFromLeague(currentLeague)
-
-        if seasonCompleted {
-            statusText = "Season complete."
-        } else {
-            statusText = target.completionMessage
-        }
-        isSkipAheadInProgress = false
-    }
-
-    private func skipAheadGameRecap(for result: UserGameSummary) -> String {
-        let userScore = result.score?.numberValue(for: "user")?.roundedInt ?? 0
-        let oppScore = result.score?.numberValue(for: "opponent")?.roundedInt ?? 0
-        let opponent = result.opponentName ?? "Unknown"
-        let leaders = userLeadersFromResult(result)
-        let gameLabel = gameNumber(for: result)
-        return "Game \(gameLabel) vs \(opponent): \(userScore)-\(oppScore) | PTS: \(leaders.points) | REB: \(leaders.rebounds) | AST: \(leaders.assists)"
-    }
-
-    private func userLeadersFromResult(_ result: UserGameSummary) -> (points: String, rebounds: String, assists: String) {
-        let teamBox = ParsedTeamBoxScore.parse(from: result.result)
-        guard let userBox = resolveUserTeamBox(from: teamBox, for: result) else {
-            return ("N/A", "N/A", "N/A")
-        }
-
-        let pointsLeader = topLeader(in: userBox.players, stat: \.points)
-        let reboundsLeader = topLeader(in: userBox.players, stat: \.rebounds)
-        let assistsLeader = topLeader(in: userBox.players, stat: \.assists)
-
-        return (
-            pointsLeader.map { "\($0.player.playerName) \($0.value)" } ?? "N/A",
-            reboundsLeader.map { "\($0.player.playerName) \($0.value)" } ?? "N/A",
-            assistsLeader.map { "\($0.player.playerName) \($0.value)" } ?? "N/A"
+        return SkipAheadSimulationResult(
+            league: currentLeague,
+            seasonCompleted: seasonCompleted,
+            recaps: recaps
         )
     }
 
-    private func resolveUserTeamBox(from teams: [ParsedTeamBoxScore], for result: UserGameSummary) -> ParsedTeamBoxScore? {
-        guard !teams.isEmpty else { return nil }
-
-        if let userTeamName = summary?.userTeamName ?? league.map({ getLeagueSummary($0).userTeamName }),
-           let exact = teams.first(where: { $0.name.caseInsensitiveCompare(userTeamName) == .orderedSame }) {
-            return exact
-        }
-
-        if let opponentName = result.opponentName,
-           let notOpponent = teams.first(where: { $0.name.caseInsensitiveCompare(opponentName) != .orderedSame }) {
-            return notOpponent
-        }
-
-        return teams.first
-    }
-
-    private func topLeader(in players: [ParsedPlayerBoxScore], stat: KeyPath<ParsedPlayerBoxScore, Int>) -> (player: ParsedPlayerBoxScore, value: Int)? {
-        players
-            .map { ($0, $0[keyPath: stat]) }
-            .max { lhs, rhs in
-                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
-                return lhs.0.playerName.localizedCaseInsensitiveCompare(rhs.0.playerName) == .orderedDescending
-            }
+    private static func skipAheadGameRecap(for result: UserGameSummary, gameNumber: Int) -> String {
+        let userScore = result.score?.numberValue(for: "user")?.roundedInt ?? 0
+        let oppScore = result.score?.numberValue(for: "opponent")?.roundedInt ?? 0
+        let opponent = result.opponentName ?? "Unknown"
+        let resultMarker = result.won == true ? "W" : "L"
+        return "Game \(gameNumber) vs \(opponent): \(userScore)-\(oppScore) (\(resultMarker))"
     }
 
     private func refreshFromLeague(_ league: LeagueState) {
@@ -996,6 +979,12 @@ private enum SkipAheadTarget {
     }
 }
 
+private struct SkipAheadSimulationResult {
+    let league: LeagueState
+    let seasonCompleted: Bool
+    let recaps: [String]
+}
+
 private struct SkipAheadOverlayView: View {
     let title: String
     let recaps: [String]
@@ -1053,6 +1042,7 @@ private enum LeagueMenuDestination: Hashable {
     case schedule
     case rotation
     case playerStats
+    case teamStats
     case statLeaders
     case standings
     case rankings
@@ -2690,6 +2680,370 @@ private struct PlayerStatsView: View {
     }
 }
 
+private struct TeamAggregateStats {
+    let teamId: String
+    let teamName: String
+    var games: Int = 0
+    var points: Int = 0
+    var rebounds: Int = 0
+    var opponentRebounds: Int = 0
+    var assists: Int = 0
+    var steals: Int = 0
+    var blocks: Int = 0
+    var turnovers: Int = 0
+    var fgMade: Int = 0
+    var fgAttempts: Int = 0
+    var threeMade: Int = 0
+    var threeAttempts: Int = 0
+    var ftMade: Int = 0
+    var ftAttempts: Int = 0
+    var fastBreakPoints: Int = 0
+    var pointsInPaint: Int = 0
+    var offensiveRebounds: Int = 0
+    var opponentDefensiveRebounds: Int = 0
+
+    private func perGame(_ value: Int) -> Double {
+        guard games > 0 else { return 0 }
+        return Double(value) / Double(games)
+    }
+
+    var pointsPerGame: Double { perGame(points) }
+    var assistsPerGame: Double { perGame(assists) }
+    var stealsPerGame: Double { perGame(steals) }
+    var blocksPerGame: Double { perGame(blocks) }
+    var turnoversPerGame: Double { perGame(turnovers) }
+    var netReboundsPerGame: Double { perGame(rebounds - opponentRebounds) }
+    var fastBreakPointsPerGame: Double { perGame(fastBreakPoints) }
+    var pointsInPaintPerGame: Double { perGame(pointsInPaint) }
+
+    var twoPointMade: Int { max(0, fgMade - threeMade) }
+    var twoPointAttempts: Int { max(0, fgAttempts - threeAttempts) }
+    var twoPointPct: Double {
+        guard twoPointAttempts > 0 else { return 0 }
+        return (Double(twoPointMade) / Double(twoPointAttempts)) * 100
+    }
+    var threePointPct: Double {
+        guard threeAttempts > 0 else { return 0 }
+        return (Double(threeMade) / Double(threeAttempts)) * 100
+    }
+    var freeThrowPct: Double {
+        guard ftAttempts > 0 else { return 0 }
+        return (Double(ftMade) / Double(ftAttempts)) * 100
+    }
+    var offensiveReboundPct: Double {
+        let denominator = offensiveRebounds + opponentDefensiveRebounds
+        guard denominator > 0 else { return 0 }
+        return (Double(offensiveRebounds) / Double(denominator)) * 100
+    }
+}
+
+private struct TeamGameBoxLine {
+    let teamId: String
+    let teamName: String
+    let points: Int
+    let rebounds: Int
+    let assists: Int
+    let steals: Int
+    let blocks: Int
+    let turnovers: Int
+    let fgMade: Int
+    let fgAttempts: Int
+    let threeMade: Int
+    let threeAttempts: Int
+    let ftMade: Int
+    let ftAttempts: Int
+    let fastBreakPoints: Int
+    let pointsInPaint: Int
+    let offensiveRebounds: Int
+    let defensiveRebounds: Int
+}
+
+private struct TeamStatsMetricRow: Hashable {
+    let id: String
+    let stat: String
+    let value: String
+    let conferenceRank: String
+    let nationalRank: String
+}
+
+private struct TeamStatsView: View {
+    let games: [LeagueGameSummary]
+    let userTeamId: String?
+    let userConferenceId: String?
+    let conferenceIdByTeamId: [String: String]
+
+    private struct MetricDefinition {
+        let id: String
+        let title: String
+        let higherIsBetter: Bool
+        let extractor: (TeamAggregateStats) -> Double
+        let formatter: (Double) -> String
+    }
+
+    private var teamStatsById: [String: TeamAggregateStats] {
+        var totals: [String: TeamAggregateStats] = [:]
+        for game in games {
+            let lines = parseGameLines(from: game)
+            for index in lines.indices {
+                let line = lines[index]
+                let opponentRebounds = lines.count > 1
+                    ? lines[(index + 1) % lines.count].rebounds
+                    : 0
+                var current = totals[line.teamId] ?? TeamAggregateStats(teamId: line.teamId, teamName: line.teamName)
+                current.games += 1
+                current.points += line.points
+                current.rebounds += line.rebounds
+                current.opponentRebounds += opponentRebounds
+                current.assists += line.assists
+                current.steals += line.steals
+                current.blocks += line.blocks
+                current.turnovers += line.turnovers
+                current.fgMade += line.fgMade
+                current.fgAttempts += line.fgAttempts
+                current.threeMade += line.threeMade
+                current.threeAttempts += line.threeAttempts
+                current.ftMade += line.ftMade
+                current.ftAttempts += line.ftAttempts
+                current.fastBreakPoints += line.fastBreakPoints
+                current.pointsInPaint += line.pointsInPaint
+                current.offensiveRebounds += line.offensiveRebounds
+                current.opponentDefensiveRebounds += lines.count > 1
+                    ? lines[(index + 1) % lines.count].defensiveRebounds
+                    : 0
+                totals[line.teamId] = current
+            }
+        }
+        return totals
+    }
+
+    private var sortedTeamStats: [TeamAggregateStats] {
+        teamStatsById.values
+            .filter { $0.games > 0 }
+            .sorted { lhs, rhs in
+                if lhs.teamName != rhs.teamName {
+                    return lhs.teamName.localizedCaseInsensitiveCompare(rhs.teamName) == .orderedAscending
+                }
+                return lhs.teamId < rhs.teamId
+            }
+    }
+
+    private var userStats: TeamAggregateStats? {
+        guard let userTeamId else { return nil }
+        return teamStatsById[userTeamId]
+    }
+
+    private var conferenceTeamStats: [TeamAggregateStats] {
+        guard let userConferenceId else { return [] }
+        return sortedTeamStats.filter { team in
+            conferenceIdByTeamId[team.teamId] == userConferenceId
+        }
+    }
+
+    private var metricDefinitions: [MetricDefinition] {
+        [
+            .init(id: "ppg", title: "PPG", higherIsBetter: true, extractor: { $0.pointsPerGame }, formatter: formatPerGame),
+            .init(id: "apg", title: "APG", higherIsBetter: true, extractor: { $0.assistsPerGame }, formatter: formatPerGame),
+            .init(id: "spg", title: "SPG", higherIsBetter: true, extractor: { $0.stealsPerGame }, formatter: formatPerGame),
+            .init(id: "bpg", title: "BPG", higherIsBetter: true, extractor: { $0.blocksPerGame }, formatter: formatPerGame),
+            .init(id: "tovpg", title: "TO/G", higherIsBetter: false, extractor: { $0.turnoversPerGame }, formatter: formatPerGame),
+            .init(id: "netreb", title: "NET REB/G", higherIsBetter: true, extractor: { $0.netReboundsPerGame }, formatter: formatPerGame),
+            .init(id: "fastbreak", title: "FAST BREAK/G", higherIsBetter: true, extractor: { $0.fastBreakPointsPerGame }, formatter: formatPerGame),
+            .init(id: "paint", title: "PIP/G", higherIsBetter: true, extractor: { $0.pointsInPaintPerGame }, formatter: formatPerGame),
+            .init(id: "orpct", title: "OR%", higherIsBetter: true, extractor: { $0.offensiveReboundPct }, formatter: formatPercent),
+            .init(id: "2pt", title: "2PT%", higherIsBetter: true, extractor: { $0.twoPointPct }, formatter: formatPercent),
+            .init(id: "3pt", title: "3PT%", higherIsBetter: true, extractor: { $0.threePointPct }, formatter: formatPercent),
+            .init(id: "ft", title: "FT%", higherIsBetter: true, extractor: { $0.freeThrowPct }, formatter: formatPercent),
+        ]
+    }
+
+    private var metricRows: [TeamStatsMetricRow] {
+        guard let userStats else { return [] }
+        return metricDefinitions.map { metric in
+            TeamStatsMetricRow(
+                id: metric.id,
+                stat: metric.title,
+                value: metric.formatter(metric.extractor(userStats)),
+                conferenceRank: formatRank(
+                    rank(
+                        for: userStats.teamId,
+                        in: conferenceTeamStats,
+                        metric: metric.extractor,
+                        higherIsBetter: metric.higherIsBetter
+                    ),
+                    total: conferenceTeamStats.count
+                ),
+                nationalRank: formatRank(
+                    rank(
+                        for: userStats.teamId,
+                        in: sortedTeamStats,
+                        metric: metric.extractor,
+                        higherIsBetter: metric.higherIsBetter
+                    ),
+                    total: sortedTeamStats.count
+                )
+            )
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if let userStats {
+                    GameCard {
+                        GameSectionHeader(title: "\(userStats.teamName) Team Stats")
+                        Text("Per-game values with conference and national ranking.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    let columns: [AppTableColumn<String>] = [
+                        .init(id: "stat", title: "STAT", width: 130, alignment: .leading),
+                        .init(id: "value", title: "VALUE", width: 72),
+                        .init(id: "conf", title: "CONF", width: 78),
+                        .init(id: "nat", title: "NAT", width: 78),
+                    ]
+
+                    AppTable(
+                        columns: columns,
+                        rows: metricRows.map { (id: AnyHashable($0.id), data: $0) }
+                    ) { row in
+                        HStack(spacing: 0) {
+                            AppTableTextCell(text: row.stat, width: 130, alignment: .leading, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: row.value, width: 72, font: .caption.monospacedDigit())
+                            AppTableTextCell(text: row.conferenceRank, width: 78, font: .caption.monospacedDigit())
+                            AppTableTextCell(text: row.nationalRank, width: 78, font: .caption.monospacedDigit())
+                        }
+                    }
+                } else {
+                    GameCard {
+                        Text("No completed games yet.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Team Stats")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func parseGameLines(from game: LeagueGameSummary) -> [TeamGameBoxLine] {
+        guard
+            let resultObject = game.result?.objectDictionary,
+            let boxArray = resultObject["boxScore"]?.arrayValues
+        else {
+            return []
+        }
+
+        let pointsByIndex: [Int] = [
+            resultObject["homeScore"]?.intValue ?? 0,
+            resultObject["awayScore"]?.intValue ?? 0,
+        ]
+        let idsByIndex: [Int: String] = [
+            0: game.homeTeamId ?? (game.homeTeamName ?? "home"),
+            1: game.awayTeamId ?? (game.awayTeamName ?? "away"),
+        ]
+        let namesByIndex: [Int: String] = [
+            0: game.homeTeamName ?? "Home",
+            1: game.awayTeamName ?? "Away",
+        ]
+
+        return boxArray.enumerated().compactMap { index, boxValue in
+            guard let teamObject = boxValue.objectDictionary else { return nil }
+            let teamName = namesByIndex[index] ?? teamObject["name"]?.stringValue ?? "Team"
+            let teamId = idsByIndex[index] ?? teamName
+            let points = index < pointsByIndex.count ? pointsByIndex[index] : 0
+            let players = teamObject["players"]?.arrayValues ?? []
+            let teamExtras = teamObject["teamExtras"]?.objectDictionary ?? [:]
+
+            var rebounds = 0
+            var assists = 0
+            var steals = 0
+            var blocks = 0
+            var turnoversFromPlayers = 0
+            var fgMade = 0
+            var fgAttempts = 0
+            var threeMade = 0
+            var threeAttempts = 0
+            var ftMade = 0
+            var ftAttempts = 0
+            var offensiveRebounds = 0
+            var defensiveRebounds = 0
+
+            for player in players {
+                guard let parsed = ParsedPlayerBoxScore(value: player) else { continue }
+                rebounds += parsed.rebounds
+                assists += parsed.assists
+                steals += parsed.steals
+                blocks += parsed.blocks
+                turnoversFromPlayers += parsed.turnovers
+                fgMade += parsed.fgMade
+                fgAttempts += parsed.fgAttempts
+                threeMade += parsed.threeMade
+                threeAttempts += parsed.threeAttempts
+                ftMade += parsed.ftMade
+                ftAttempts += parsed.ftAttempts
+                offensiveRebounds += parsed.offensiveRebounds
+                defensiveRebounds += parsed.defensiveRebounds
+            }
+
+            return TeamGameBoxLine(
+                teamId: teamId,
+                teamName: teamName,
+                points: points,
+                rebounds: rebounds,
+                assists: assists,
+                steals: steals,
+                blocks: blocks,
+                turnovers: teamExtras["turnovers"]?.intValue ?? turnoversFromPlayers,
+                fgMade: fgMade,
+                fgAttempts: fgAttempts,
+                threeMade: threeMade,
+                threeAttempts: threeAttempts,
+                ftMade: ftMade,
+                ftAttempts: ftAttempts,
+                fastBreakPoints: teamExtras["fastBreakPoints"]?.intValue ?? 0,
+                pointsInPaint: teamExtras["pointsInPaint"]?.intValue ?? 0,
+                offensiveRebounds: offensiveRebounds,
+                defensiveRebounds: defensiveRebounds
+            )
+        }
+    }
+
+    private func rank(
+        for teamId: String,
+        in teams: [TeamAggregateStats],
+        metric: (TeamAggregateStats) -> Double,
+        higherIsBetter: Bool
+    ) -> Int? {
+        let sorted = teams.sorted { lhs, rhs in
+            let lhsValue = metric(lhs)
+            let rhsValue = metric(rhs)
+            if lhsValue != rhsValue {
+                return higherIsBetter ? lhsValue > rhsValue : lhsValue < rhsValue
+            }
+            return lhs.teamName.localizedCaseInsensitiveCompare(rhs.teamName) == .orderedAscending
+        }
+        guard let index = sorted.firstIndex(where: { $0.teamId == teamId }) else { return nil }
+        return index + 1
+    }
+
+    private func formatRank(_ rank: Int?, total: Int) -> String {
+        guard let rank, total > 0 else { return "--" }
+        return "\(rank)/\(total)"
+    }
+
+    private func formatPerGame(_ value: Double) -> String {
+        String(format: "%.1f", value)
+    }
+
+    private func formatPercent(_ value: Double) -> String {
+        String(format: "%.1f%%", value)
+    }
+}
+
 private struct NationalLeaderStats {
     let playerName: String
     let teamName: String
@@ -3242,6 +3596,8 @@ private struct ParsedPlayerBoxScore {
     let ftMade: Int
     let ftAttempts: Int
     let rebounds: Int
+    let offensiveRebounds: Int
+    let defensiveRebounds: Int
     let assists: Int
     let steals: Int
     let blocks: Int
@@ -3262,6 +3618,8 @@ private struct ParsedPlayerBoxScore {
         ftMade = object["ftMade"]?.intValue ?? 0
         ftAttempts = object["ftAttempts"]?.intValue ?? 0
         rebounds = object["rebounds"]?.intValue ?? 0
+        offensiveRebounds = object["offensiveRebounds"]?.intValue ?? 0
+        defensiveRebounds = object["defensiveRebounds"]?.intValue ?? max(0, rebounds - offensiveRebounds)
         assists = object["assists"]?.intValue ?? 0
         steals = object["steals"]?.intValue ?? 0
         blocks = object["blocks"]?.intValue ?? 0
