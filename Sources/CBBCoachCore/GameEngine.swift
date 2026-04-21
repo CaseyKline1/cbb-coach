@@ -266,7 +266,11 @@ private struct NativeGameStateStore {
             activeLineup: starters,
             activeLineupBoxIndices: lineupBoxIndices,
             boxPlayers: boxPlayers,
-            teamExtras: ["turnovers": 0]
+            teamExtras: [
+                "turnovers": 0,
+                "fastBreakPoints": 0,
+                "pointsInPaint": 0,
+            ]
         )
     }
 }
@@ -607,6 +611,9 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                     stored.teams[offenseTeamId].score += points
                     applyPlusMinus(stored: &stored, scoringTeamId: offenseTeamId, points: points)
                     addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: play.shooterLineupIndex) { $0.points += points }
+                    if isPointsInPaintScore(shotType: shotType, spot: play.spot) {
+                        addTeamExtra(stored: &stored, teamId: offenseTeamId, key: "pointsInPaint", amount: points)
+                    }
                     switchedPossession = true
 
                     let assistPool: [Int]
@@ -2212,6 +2219,17 @@ private func isRimShot(_ shotType: ShotType) -> Bool {
     switch shotType {
     case .layup, .dunk, .hook, .close: return true
     default: return false
+    }
+}
+
+private func isPointsInPaintScore(shotType: ShotType, spot: OffensiveSpot) -> Bool {
+    switch shotType {
+    case .layup, .dunk:
+        return true
+    case .hook, .fadeaway, .close:
+        return spot == .middlePaint || spot == .leftPost || spot == .rightPost
+    case .midrange, .three:
+        return false
     }
 }
 
@@ -4073,6 +4091,10 @@ private func maybeResolveFastBreak(
         stored.teams[offenseTeamId].score += pts
         applyPlusMinus(stored: &stored, scoringTeamId: offenseTeamId, points: pts)
         addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: runnerIdx) { $0.points += pts }
+        addTeamExtra(stored: &stored, teamId: offenseTeamId, key: "fastBreakPoints", amount: pts)
+        if isPointsInPaintScore(shotType: shotType, spot: .middlePaint) {
+            addTeamExtra(stored: &stored, teamId: offenseTeamId, key: "pointsInPaint", amount: pts)
+        }
         return (event: "made_shot", switchedPossession: true, points: pts)
     }
 
