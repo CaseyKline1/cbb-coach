@@ -3,6 +3,15 @@ import CBBCoachCore
 
 var random = SeededRandom(seed: hashString("cbb-coach"))
 
+func resolvedOutputPath(_ rawPath: String) -> String {
+    if rawPath.hasPrefix("/") {
+        return rawPath
+    }
+    return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        .appendingPathComponent(rawPath)
+        .path
+}
+
 func makeLineup(prefix: String, three: Int, mid: Int, layup: Int, seedOffset: Int) -> [Player] {
     (0..<5).map { i in
         var p = createPlayer()
@@ -23,6 +32,29 @@ let awayPlayers = makeLineup(prefix: "Away", three: 71, mid: 68, layup: 73, seed
 
 let home = createTeam(options: CreateTeamOptions(name: "Home U", players: homePlayers), random: &random)
 let away = createTeam(options: CreateTeamOptions(name: "Away State", players: awayPlayers), random: &random)
+let args = Array(CommandLine.arguments.dropFirst())
+if let outputFlagIdx = args.firstIndex(of: "--qa-trace-output") {
+    guard outputFlagIdx + 1 < args.count else {
+        fputs("Missing file path after --qa-trace-output\n", stderr)
+        exit(2)
+    }
+    let outputPath = resolvedOutputPath(args[outputFlagIdx + 1])
+    let qaResult = simulateGameWithQA(homeTeam: home, awayTeam: away, random: &random)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    do {
+        let payload = try encoder.encode(qaResult)
+        try payload.write(to: URL(fileURLWithPath: outputPath), options: .atomic)
+        print("Wrote QA trace: \(outputPath)")
+        print("\(qaResult.game.away.name) \(qaResult.game.away.score) - \(qaResult.game.home.name) \(qaResult.game.home.score)")
+        print("Actions: \(qaResult.actions.count), Play-by-play events: \(qaResult.game.playByPlay.count)")
+        exit(0)
+    } catch {
+        fputs("Failed to write QA trace file: \(error)\n", stderr)
+        exit(1)
+    }
+}
+
 let result = simulateGame(homeTeam: home, awayTeam: away, random: &random)
 
 print("\(result.away.name) \(result.away.score) - \(result.home.name) \(result.home.score)")

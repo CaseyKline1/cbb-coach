@@ -185,6 +185,51 @@ func completedLeagueGamesCarryBoxScore() throws {
     #expect(boxArray.count == 2)
 }
 
+@Test("Conference tournaments are scheduled after regular season")
+func conferenceTournamentsFollowRegularSeason() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "conference-tourney-smoke", totalRegularSeasonGames: 1))
+    autoFillUserNonConferenceOpponents(&league)
+    generateSeasonSchedule(&league)
+
+    _ = advanceToNextUserGame(&league)
+
+    let userSchedule = getUserSchedule(league)
+    let tournamentGames = userSchedule.filter { $0.type == "conference_tournament" }
+    #expect(!tournamentGames.isEmpty)
+}
+
+@Test("12-team conference tournament gives top 4 seeds a first-round bye")
+func conferenceTournamentTwelveTeamByes() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Dayton", seed: "conference-twelve-bye", totalRegularSeasonGames: 1))
+    autoFillUserNonConferenceOpponents(&league)
+    generateSeasonSchedule(&league)
+
+    _ = advanceToNextUserGame(&league)
+
+    let standings = getConferenceStandings(league, conferenceId: "atlantic-10")
+    #expect(standings.count == 14)
+
+    let top4 = Set(standings.prefix(4).map(\.teamId))
+    let seeds5to12 = Set(standings.dropFirst(4).prefix(8).map(\.teamId))
+
+    _ = advanceToNextUserGame(&league)
+
+    let completed = getCompletedLeagueGames(league)
+    let atlantic10RoundOneGames = completed.filter { ($0.gameId ?? "").hasPrefix("ct_atlantic-10_r1_") }
+    #expect(atlantic10RoundOneGames.count == 4)
+
+    for game in atlantic10RoundOneGames {
+        guard let homeTeamId = game.homeTeamId, let awayTeamId = game.awayTeamId else {
+            Issue.record("Missing team ids for Atlantic 10 tournament game")
+            continue
+        }
+        #expect(seeds5to12.contains(homeTeamId))
+        #expect(seeds5to12.contains(awayTeamId))
+        #expect(!top4.contains(homeTeamId))
+        #expect(!top4.contains(awayTeamId))
+    }
+}
+
 @Test("Simulation uses substitutions and bench players log minutes")
 func substitutionFlowUsesBenchMinutes() {
     var random = SeededRandom(seed: 2026)

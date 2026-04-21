@@ -639,55 +639,51 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                         switchedPossession = true
                     } else {
                         // Loose-ball foul: rare, called on whichever side didn't secure the rebound.
-                        let looseBallFoulChance = 0.018
-                        if random.nextUnit() < looseBallFoulChance {
-                            // Call it on a random defensive rebounder (they were boxing out); offense keeps ball.
-                            let foulerIdx = pickRebounderIndex(
-                                lineup: stored.teams[defenseTeamId].activeLineup,
-                                offensive: false,
-                                shotType: shotType,
-                                random: &random
-                            )
-                            registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: foulerIdx, shooting: false)
-                            eventType = "loose_ball_foul"
-                            switchedPossession = false
-                        } else {
-                        let offenseReboundChance = clamp(0.27 + teamEdge * 0.04, min: 0.18, max: 0.37)
-                        let offenseRebound = random.nextUnit() < offenseReboundChance
-                        if offenseRebound {
-                            let reboundIdx = pickRebounderIndex(
-                                lineup: stored.teams[offenseTeamId].activeLineup,
-                                offensive: true,
-                                shotType: shotType,
-                                random: &random,
-                                spot: play.spot,
-                                opposingLineup: stored.teams[defenseTeamId].activeLineup
-                            )
-                            addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: reboundIdx) { line in
-                                line.rebounds += 1
-                                line.offensiveRebounds += 1
-                            }
-                            switchedPossession = false
-                        } else {
-                            let reboundIdx = pickRebounderIndex(
-                                lineup: stored.teams[defenseTeamId].activeLineup,
-                                offensive: false,
-                                shotType: shotType,
-                                random: &random,
-                                spot: play.spot,
-                                opposingLineup: stored.teams[offenseTeamId].activeLineup
-                            )
-                            addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: reboundIdx) { line in
-                                line.rebounds += 1
-                                line.defensiveRebounds += 1
-                            }
-                            switchedPossession = true
-                            stored.pendingTransition = NativeGameStateStore.PendingTransition(source: "def_rebound")
-                        }
-                        eventType = "missed_shot"
-                        } // close: loose-ball else
-                    }
-                }
+	                        let looseBallFoulChance = 0.018
+	                        if random.nextUnit() < looseBallFoulChance {
+	                            // Call it on a likely nearby defender in the rebound zone (they were boxing out); offense keeps ball.
+	                            let zone = reboundZoneWithShortBias(
+	                                initialZone: reboundZone(for: shotType, spot: play.spot),
+	                                shotType: shotType,
+	                                random: &random
+	                            )
+	                            let foulerIdx = pickLikelyReboundParticipantIndex(
+	                                lineup: stored.teams[defenseTeamId].activeLineup,
+	                                offensive: false,
+	                                zone: zone,
+	                                random: &random
+	                            )
+	                            registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: foulerIdx, shooting: false)
+	                            eventType = "loose_ball_foul"
+	                            switchedPossession = false
+	                        } else {
+	                            let rebound = resolveReboundOutcome(
+	                                offenseLineup: stored.teams[offenseTeamId].activeLineup,
+	                                defenseLineup: stored.teams[defenseTeamId].activeLineup,
+	                                shotType: shotType,
+	                                spot: play.spot,
+	                                offensePositioning: 1,
+	                                defensePositioning: 1,
+	                                random: &random
+	                            )
+	                            if rebound.offensive {
+	                                addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: rebound.lineupIndex) { line in
+	                                line.rebounds += 1
+	                                line.offensiveRebounds += 1
+	                                }
+	                                switchedPossession = false
+	                            } else {
+	                                addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: rebound.lineupIndex) { line in
+	                                line.rebounds += 1
+	                                line.defensiveRebounds += 1
+	                                }
+	                                switchedPossession = true
+	                                stored.pendingTransition = NativeGameStateStore.PendingTransition(source: "def_rebound")
+	                            }
+	                            eventType = "missed_shot"
+	                        } // close: loose-ball else
+	                    }
+	                }
                 } // close: if !tookCharge
                 } // close: if !passIntercepted
                 } // close: forced drive-turnover branch
@@ -903,6 +899,11 @@ private enum ReboundZone {
     case paint, leftBlock, rightBlock, leftPerimeter, rightPerimeter, topPerimeter
 }
 
+private struct ReboundOutcome {
+    var offensive: Bool
+    var lineupIndex: Int
+}
+
 private func reboundZone(for shotType: ShotType, spot: OffensiveSpot) -> ReboundZone {
     switch shotType {
     case .three:
@@ -999,17 +1000,6 @@ private func zonePresenceAffinity(_ player: Player, zone: ReboundZone) -> Double
     }
 }
 
-private func fallbackZones(for zone: ReboundZone) -> [ReboundZone] {
-    switch zone {
-    case .paint:
-        return [.leftBlock, .rightBlock]
-    case .leftBlock, .rightBlock:
-        return [.paint]
-    case .leftPerimeter, .rightPerimeter, .topPerimeter:
-        return []
-    }
-}
-
 private func positionProximity(_ player: Player, zone: ReboundZone) -> Double {
     let positionTag = player.bio.position.rawValue.uppercased()
     let isBig = positionTag.contains("C") || positionTag.contains("PF") || positionTag.contains("F")
@@ -1026,61 +1016,160 @@ private func positionProximity(_ player: Player, zone: ReboundZone) -> Double {
     }
 }
 
-private func pickRebounderIndex(
+private func reboundNearbyWeight(_ player: Player, zone: ReboundZone) -> Double {
+    let affinity = zonePresenceAffinity(player, zone: zone)
+    let proximity = positionProximity(player, zone: zone)
+    return max(0.12, affinity * 0.9 + proximity * 0.45)
+}
+
+private func heightReboundRating(_ player: Player) -> Double {
+    let heightInches = getHeightInches(player)
+    return clamp((heightInches - 76) * 4 + 56, min: 34, max: 98)
+}
+
+private func wingspanReboundRating(_ player: Player) -> Double {
+    let wingspanInches = getWingspanInches(player)
+    return clamp((wingspanInches - 80) * 4 + 56, min: 34, max: 100)
+}
+
+private func offensiveReboundSkillScore(_ player: Player, zone: ReboundZone) -> Double {
+    let oreb = getBaseRating(player, path: "rebounding.offensiveRebounding")
+    let box = getBaseRating(player, path: "rebounding.boxouts")
+    let hustle = getBaseRating(player, path: "skills.hustle")
+    let hands = getBaseRating(player, path: "skills.hands")
+    let vertical = getBaseRating(player, path: "athleticism.vertical")
+    let strength = getBaseRating(player, path: "athleticism.strength")
+    let burst = getBaseRating(player, path: "athleticism.burst")
+    let speed = getBaseRating(player, path: "athleticism.speed")
+    let height = heightReboundRating(player)
+    let wingspan = wingspanReboundRating(player)
+    let core = oreb * 0.48 + box * 0.16 + hustle * 0.12 + hands * 0.08 + strength * 0.08 + vertical * 0.08
+    let movement: Double
+    switch zone {
+    case .paint, .leftBlock, .rightBlock:
+        movement = vertical * 0.52 + strength * 0.34 + burst * 0.14
+    case .leftPerimeter, .rightPerimeter, .topPerimeter:
+        movement = burst * 0.44 + speed * 0.38 + hands * 0.18
+    }
+    let size = height * 0.45 + wingspan * 0.55
+    return core * 0.72 + movement * 0.14 + size * 0.14
+}
+
+private func defensiveReboundSkillScore(_ player: Player, zone: ReboundZone) -> Double {
+    let dreb = getBaseRating(player, path: "rebounding.defensiveRebound")
+    let box = getBaseRating(player, path: "rebounding.boxouts")
+    let hustle = getBaseRating(player, path: "skills.hustle")
+    let hands = getBaseRating(player, path: "skills.hands")
+    let vertical = getBaseRating(player, path: "athleticism.vertical")
+    let strength = getBaseRating(player, path: "athleticism.strength")
+    let burst = getBaseRating(player, path: "athleticism.burst")
+    let speed = getBaseRating(player, path: "athleticism.speed")
+    let height = heightReboundRating(player)
+    let wingspan = wingspanReboundRating(player)
+    let core = dreb * 0.46 + box * 0.24 + hustle * 0.12 + hands * 0.08 + strength * 0.06 + vertical * 0.04
+    let movement: Double
+    switch zone {
+    case .paint, .leftBlock, .rightBlock:
+        movement = vertical * 0.48 + strength * 0.32 + burst * 0.2
+    case .leftPerimeter, .rightPerimeter, .topPerimeter:
+        movement = burst * 0.4 + speed * 0.36 + hands * 0.24
+    }
+    let size = height * 0.4 + wingspan * 0.6
+    return core * 0.72 + movement * 0.12 + size * 0.16
+}
+
+private func defenderBoxoutPressure(_ player: Player, zone: ReboundZone) -> Double {
+    let box = getBaseRating(player, path: "rebounding.boxouts")
+    let strength = getBaseRating(player, path: "athleticism.strength")
+    let hustle = getBaseRating(player, path: "skills.hustle")
+    let vertical = getBaseRating(player, path: "athleticism.vertical")
+    let height = heightReboundRating(player)
+    let wingspan = wingspanReboundRating(player)
+    let movement: Double
+    switch zone {
+    case .paint, .leftBlock, .rightBlock:
+        movement = strength * 0.55 + vertical * 0.45
+    case .leftPerimeter, .rightPerimeter, .topPerimeter:
+        movement = getBaseRating(player, path: "athleticism.burst") * 0.54 + getBaseRating(player, path: "athleticism.speed") * 0.46
+    }
+    return box * 0.42 + movement * 0.2 + wingspan * 0.2 + height * 0.1 + hustle * 0.08
+}
+
+private func offensiveSlipPressure(_ player: Player, zone: ReboundZone) -> Double {
+    let oreb = getBaseRating(player, path: "rebounding.offensiveRebounding")
+    let burst = getBaseRating(player, path: "athleticism.burst")
+    let hustle = getBaseRating(player, path: "skills.hustle")
+    let strength = getBaseRating(player, path: "athleticism.strength")
+    let vertical = getBaseRating(player, path: "athleticism.vertical")
+    let hands = getBaseRating(player, path: "skills.hands")
+    let movement: Double
+    switch zone {
+    case .paint, .leftBlock, .rightBlock:
+        movement = vertical * 0.58 + strength * 0.42
+    case .leftPerimeter, .rightPerimeter, .topPerimeter:
+        movement = burst * 0.6 + getBaseRating(player, path: "athleticism.speed") * 0.4
+    }
+    return oreb * 0.48 + movement * 0.2 + hustle * 0.18 + strength * 0.08 + hands * 0.06
+}
+
+private func pickLikelyReboundParticipantIndex(
     lineup: [Player],
     offensive: Bool,
-    shotType: ShotType,
-    random: inout SeededRandom,
-    spot: OffensiveSpot = .middlePaint,
-    opposingLineup: [Player] = []
+    zone: ReboundZone,
+    random: inout SeededRandom
 ) -> Int {
     guard !lineup.isEmpty else { return 0 }
+    return weightedRandomIndex(lineup: lineup, random: &random) { player in
+        let base = offensive ? offensiveReboundSkillScore(player, zone: zone) : defensiveReboundSkillScore(player, zone: zone)
+        return max(1, base * reboundNearbyWeight(player, zone: zone))
+    }
+}
+
+private func resolveReboundOutcome(
+    offenseLineup: [Player],
+    defenseLineup: [Player],
+    shotType: ShotType,
+    spot: OffensiveSpot,
+    offensePositioning: Double,
+    defensePositioning: Double,
+    random: inout SeededRandom
+) -> ReboundOutcome {
+    guard !offenseLineup.isEmpty else { return ReboundOutcome(offensive: false, lineupIndex: 0) }
+    guard !defenseLineup.isEmpty else { return ReboundOutcome(offensive: true, lineupIndex: 0) }
     let initialZone = reboundZone(for: shotType, spot: spot)
     let zone = reboundZoneWithShortBias(initialZone: initialZone, shotType: shotType, random: &random)
-    let opposingBoxoutAvg: Double
-    if opposingLineup.isEmpty {
-        opposingBoxoutAvg = 50
-    } else {
-        opposingBoxoutAvg = average(opposingLineup.map { getBaseRating($0, path: "rebounding.boxouts") })
-    }
-    // Offense crashing against tall boxouts is suppressed; defense enjoys a boost when boxing out well.
-    let boxoutResistance = clamp((opposingBoxoutAvg - 50) / 60, min: -0.2, max: 0.35)
-    let targetPresence = lineup.reduce(0) { $0 + zonePresenceAffinity($1, zone: zone) }
-    let fallbackPresence: Double = fallbackZones(for: zone).reduce(0) { total, fallbackZone in
-        total + lineup.reduce(0) { $0 + zonePresenceAffinity($1, zone: fallbackZone) }
-    }
-    let needsZoneFallback = !fallbackZones(for: zone).isEmpty && targetPresence < 1.0 && fallbackPresence > 0.8
 
-    return weightedRandomIndex(lineup: lineup, random: &random) { player in
-        let reboundRating = offensive
-            ? getBaseRating(player, path: "rebounding.offensiveRebounding")
-            : getBaseRating(player, path: "rebounding.defensiveRebound")
-        let boxouts = getBaseRating(player, path: "rebounding.boxouts")
-        let baseScore = reboundRating * 0.6 + boxouts * 0.3 + getBaseRating(player, path: "skills.hustle") * 0.1
-        let zoneBias: Double
-        switch zone {
-        case .paint, .leftBlock, .rightBlock:
-            zoneBias = getBaseRating(player, path: "athleticism.strength") * 0.2
-                + getBaseRating(player, path: "athleticism.vertical") * 0.2
-                + getBaseRating(player, path: "rebounding.boxouts") * 0.2
-        case .leftPerimeter, .rightPerimeter, .topPerimeter:
-            zoneBias = getBaseRating(player, path: "athleticism.burst") * 0.22
-                + getBaseRating(player, path: "athleticism.speed") * 0.18
-                + (getBaseRating(player, path: "athleticism.strength") < 75 ? 10 : 0)
-        }
-        let proximity = positionProximity(player, zone: zone)
-        let crashingPenalty = offensive ? (1 - boxoutResistance) : (1 + boxoutResistance * 0.5)
-        let zoneFallbackBoost: Double
-        if needsZoneFallback {
-            let fallbackAffinity = fallbackZones(for: zone).reduce(0) { total, fallbackZone in
-                total + zonePresenceAffinity(player, zone: fallbackZone)
-            }
-            zoneFallbackBoost = 1 + fallbackAffinity * 0.32
-        } else {
-            zoneFallbackBoost = 1
-        }
-        return max(1, (baseScore + zoneBias * 0.45) * proximity * crashingPenalty * zoneFallbackBoost)
+    let defensePressures = defenseLineup.map { defenderBoxoutPressure($0, zone: zone) * reboundNearbyWeight($0, zone: zone) }
+    let offensePressures = offenseLineup.map { offensiveSlipPressure($0, zone: zone) * reboundNearbyWeight($0, zone: zone) }
+    let topOffensePressure = offensePressures.max() ?? 0
+
+    var weights: [Double] = []
+    var outcomes: [ReboundOutcome] = []
+
+    for (idx, player) in offenseLineup.enumerated() {
+        let nearby = reboundNearbyWeight(player, zone: zone)
+        let offenseSkill = offensiveReboundSkillScore(player, zone: zone)
+        let slipPressure = offensePressures[idx]
+        let bestDefenderPressure = defensePressures.max() ?? 50
+        let defenderWinChance = clamp(logistic((bestDefenderPressure - slipPressure) / 12), min: 0.1, max: 0.92)
+        let boxoutPenalty = clamp(1.08 - defenderWinChance * 0.62, min: 0.45, max: 1.08)
+        let score = max(0.2, offenseSkill * nearby * boxoutPenalty * offensePositioning)
+        weights.append(score)
+        outcomes.append(ReboundOutcome(offensive: true, lineupIndex: idx))
     }
+
+    for (idx, player) in defenseLineup.enumerated() {
+        let nearby = reboundNearbyWeight(player, zone: zone)
+        let defenseSkill = defensiveReboundSkillScore(player, zone: zone)
+        let defenderPressure = defensePressures[idx]
+        let boxoutControl = clamp(1 + (defenderPressure - topOffensePressure) / 180, min: 0.78, max: 1.3)
+        let score = max(0.2, defenseSkill * nearby * boxoutControl * defensePositioning)
+        weights.append(score)
+        outcomes.append(ReboundOutcome(offensive: false, lineupIndex: idx))
+    }
+
+    let pick = weightedChoiceIndex(weights: weights, random: &random)
+    return outcomes[pick]
 }
 
 private func weightedRandomIndex(lineup: [Player], random: inout SeededRandom, weight: (Player) -> Double) -> Int {
@@ -1334,7 +1423,27 @@ private func minuteTarget(for tracker: NativeGameStateStore.TeamTracker, rosterI
 
 private func addTeamExtra(stored: inout NativeGameStateStore.StoredState, teamId: Int, key: String, amount: Int) {
     guard teamId >= 0, teamId < stored.teams.count else { return }
+    let teamName = stored.teams[teamId].team.name
+    let before = stored.teams[teamId].teamExtras[key, default: 0]
     stored.teams[teamId].teamExtras[key, default: 0] += amount
+    if stored.traceEnabled {
+        let after = stored.teams[teamId].teamExtras[key, default: 0]
+        let delta = after - before
+        if delta != 0 {
+            stored.currentActionStatRecords.append(
+                QAStatRecord(
+                    entityType: "team_extra",
+                    teamIndex: teamId,
+                    teamName: teamName,
+                    playerName: nil,
+                    stat: key,
+                    before: Double(before),
+                    after: Double(after),
+                    delta: Double(delta)
+                )
+            )
+        }
+    }
 }
 
 private func applyPlusMinus(stored: inout NativeGameStateStore.StoredState, scoringTeamId: Int, points: Int) {
@@ -1364,7 +1473,64 @@ private func addPlayerStat(
     guard lineupIndex >= 0, lineupIndex < stored.teams[teamId].activeLineupBoxIndices.count else { return }
     let boxIndex = stored.teams[teamId].activeLineupBoxIndices[lineupIndex]
     guard boxIndex >= 0, boxIndex < stored.teams[teamId].boxPlayers.count else { return }
+    let before = stored.teams[teamId].boxPlayers[boxIndex]
     mutate(&stored.teams[teamId].boxPlayers[boxIndex])
+    guard stored.traceEnabled else { return }
+    let after = stored.teams[teamId].boxPlayers[boxIndex]
+    let teamName = stored.teams[teamId].team.name
+    appendPlayerStatDeltaRecords(
+        stored: &stored,
+        teamId: teamId,
+        teamName: teamName,
+        playerName: after.playerName,
+        before: before,
+        after: after
+    )
+}
+
+private func appendPlayerStatDeltaRecords(
+    stored: inout NativeGameStateStore.StoredState,
+    teamId: Int,
+    teamName: String,
+    playerName: String,
+    before: PlayerBoxScore,
+    after: PlayerBoxScore
+) {
+    func appendIfChanged(_ stat: String, _ old: Double, _ new: Double) {
+        let delta = new - old
+        if abs(delta) < 0.000_001 { return }
+        stored.currentActionStatRecords.append(
+            QAStatRecord(
+                entityType: "player",
+                teamIndex: teamId,
+                teamName: teamName,
+                playerName: playerName,
+                stat: stat,
+                before: old,
+                after: new,
+                delta: delta
+            )
+        )
+    }
+
+    appendIfChanged("minutes", before.minutes, after.minutes)
+    appendIfChanged("points", Double(before.points), Double(after.points))
+    appendIfChanged("fgMade", Double(before.fgMade), Double(after.fgMade))
+    appendIfChanged("fgAttempts", Double(before.fgAttempts), Double(after.fgAttempts))
+    appendIfChanged("threeMade", Double(before.threeMade), Double(after.threeMade))
+    appendIfChanged("threeAttempts", Double(before.threeAttempts), Double(after.threeAttempts))
+    appendIfChanged("ftMade", Double(before.ftMade), Double(after.ftMade))
+    appendIfChanged("ftAttempts", Double(before.ftAttempts), Double(after.ftAttempts))
+    appendIfChanged("rebounds", Double(before.rebounds), Double(after.rebounds))
+    appendIfChanged("offensiveRebounds", Double(before.offensiveRebounds), Double(after.offensiveRebounds))
+    appendIfChanged("defensiveRebounds", Double(before.defensiveRebounds), Double(after.defensiveRebounds))
+    appendIfChanged("assists", Double(before.assists), Double(after.assists))
+    appendIfChanged("steals", Double(before.steals), Double(after.steals))
+    appendIfChanged("blocks", Double(before.blocks), Double(after.blocks))
+    appendIfChanged("turnovers", Double(before.turnovers), Double(after.turnovers))
+    appendIfChanged("fouls", Double(before.fouls), Double(after.fouls))
+    appendIfChanged("plusMinus", Double(before.plusMinus ?? 0), Double(after.plusMinus ?? 0))
+    appendIfChanged("energy", before.energy ?? 0, after.energy ?? 0)
 }
 
 private func eventDescription(eventType: String, offenseTeam: String, defenseTeam: String, lineup: [Player], playerIndex: Int) -> String? {
@@ -1464,6 +1630,66 @@ public func simulateGame(homeTeam: Team, awayTeam: Team, random: inout SeededRan
     )
 }
 
+public func simulateGameWithQA(homeTeam: Team, awayTeam: Team, random: inout SeededRandom) -> SimulatedGameQAResult {
+    var state = createInitialGameState(homeTeam: homeTeam, awayTeam: awayTeam, random: &random)
+    _ = NativeGameStateStore.withState(state.handle) { stored in
+        stored.traceEnabled = true
+    }
+    simulateHalf(state: &state, random: &random)
+
+    _ = NativeGameStateStore.withState(state.handle) { stored in
+        stored.currentHalf = 2
+        stored.gameClockRemaining = HALF_SECONDS
+        stored.shotClockRemaining = SHOT_CLOCK_SECONDS
+        stored.teamFoulsInHalf = Array(repeating: 0, count: stored.teamFoulsInHalf.count)
+        recoverAllPlayersForHalftime(stored: &stored)
+    }
+    simulateHalf(state: &state, random: &random)
+
+    var overtimeNumber = 0
+    while true {
+        guard let snapshot = NativeGameStateStore.snapshot(state.handle) else {
+            fatalError("simulateGameWithQA failed: missing game state \(state.handle)")
+        }
+        if snapshot.teams[0].score != snapshot.teams[1].score {
+            break
+        }
+        overtimeNumber += 1
+        _ = NativeGameStateStore.withState(state.handle) { stored in
+            stored.currentHalf = 2 + overtimeNumber
+            stored.gameClockRemaining = OVERTIME_SECONDS
+            stored.shotClockRemaining = SHOT_CLOCK_SECONDS
+            stored.teamFoulsInHalf = Array(repeating: 0, count: stored.teamFoulsInHalf.count)
+            recoverAllPlayersForHalftime(stored: &stored)
+        }
+        simulateHalf(state: &state, random: &random)
+    }
+
+    guard let final = NativeGameStateStore.snapshot(state.handle) else {
+        fatalError("simulateGameWithQA failed: missing game state \(state.handle)")
+    }
+
+    let homeBox = TeamBoxScore(
+        name: final.teams[0].team.name,
+        players: final.teams[0].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 },
+        teamExtras: final.teams[0].teamExtras
+    )
+    let awayBox = TeamBoxScore(
+        name: final.teams[1].team.name,
+        players: final.teams[1].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 },
+        teamExtras: final.teams[1].teamExtras
+    )
+    let boxScores = [homeBox, awayBox]
+    let game = SimulatedGameResult(
+        home: SimulatedTeamResult(name: final.teams[0].team.name, score: final.teams[0].score, boxScore: homeBox),
+        away: SimulatedTeamResult(name: final.teams[1].team.name, score: final.teams[1].score, boxScore: awayBox),
+        winner: final.teams[0].score == final.teams[1].score ? nil : (final.teams[0].score > final.teams[1].score ? final.teams[0].team.name : final.teams[1].team.name),
+        playByPlay: final.playByPlay,
+        boxScore: boxScores
+    )
+    return SimulatedGameQAResult(game: game, actions: final.actionTraces)
+}
+
 private func logistic(_ x: Double) -> Double {
     1 / (1 + Foundation.exp(-x))
 }
@@ -1512,6 +1738,10 @@ private func extractFeetInches(_ text: String, pattern: String) -> (Int, Int)? {
 
 private func getHeightInches(_ player: Player) -> Double {
     parseLengthToInches(player.size.height, fallback: 78)
+}
+
+private func getWingspanInches(_ player: Player) -> Double {
+    parseLengthToInches(player.size.wingspan, fallback: getHeightInches(player) + 4)
 }
 
 private func getWeightPounds(_ player: Player) -> Double {
@@ -3081,18 +3311,24 @@ private func maybeResolveFastBreak(
         return (event: "made_shot", switchedPossession: true, points: pts)
     }
 
-    // Missed break finish: defense recovers rebounds more often in transition.
-    let offReboundChance = 0.2
-    if random.nextUnit() < offReboundChance {
-        let rbIdx = pickRebounderIndex(lineup: offenseLineup, offensive: true, shotType: shotType, random: &random)
-        addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: rbIdx) { line in
+    // Missed break finish: still interaction-based, but transition positioning usually favors set defenders.
+    let rebound = resolveReboundOutcome(
+        offenseLineup: offenseLineup,
+        defenseLineup: defenseLineup,
+        shotType: shotType,
+        spot: .middlePaint,
+        offensePositioning: 0.88,
+        defensePositioning: 1.12,
+        random: &random
+    )
+    if rebound.offensive {
+        addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: rebound.lineupIndex) { line in
             line.rebounds += 1
             line.offensiveRebounds += 1
         }
         return (event: "missed_shot", switchedPossession: false, points: 0)
     } else {
-        let rbIdx = pickRebounderIndex(lineup: defenseLineup, offensive: false, shotType: shotType, random: &random)
-        addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: rbIdx) { line in
+        addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: rebound.lineupIndex) { line in
             line.rebounds += 1
             line.defensiveRebounds += 1
         }
