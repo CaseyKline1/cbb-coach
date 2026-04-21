@@ -370,10 +370,6 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
         let possessionSeconds = possessionDurationSeconds(for: stored.teams[offenseTeamId].team.pace, random: &random)
         applyChunkMinutesAndEnergy(stored: &stored, possessionSeconds: possessionSeconds)
 
-        let offenseStrength = computeLineupOffenseStrength(stored.teams[offenseTeamId].activeLineup)
-        let defenseStrength = computeLineupDefenseStrength(stored.teams[defenseTeamId].activeLineup)
-        let teamEdge = (offenseStrength - defenseStrength) / 22 + (random.nextUnit() * 0.2 - 0.1)
-
         let ballHandlerIdx = pickLineupIndexForBallHandler(lineup: stored.teams[offenseTeamId].activeLineup, random: &random)
         let defenderIdx = min(ballHandlerIdx, stored.teams[defenseTeamId].activeLineup.count - 1)
         let ballHandler = stored.teams[offenseTeamId].activeLineup[ballHandlerIdx]
@@ -449,7 +445,14 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 defenseRatings: ["defense.steals", "defense.passPerception", "skills.hands"],
                 random: &random
             )
-            let turnoverBase = clamp(0.12 - teamEdge * 0.03, min: 0.06, max: 0.18)
+            let handlerControl = getBaseRating(ballHandler, path: "skills.ballHandling") * 0.48
+                + getBaseRating(ballHandler, path: "skills.ballSafety") * 0.32
+                + getBaseRating(ballHandler, path: "skills.passingIQ") * 0.2
+            let pressure = getBaseRating(primaryDefender, path: "defense.steals") * 0.45
+                + getBaseRating(primaryDefender, path: "defense.passPerception") * 0.33
+                + getBaseRating(primaryDefender, path: "skills.hands") * 0.22
+            let pressureEdge = (pressure - handlerControl) / 220
+            let turnoverBase = clamp(0.1 + pressureEdge * 0.08, min: 0.06, max: 0.18)
             let turnoverBoost = clamp((0.5 - logistic(turnoverInteraction.edge)) * 0.12, min: -0.04, max: 0.08)
             let isTurnover = random.nextUnit() < clamp(turnoverBase + turnoverBoost, min: 0.04, max: 0.24)
 
@@ -548,7 +551,7 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 let shotTypeEdgeBonus = shotTypeEdge(for: shotType)
                 let zoneMod = zoneDistanceAdvantage(spot: play.spot, scheme: stored.teams[defenseTeamId].team.defenseScheme)
                 let madeProbability = clamp(
-                    shotMakeBase + teamEdge * 0.06 + shotTypeEdgeBonus + play.makeBonus + zoneMod
+                    shotMakeBase + shotTypeEdgeBonus + play.makeBonus + zoneMod
                         + (logistic(shotInteraction.edge + play.edgeBonus) - 0.5) * shotMakeScale,
                     min: minMakeProbability(for: shotType),
                     max: maxMakeProbability(for: shotType)
@@ -1903,44 +1906,6 @@ private func getMobilitySizeEdge(
     let offensePenalty = offenseUsesMobility ? getMobilitySizePenalty(offensePlayer) : 0
     let defensePenalty = defenseUsesMobility ? getMobilitySizePenalty(defensePlayer) : 0
     return clamp((defensePenalty - offensePenalty) / 12, min: -0.16, max: 0.16)
-}
-
-private func computeTeamOffenseStrength(_ team: Team) -> Double {
-    let lineup = Array(team.lineup.prefix(5))
-    return computeLineupOffenseStrength(lineup)
-}
-
-private func computeLineupOffenseStrength(_ lineup: [Player]) -> Double {
-    guard !lineup.isEmpty else { return 50 }
-    let values = lineup.map { player in
-        average([
-            getBaseRating(player, path: "skills.shotIQ"),
-            getBaseRating(player, path: "shooting.threePointShooting"),
-            getBaseRating(player, path: "shooting.midrangeShot"),
-            getBaseRating(player, path: "shooting.closeShot"),
-            getBaseRating(player, path: "skills.ballHandling"),
-        ])
-    }
-    return average(values)
-}
-
-private func computeTeamDefenseStrength(_ team: Team) -> Double {
-    let lineup = Array(team.lineup.prefix(5))
-    return computeLineupDefenseStrength(lineup)
-}
-
-private func computeLineupDefenseStrength(_ lineup: [Player]) -> Double {
-    guard !lineup.isEmpty else { return 50 }
-    let values = lineup.map { player in
-        average([
-            getBaseRating(player, path: "defense.perimeterDefense"),
-            getBaseRating(player, path: "defense.postDefense"),
-            getBaseRating(player, path: "defense.shotContest"),
-            getBaseRating(player, path: "defense.lateralQuickness"),
-            getBaseRating(player, path: "skills.hustle"),
-        ])
-    }
-    return average(values)
 }
 
 // MARK: - Shot type selection and resolution
