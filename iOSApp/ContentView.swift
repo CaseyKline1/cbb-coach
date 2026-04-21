@@ -2481,6 +2481,7 @@ private struct BoxScoreDetailView: View {
 private struct PlayerStatsRow: Hashable {
     let name: String
     let games: Int
+    let minutes: Double
     let points: Int
     let rebounds: Int
     let assists: Int
@@ -2494,6 +2495,7 @@ private struct PlayerStatsRow: Hashable {
     let ftMade: Int
     let ftAttempts: Int
 
+    var minutesPerGame: Double { perGame(minutes) }
     var pointsPerGame: Double { perGame(points) }
     var reboundsPerGame: Double { perGame(rebounds) }
     var assistsPerGame: Double { perGame(assists) }
@@ -2513,6 +2515,11 @@ private struct PlayerStatsRow: Hashable {
     private func perGame(_ value: Int) -> Double {
         guard games > 0 else { return 0 }
         return Double(value) / Double(games)
+    }
+
+    private func perGame(_ value: Double) -> Double {
+        guard games > 0 else { return 0 }
+        return value / Double(games)
     }
 
     private func percentage(made: Int, attempts: Int) -> Double {
@@ -2547,6 +2554,7 @@ private struct PlayerStatsView: View {
                 totals[parsed.playerName] = PlayerStatsRow(
                     name: parsed.playerName,
                     games: (current?.games ?? 0) + 1,
+                    minutes: (current?.minutes ?? 0) + parsed.minutes,
                     points: (current?.points ?? 0) + parsed.points,
                     rebounds: (current?.rebounds ?? 0) + parsed.rebounds,
                     assists: (current?.assists ?? 0) + parsed.assists,
@@ -2576,7 +2584,8 @@ private struct PlayerStatsView: View {
         [
             .init(id: "name", title: "", width: 170, alignment: .leading),
             .init(id: "games", title: "G", width: 42),
-            .init(id: "points", title: "PTS", width: 48),
+            .init(id: "mpg", title: "MPG", width: 48),
+            .init(id: "points", title: "PPG", width: 48),
             .init(id: "rebounds", title: "REB", width: 48),
             .init(id: "assists", title: "AST", width: 48),
             .init(id: "steals", title: "STL", width: 48),
@@ -2603,6 +2612,7 @@ private struct PlayerStatsView: View {
                 HStack(spacing: 0) {
                     AppTableTextCell(text: row.name, width: 170, alignment: .leading)
                     AppTableTextCell(text: "\(row.games)", width: 42)
+                    AppTableTextCell(text: format(row.minutesPerGame), width: 48)
                     AppTableTextCell(text: format(row.pointsPerGame), width: 48)
                     AppTableTextCell(text: format(row.reboundsPerGame), width: 48)
                     AppTableTextCell(text: format(row.assistsPerGame), width: 48)
@@ -2635,6 +2645,8 @@ private struct PlayerStatsView: View {
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name)
         case "games":
             return numeric(lhs.games, rhs.games)
+        case "mpg":
+            return numeric(lhs.minutesPerGame, rhs.minutesPerGame)
         case "points":
             return numeric(lhs.pointsPerGame, rhs.pointsPerGame)
         case "rebounds":
