@@ -487,6 +487,7 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 var passIntercepted = false
                 if play.shooterLineupIndex != ballHandlerIdx {
                     if let stealerIdx = resolvePassInterception(
+                        stored: &stored,
                         passer: ballHandler,
                         receiver: shooter,
                         defenseLineup: stored.teams[defenseTeamId].activeLineup,
@@ -3142,38 +3143,55 @@ private func maybeResolvePress(
 // MARK: - Pass delivery
 
 private func resolvePassInterception(
+    stored: inout NativeGameStateStore.StoredState,
     passer: Player,
     receiver: Player,
     defenseLineup: [Player],
     random: inout SeededRandom
 ) -> Int? {
     guard !defenseLineup.isEmpty else { return nil }
-    let passerAccuracy = getRating(passer, path: "skills.passingAccuracy") * 0.55
-        + getRating(passer, path: "skills.passingIQ") * 0.3
-        + getRating(passer, path: "skills.passingVision") * 0.15
-    let receiverSafety = getRating(receiver, path: "skills.hands") * 0.6
-        + getRating(receiver, path: "skills.shotIQ") * 0.4
-    let offenseScore = (passerAccuracy + receiverSafety) / 2
+    // Identify likely lane-jumpers, then resolve passer-vs-defender interactions.
+    let laneThreats = defenseLineup.enumerated().map { idx, defender in
+        (
+            idx,
+            getRating(defender, path: "defense.passPerception") * 0.42
+                + getRating(defender, path: "defense.steals") * 0.28
+                + getRating(defender, path: "skills.hands") * 0.18
+                + getRating(defender, path: "defense.lateralQuickness") * 0.12
+        )
+    }
+    let candidates = laneThreats.sorted { $0.1 > $1.1 }.prefix(min(3, defenseLineup.count))
+    let receiverWindow = getRating(receiver, path: "skills.hands") * 0.58
+        + getRating(receiver, path: "skills.shotIQ") * 0.42
 
-    // Each defender gets a chance; take the highest pick chance.
-    var bestChance = 0.0
-    var bestIdx = 0
-    for (idx, defender) in defenseLineup.enumerated() {
-        let pick = getRating(defender, path: "defense.passPerception") * 0.4
-            + getRating(defender, path: "defense.steals") * 0.25
-            + getRating(defender, path: "skills.hands") * 0.2
-            + getRating(defender, path: "defense.lateralQuickness") * 0.15
-        let edge = (pick - offenseScore) / 140
-        let chance = clamp(0.022 + edge * 0.12, min: 0.002, max: 0.18)
-        if chance > bestChance {
-            bestChance = chance
-            bestIdx = idx
-        }
+    var weights: [Double] = []
+    var defenderIndices: [Int] = []
+    var stealTotal = 0.0
+    for (idx, laneThreat) in candidates {
+        let defender = defenseLineup[idx]
+        let laneInteraction = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "pass_interception_lane",
+            offensePlayer: passer,
+            defensePlayer: defender,
+            offenseRatings: ["skills.passingAccuracy", "skills.passingIQ", "skills.passingVision"],
+            defenseRatings: ["defense.passPerception", "defense.steals", "skills.hands", "defense.lateralQuickness"],
+            random: &random
+        )
+        let secureEdge = laneInteraction.edge + (receiverWindow - 55) / 100
+        let stealSignal = clamp(1 - logistic(secureEdge), min: 0.03, max: 0.9)
+        let laneBoost = clamp((laneThreat - 60) / 180, min: -0.06, max: 0.12)
+        let stealWeight = max(0.1, (stealSignal + laneBoost) * 30)
+        weights.append(stealWeight)
+        defenderIndices.append(idx)
+        stealTotal += stealWeight
     }
-    if random.nextUnit() < bestChance {
-        return bestIdx
+    let safePassWeight = max(1.0, 42 - stealTotal)
+    let pick = weightedChoiceIndex(weights: [safePassWeight] + weights, random: &random)
+    if pick == 0 {
+        return nil
     }
-    return nil
+    return defenderIndices[pick - 1]
 }
 
 // MARK: - Fast break / transition

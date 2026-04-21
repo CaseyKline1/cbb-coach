@@ -9,6 +9,7 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
 - Replaced turnover base adjustment with on-ball handler-control vs defender-pressure signal.
 - Shot make probability no longer receives global team-strength bonus.
 - Rebounds are already interaction-based from prior pass (`resolveReboundOutcome`).
+- Converted `resolvePassInterception` to interaction-driven lane contests (`pass_interception_lane` traces).
 
 ## Current interaction backbone (already in place)
 - Core interaction function: `resolveInteraction(...)`
@@ -52,14 +53,7 @@ Recommended approach:
   - `trap_ball_security` (receiver vs top trap defenders)
   - `break_advantage` (decision to attack)
 
-### 3) Pass interception subsystem (`resolvePassInterception`)
-Currently computes best defender chance formula.
-
-Recommended approach:
-- Score 1-2 most relevant passing-lane defenders via interaction(s) with passer/receiver pair.
-- Use interaction edge to determine interception rather than fixed base chance formula.
-
-### 4) Non-shooting/technical foul randomness
+### 3) Non-shooting/technical foul randomness
 `maybeCallTechnicalFoul` and `maybeCallNonShootingFoul` contain global random gates.
 
 Recommended approach:
@@ -68,7 +62,7 @@ Recommended approach:
   - fatigue/hustle/defensiveControl interactions
 - Technical fouls can remain partly stochastic but should include frustration proxies (clutch/discipline/foul load).
 
-### 5) Action attempt gate (`willAttemptAction`)
+### 4) Action attempt gate (`willAttemptAction`)
 Current possession-level shot/action attempt is formula based.
 
 Recommended approach:
@@ -90,8 +84,7 @@ Recommended approach:
   - play-by-play still coherent
 
 ## Suggested next implementation sequence
-1. Convert `resolvePassInterception` to interaction-driven.
-2. Convert `resolvePlay` branch gates to interaction-driven (drive + PNR first).
-3. Convert `maybeResolvePress` chain.
-4. Convert foul gates.
-5. Convert possession action gate last (hardest to tune globally).
+1. Convert `resolvePlay` branch gates to interaction-driven (drive + PNR first).
+2. Convert `maybeResolvePress` chain.
+3. Convert foul gates.
+4. Convert possession action gate last (hardest to tune globally).
