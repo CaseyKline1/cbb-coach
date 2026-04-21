@@ -618,11 +618,15 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                         // Self-created shot with no pass interaction.
                         assistPool = []
                     }
-                    if let assistIdx = pickAssistLineupIndex(
-                        lineup: stored.teams[offenseTeamId].activeLineup,
+                    if let assistIdx = resolveAssistLineupIndex(
+                        stored: &stored,
+                        offenseLineup: stored.teams[offenseTeamId].activeLineup,
+                        defenseLineup: stored.teams[defenseTeamId].activeLineup,
                         shooterIndex: play.shooterLineupIndex,
+                        shooterDefenderIndex: play.defenderLineupIndex,
                         candidates: assistPool,
-                        forceAssistChance: play.assistForceChance,
+                        creationBias: play.assistForceChance,
+                        shotType: shotType,
                         random: &random
                     ) {
                         addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: assistIdx) { $0.assists += 1 }
@@ -955,24 +959,71 @@ private func pickLineupIndexForPickActionBallHandler(lineup: [Player], random: i
     }
 }
 
-private func pickAssistLineupIndex(
-    lineup: [Player],
+private func resolveAssistLineupIndex(
+    stored: inout NativeGameStateStore.StoredState,
+    offenseLineup: [Player],
+    defenseLineup: [Player],
     shooterIndex: Int,
+    shooterDefenderIndex: Int,
     candidates: [Int],
-    forceAssistChance: Double?,
+    creationBias: Double?,
+    shotType: ShotType,
     random: inout SeededRandom
 ) -> Int? {
-    let filtered = candidates.filter { $0 != shooterIndex && $0 >= 0 && $0 < lineup.count }
-    guard !filtered.isEmpty else { return nil }
-    let threshold = forceAssistChance ?? 0.62
-    guard random.nextUnit() < threshold else { return nil }
-    let weights = filtered.map { idx in
-        getBaseRating(lineup[idx], path: "skills.passingVision") * 0.45
-            + getBaseRating(lineup[idx], path: "skills.passingAccuracy") * 0.35
-            + getBaseRating(lineup[idx], path: "skills.passingIQ") * 0.2
+    let filtered = Array(Set(candidates.filter { $0 != shooterIndex && $0 >= 0 && $0 < offenseLineup.count })).sorted()
+    guard !filtered.isEmpty, !defenseLineup.isEmpty else { return nil }
+
+    let shooter = offenseLineup[shooterIndex]
+    let shotDefender = defenseLineup[min(max(0, shooterDefenderIndex), defenseLineup.count - 1)]
+    var bestIndex: Int?
+    var bestScore = -Double.infinity
+
+    for candidateIdx in filtered {
+        let passer = offenseLineup[candidateIdx]
+        let laneDefender = defenseLineup[min(candidateIdx, defenseLineup.count - 1)]
+        let passWindow = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "assist_pass_window",
+            offensePlayer: passer,
+            defensePlayer: laneDefender,
+            offenseRatings: ["skills.passingVision", "skills.passingIQ", "skills.passingAccuracy", "skills.ballHandling"],
+            defenseRatings: ["defense.passPerception", "defense.offballDefense", "defense.lateralQuickness", "skills.hands"],
+            random: &random
+        )
+        let timingWindow = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "assist_receiver_timing",
+            offensePlayer: shooter,
+            defensePlayer: shotDefender,
+            offenseRatings: ["skills.offballOffense", "skills.shotIQ", "skills.hands", "athleticism.burst"],
+            defenseRatings: ["defense.offballDefense", "defense.shotContest", "defense.defensiveControl", "defense.lateralQuickness"],
+            random: &random
+        )
+        let passControl = logistic(passWindow.edge)
+        let timingControl = logistic(timingWindow.edge)
+        let shotContextBonus: Double = {
+            switch shotType {
+            case .three:
+                return 0.08
+            case .midrange, .fadeaway:
+                return 0.04
+            case .hook:
+                return 0.01
+            case .layup, .dunk, .close:
+                return 0
+            }
+        }()
+        let biasBonus = ((creationBias ?? 0.5) - 0.5) * 0.16
+        let score = (passControl - 0.5) * 0.9 + (timingControl - 0.5) * 0.7 + shotContextBonus + biasBonus
+        if score > bestScore {
+            bestScore = score
+            bestIndex = candidateIdx
+        }
     }
-    let pick = weightedChoiceIndex(weights: weights, random: &random)
-    return filtered[pick]
+
+    guard let assistIdx = bestIndex else { return nil }
+    let threshold = 0.06
+    return bestScore >= threshold ? assistIdx : nil
 }
 
 private enum ReboundZone {
