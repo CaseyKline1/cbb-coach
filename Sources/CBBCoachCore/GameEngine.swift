@@ -3532,14 +3532,23 @@ private func maybeResolveFastBreak(
     let defenseLineup = stored.teams[defenseTeamId].activeLineup
     guard !offenseLineup.isEmpty, !defenseLineup.isEmpty else { return nil }
 
-    let sourceBoost: Double = transition.source == "steal" ? 0.12 : (transition.source == "press_break" ? 0.1 : 0.03)
-    let pushChance = clamp(0.18 + sourceBoost, min: 0.05, max: 0.82)
-    guard random.nextUnit() < pushChance else { return nil }
-
     let runnerIdx = pickTransitionRunnerIndex(lineup: offenseLineup, random: &random)
     let leadDefIdx = pickTransitionPointDefenderIndex(lineup: defenseLineup, random: &random)
     let runner = offenseLineup[runnerIdx]
     let leadDef = defenseLineup[leadDefIdx]
+    let sourceBoost: Double = transition.source == "steal" ? 0.12 : (transition.source == "press_break" ? 0.1 : 0.03)
+
+    let pushInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "fast_break_push",
+        offensePlayer: runner,
+        defensePlayer: leadDef,
+        offenseRatings: ["athleticism.burst", "athleticism.speed", "skills.ballHandling", "skills.shotIQ"],
+        defenseRatings: ["defense.offballDefense", "defense.lateralQuickness", "defense.passPerception"],
+        random: &random
+    )
+    let pushChance = clamp(0.08 + logistic(pushInteraction.edge) * 0.62 + sourceBoost * 0.4, min: 0.05, max: 0.86)
+    guard random.nextUnit() < pushChance else { return nil }
 
     let runScore = getRating(runner, path: "athleticism.burst") * 0.38
         + getRating(runner, path: "athleticism.speed") * 0.34
@@ -3549,8 +3558,17 @@ private func maybeResolveFastBreak(
         + getRating(leadDef, path: "athleticism.speed") * 0.31
         + getRating(leadDef, path: "defense.lateralQuickness") * 0.2
         + getRating(leadDef, path: "defense.shotContest") * 0.16
-    let raceEdge = (runScore - recoveryScore) / 100 + sourceBoost
-    let beatDefenseChance = clamp(0.24 + raceEdge * 0.5, min: 0.06, max: 0.86)
+    let raceInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "fast_break_race",
+        offensePlayer: runner,
+        defensePlayer: leadDef,
+        offenseRatings: ["athleticism.burst", "athleticism.speed", "skills.ballHandling", "skills.offballOffense"],
+        defenseRatings: ["athleticism.burst", "athleticism.speed", "defense.lateralQuickness", "defense.shotContest"],
+        random: &random
+    )
+    let raceEdge = (runScore - recoveryScore) / 100 + sourceBoost + raceInteraction.edge * 0.28
+    let beatDefenseChance = clamp(0.1 + logistic(raceEdge) * 0.74, min: 0.06, max: 0.88)
     guard random.nextUnit() < beatDefenseChance else { return nil }
 
     let shotType = chooseFastBreakFinish(player: runner, random: &random)
