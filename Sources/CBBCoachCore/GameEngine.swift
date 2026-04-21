@@ -387,7 +387,12 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
         let possessionSeconds = possessionDurationSeconds(for: stored.teams[offenseTeamId].team.pace, random: &random)
         applyChunkMinutesAndEnergy(stored: &stored, possessionSeconds: possessionSeconds)
 
-        let ballHandlerIdx = pickLineupIndexForBallHandler(lineup: stored.teams[offenseTeamId].activeLineup, random: &random)
+        let ballHandlerIdx = pickLineupIndexForBallHandler(
+            lineup: stored.teams[offenseTeamId].activeLineup,
+            lineupBoxIndices: stored.teams[offenseTeamId].activeLineupBoxIndices,
+            boxPlayers: stored.teams[offenseTeamId].boxPlayers,
+            random: &random
+        )
         let defenderIdx = min(ballHandlerIdx, stored.teams[defenseTeamId].activeLineup.count - 1)
         let ballHandler = stored.teams[offenseTeamId].activeLineup[ballHandlerIdx]
         let primaryDefender = stored.teams[defenseTeamId].activeLineup[defenderIdx]
@@ -494,6 +499,8 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 let play = resolvePlay(
                     stored: &stored,
                     offenseLineup: stored.teams[offenseTeamId].activeLineup,
+                    offenseLineupBoxIndices: stored.teams[offenseTeamId].activeLineupBoxIndices,
+                    offenseBoxPlayers: stored.teams[offenseTeamId].boxPlayers,
                     defenseLineup: stored.teams[defenseTeamId].activeLineup,
                     ballHandlerIdx: ballHandlerIdx,
                     defenderIdx: defenderIdx,
@@ -514,6 +521,7 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 // Pass delivery: if shooter differs from ball handler, the ball has to get there.
                 var passIntercepted = false
                 if play.shooterLineupIndex != ballHandlerIdx {
+                    applyPlayerUsageEnergyCost(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx, energyCost: 0.12)
                     if let stealerIdx = resolvePassInterception(
                         stored: &stored,
                         passer: ballHandler,
@@ -534,7 +542,9 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 // Offensive charge: only on drives. Depends on defender positioning.
                 var tookCharge = false
                 if !passIntercepted {
+                applyPlayerUsageEnergyCost(stored: &stored, teamId: offenseTeamId, lineupIndex: play.shooterLineupIndex, energyCost: 0.22)
                 if play.isDrive {
+                    applyPlayerUsageEnergyCost(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx, energyCost: 0.12)
                     let chargeInteraction = resolveInteractionWithTrace(
                         stored: &stored,
                         label: "charge_call",
@@ -918,12 +928,39 @@ private func syncPossessionRoles(stored: inout NativeGameStateStore.StoredState)
     }
 }
 
-private func pickLineupIndexForBallHandler(lineup: [Player], random: inout SeededRandom) -> Int {
+private func usageLoadPerMinute(for box: PlayerBoxScore) -> Double {
+    let minutes = max(1.0, box.minutes)
+    let usagePossessions = Double(box.fgAttempts) + Double(box.ftAttempts) * 0.44 + Double(box.turnovers)
+    let creationEvents = Double(box.assists) * 0.72
+    return (usagePossessions + creationEvents) / minutes
+}
+
+private func usageWeightMultiplier(
+    lineupIndex: Int,
+    lineupBoxIndices: [Int],
+    boxPlayers: [PlayerBoxScore]
+) -> Double {
+    guard !lineupBoxIndices.isEmpty else { return 1 }
+    let loads: [Double] = lineupBoxIndices.map { idx in
+        guard idx >= 0, idx < boxPlayers.count else { return 0 }
+        return usageLoadPerMinute(for: boxPlayers[idx])
+    }
+    let averageLoad = max(0.01, average(loads))
+    guard lineupIndex >= 0, lineupIndex < loads.count else { return 1 }
+    let relativeLoad = loads[lineupIndex] / averageLoad
+    // Penalize overused creators and lightly boost players who are under-involved.
+    let multiplier = 1 - (relativeLoad - 1) * 0.48
+    return clamp(multiplier, min: 0.52, max: 1.18)
+}
+
+private func pickLineupIndexForBallHandler(
+    lineup: [Player],
+    lineupBoxIndices: [Int],
+    boxPlayers: [PlayerBoxScore],
+    random: inout SeededRandom
+) -> Int {
     guard !lineup.isEmpty else { return 0 }
-    return weightedRandomIndex(
-        lineup: lineup,
-        random: &random
-    ) { player in
+    let weights = lineup.enumerated().map { idx, player -> Double in
         let base = getBaseRating(player, path: "skills.ballHandling") * 0.33
             + getBaseRating(player, path: "skills.passingVision") * 0.2
             + getBaseRating(player, path: "skills.passingIQ") * 0.15
@@ -931,6 +968,11 @@ private func pickLineupIndexForBallHandler(lineup: [Player], random: inout Seede
             + getBaseRating(player, path: "skills.shotIQ") * 0.1
             + getBaseRating(player, path: "athleticism.burst") * 0.08
             + getBaseRating(player, path: "tendencies.drive") * 0.12
+        let stamina = getBaseRating(player, path: "athleticism.stamina")
+        let energy = clamp(player.condition.energy, min: 0, max: 100)
+        let fatigue = clamp((100 - energy) / 100, min: 0, max: 0.9)
+        let staminaProtection = clamp((stamina - 50) / 100, min: -0.2, max: 0.45)
+        let fatigueTax = clamp(1 - fatigue * (0.45 - staminaProtection * 0.25), min: 0.54, max: 1)
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
@@ -942,8 +984,14 @@ private func pickLineupIndexForBallHandler(lineup: [Player], random: inout Seede
         case .pf, .c, .big:
             positionMultiplier = 0.86
         }
-        return max(1, base * positionMultiplier)
+        let usageMultiplier = usageWeightMultiplier(
+            lineupIndex: idx,
+            lineupBoxIndices: lineupBoxIndices,
+            boxPlayers: boxPlayers
+        )
+        return max(1, base * positionMultiplier * fatigueTax * usageMultiplier)
     }
+    return weightedChoiceIndex(weights: weights, random: &random)
 }
 
 private func isPointGuardLike(_ player: Player) -> Bool {
@@ -961,12 +1009,14 @@ private func isFourFiveLike(_ player: Player) -> Bool {
     }
 }
 
-private func pickLineupIndexForPickActionBallHandler(lineup: [Player], random: inout SeededRandom) -> Int {
+private func pickLineupIndexForPickActionBallHandler(
+    lineup: [Player],
+    lineupBoxIndices: [Int],
+    boxPlayers: [PlayerBoxScore],
+    random: inout SeededRandom
+) -> Int {
     guard !lineup.isEmpty else { return 0 }
-    return weightedRandomIndex(
-        lineup: lineup,
-        random: &random
-    ) { player in
+    let weights = lineup.enumerated().map { idx, player -> Double in
         let base = getBaseRating(player, path: "skills.ballHandling") * 0.34
             + getBaseRating(player, path: "skills.passingVision") * 0.16
             + getBaseRating(player, path: "skills.passingIQ") * 0.14
@@ -974,6 +1024,11 @@ private func pickLineupIndexForPickActionBallHandler(lineup: [Player], random: i
             + getBaseRating(player, path: "athleticism.burst") * 0.08
             + getBaseRating(player, path: "tendencies.pickAndRoll") * 0.1
             + getBaseRating(player, path: "tendencies.pickAndPop") * 0.08
+        let stamina = getBaseRating(player, path: "athleticism.stamina")
+        let energy = clamp(player.condition.energy, min: 0, max: 100)
+        let fatigue = clamp((100 - energy) / 100, min: 0, max: 0.9)
+        let staminaProtection = clamp((stamina - 50) / 100, min: -0.2, max: 0.45)
+        let fatigueTax = clamp(1 - fatigue * (0.5 - staminaProtection * 0.25), min: 0.5, max: 1)
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
@@ -985,8 +1040,14 @@ private func pickLineupIndexForPickActionBallHandler(lineup: [Player], random: i
         case .pf, .c, .big:
             positionMultiplier = 0.74
         }
-        return max(1, base * positionMultiplier)
+        let usageMultiplier = usageWeightMultiplier(
+            lineupIndex: idx,
+            lineupBoxIndices: lineupBoxIndices,
+            boxPlayers: boxPlayers
+        )
+        return max(1, base * positionMultiplier * fatigueTax * usageMultiplier)
     }
+    return weightedChoiceIndex(weights: weights, random: &random)
 }
 
 private func resolveAssistLineupIndex(
@@ -1672,6 +1733,25 @@ private func applyPlusMinus(stored: inout NativeGameStateStore.StoredState, scor
     }
 }
 
+private func applyPlayerUsageEnergyCost(
+    stored: inout NativeGameStateStore.StoredState,
+    teamId: Int,
+    lineupIndex: Int,
+    energyCost: Double
+) {
+    guard energyCost > 0 else { return }
+    guard teamId >= 0, teamId < stored.teams.count else { return }
+    guard lineupIndex >= 0, lineupIndex < stored.teams[teamId].activeLineupBoxIndices.count else { return }
+    let boxIndex = stored.teams[teamId].activeLineupBoxIndices[lineupIndex]
+    guard boxIndex >= 0, boxIndex < stored.teams[teamId].boxPlayers.count else { return }
+    let next = max(0, (stored.teams[teamId].boxPlayers[boxIndex].energy ?? 100) - energyCost)
+    stored.teams[teamId].boxPlayers[boxIndex].energy = next
+    stored.teams[teamId].activeLineup[lineupIndex].condition.energy = next
+    if boxIndex < stored.teams[teamId].team.players.count {
+        stored.teams[teamId].team.players[boxIndex].condition.energy = next
+    }
+}
+
 private func addPlayerStat(
     stored: inout NativeGameStateStore.StoredState,
     teamId: Int,
@@ -2061,18 +2141,29 @@ private func getRating(_ player: Player, path: String, fallback: Double = 50) ->
     }
 
     let fatigue = clamp((100 - energy) / 100, min: 0, max: 0.85)
+    let stamina = getBaseRating(player, path: "athleticism.stamina", fallback: 50)
+    let staminaRecovery = clamp((stamina - 50) / 50, min: -1, max: 1)
     let group = String(path.split(separator: ".").first ?? "")
     let impact: Double
     switch group {
-    case "athleticism": impact = 0.3
-    case "shooting": impact = 0.18
-    case "skills": impact = 0.24
-    case "defense": impact = 0.22
-    case "rebounding", "postGame": impact = 0.2
-    default: impact = 0.2
+    case "athleticism": impact = 0.33
+    case "shooting": impact = 0.23
+    case "skills": impact = 0.31
+    case "defense": impact = 0.24
+    case "rebounding", "postGame": impact = 0.22
+    default: impact = 0.22
     }
+    let creatorPath = path == "skills.ballHandling"
+        || path == "skills.ballSafety"
+        || path == "skills.passingIQ"
+        || path == "skills.passingVision"
+        || path == "tendencies.drive"
+        || path == "tendencies.pickAndRoll"
+        || path == "tendencies.pickAndPop"
+    let creatorPenalty = creatorPath ? clamp(0.09 + fatigue * 0.12 - staminaRecovery * 0.04, min: 0.03, max: 0.19) : 0
+    let effectiveImpact = clamp(impact - staminaRecovery * 0.05 + creatorPenalty, min: 0.12, max: 0.55)
 
-    let fatigueAdjusted = applyClutchModifier(player, rating: raw * (1 - fatigue * impact))
+    let fatigueAdjusted = applyClutchModifier(player, rating: raw * (1 - fatigue * effectiveImpact))
     let role = player.condition.possessionRole
     let offensiveModifier = player.condition.offensiveCoachingModifier
     let defensiveModifier = player.condition.defensiveCoachingModifier
@@ -2438,17 +2529,21 @@ private func choosePlayType(
         + getRating(ballHandler, path: "skills.ballHandling")
     ) / 4
     let passAround = clamp((100 - shootVsPass) * 0.55 + passAroundProfile * 0.5, min: 1, max: 115)
+    let handlerEnergy = clamp(ballHandler.condition.energy, min: 0, max: 100)
+    let handlerFatigue = clamp((100 - handlerEnergy) / 100, min: 0, max: 0.9)
+    let handlerStamina = getBaseRating(ballHandler, path: "athleticism.stamina")
+    let wearFactor = clamp(handlerFatigue * (1.02 - (handlerStamina - 50) / 170), min: 0, max: 0.85)
 
     let formation = offenseTeam.formation
     let passAroundFormationBoost = (formation == .motion || formation == .fiveOut) ? 1.1 : 0.96
     let pickFormationBoost = (formation == .motion || formation == .fiveOut || formation == .highLow) ? 1.07 : 0.97
 
     let weights: [(PlayType, Double)] = [
-        (.dribbleDrive, max(1, drive) * 1.42),
-        (.postUp, max(1, post) * 1.12),
-        (.pickAndRoll, max(1, pickAndRoll * 0.62 + drive * 0.22 + (100 - shootVsPass) * 0.16) * pickFormationBoost * 0.9),
-        (.pickAndPop, max(1, pickAndPop * 0.62 + passAroundProfile * 0.2 + (100 - shootVsPass) * 0.18) * pickFormationBoost * 0.42),
-        (.passAroundForShot, max(1, passAround) * passAroundFormationBoost * 0.68),
+        (.dribbleDrive, max(1, drive) * 1.42 * clamp(1 - wearFactor * 0.55, min: 0.55, max: 1.05)),
+        (.postUp, max(1, post) * 1.12 * clamp(1 - wearFactor * 0.32, min: 0.68, max: 1.03)),
+        (.pickAndRoll, max(1, pickAndRoll * 0.62 + drive * 0.22 + (100 - shootVsPass) * 0.16) * pickFormationBoost * 0.9 * clamp(1 - wearFactor * 0.38, min: 0.62, max: 1.04)),
+        (.pickAndPop, max(1, pickAndPop * 0.62 + passAroundProfile * 0.2 + (100 - shootVsPass) * 0.18) * pickFormationBoost * 0.42 * clamp(1 - wearFactor * 0.3, min: 0.7, max: 1.04)),
+        (.passAroundForShot, max(1, passAround) * passAroundFormationBoost * 0.68 * clamp(1 + wearFactor * 0.85, min: 0.96, max: 1.58)),
     ]
     var adjusted: [(PlayType, Double)] = []
     for (type, baseWeight) in weights {
@@ -2521,6 +2616,8 @@ private func choosePlayType(
 private func resolvePlay(
     stored: inout NativeGameStateStore.StoredState,
     offenseLineup: [Player],
+    offenseLineupBoxIndices: [Int],
+    offenseBoxPlayers: [PlayerBoxScore],
     defenseLineup: [Player],
     ballHandlerIdx: Int,
     defenderIdx: Int,
@@ -2538,7 +2635,12 @@ private func resolvePlay(
     )
     let pickActionBallHandlerIdx: Int
     if playType == .pickAndRoll || playType == .pickAndPop {
-        pickActionBallHandlerIdx = pickLineupIndexForPickActionBallHandler(lineup: offenseLineup, random: &random)
+        pickActionBallHandlerIdx = pickLineupIndexForPickActionBallHandler(
+            lineup: offenseLineup,
+            lineupBoxIndices: offenseLineupBoxIndices,
+            boxPlayers: offenseBoxPlayers,
+            random: &random
+        )
     } else {
         pickActionBallHandlerIdx = ballHandlerIdx
     }
@@ -3052,7 +3154,10 @@ private func evaluatePassTarget(
             + getRating(defender, path: "defense.offballDefense") * 0.4
         let openness = clamp((movement - defensivePressure) / 60 + opennessBonus, min: -0.4, max: 0.92)
         let passRisk = clamp((getRating(defender, path: "defense.passPerception") - 55) / 220, min: 0, max: 0.15)
-        let score = shotUtility * 12 + openness * 18 - passRisk * 8 + random.nextUnit() * 2
+        let fatigue = clamp((100 - player.condition.energy) / 100, min: 0, max: 0.92)
+        let stamina = getBaseRating(player, path: "athleticism.stamina")
+        let fatigueTax = fatigue * clamp(5.2 - (stamina - 50) / 18, min: 3.8, max: 6.6)
+        let score = shotUtility * 12 + openness * 18 - passRisk * 8 - fatigueTax + random.nextUnit() * 2
         if score > bestScore {
             bestScore = score
             bestIdx = idx
@@ -3850,7 +3955,12 @@ private func maybeResolvePress(
     guard !offenseLineup.isEmpty, !defenseLineup.isEmpty else { return nil }
 
     // Pick a "receiver" (likely the team's best ball-handler) and trap defenders.
-    let receiverIdx = pickLineupIndexForBallHandler(lineup: offenseLineup, random: &random)
+    let receiverIdx = pickLineupIndexForBallHandler(
+        lineup: offenseLineup,
+        lineupBoxIndices: stored.teams[offenseTeamId].activeLineupBoxIndices,
+        boxPlayers: stored.teams[offenseTeamId].boxPlayers,
+        random: &random
+    )
     let receiver = offenseLineup[receiverIdx]
 
     var trapCandidates: [(Int, Double)] = []
