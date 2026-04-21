@@ -3017,7 +3017,6 @@ private struct TeamStatsView: View {
             var ftMade = 0
             var ftAttempts = 0
             var offensiveRebounds = 0
-            var defensiveRebounds = 0
 
             for player in players {
                 guard let parsed = ParsedPlayerBoxScore(value: player) else { continue }
@@ -3033,8 +3032,9 @@ private struct TeamStatsView: View {
                 ftMade += parsed.ftMade
                 ftAttempts += parsed.ftAttempts
                 offensiveRebounds += parsed.offensiveRebounds
-                defensiveRebounds += parsed.defensiveRebounds
             }
+            offensiveRebounds = min(offensiveRebounds, rebounds)
+            let defensiveRebounds = max(0, rebounds - offensiveRebounds)
 
             return TeamGameBoxLine(
                 teamId: teamId,
@@ -3665,8 +3665,21 @@ private struct ParsedPlayerBoxScore {
         ftMade = object["ftMade"]?.intValue ?? 0
         ftAttempts = object["ftAttempts"]?.intValue ?? 0
         rebounds = object["rebounds"]?.intValue ?? 0
-        offensiveRebounds = object["offensiveRebounds"]?.intValue ?? 0
-        defensiveRebounds = object["defensiveRebounds"]?.intValue ?? max(0, rebounds - offensiveRebounds)
+        let parsedOffensiveRebounds = object["offensiveRebounds"]?.intValue
+        let parsedDefensiveRebounds = object["defensiveRebounds"]?.intValue
+        if let parsedOffensiveRebounds, let parsedDefensiveRebounds {
+            offensiveRebounds = max(0, parsedOffensiveRebounds)
+            defensiveRebounds = max(0, parsedDefensiveRebounds)
+        } else if let parsedOffensiveRebounds {
+            offensiveRebounds = max(0, parsedOffensiveRebounds)
+            defensiveRebounds = max(0, rebounds - offensiveRebounds)
+        } else if let parsedDefensiveRebounds {
+            defensiveRebounds = max(0, parsedDefensiveRebounds)
+            offensiveRebounds = max(0, rebounds - defensiveRebounds)
+        } else {
+            offensiveRebounds = 0
+            defensiveRebounds = max(0, rebounds)
+        }
         assists = object["assists"]?.intValue ?? 0
         steals = object["steals"]?.intValue ?? 0
         blocks = object["blocks"]?.intValue ?? 0
