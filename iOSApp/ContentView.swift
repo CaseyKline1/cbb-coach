@@ -858,6 +858,7 @@ private struct CollegeLeagueHomeView: View {
 
     private func runSkipAhead(from league: LeagueState, target: SkipAheadTarget) async -> SkipAheadSimulationResult {
         var currentLeague = league
+        let userTeamName = getLeagueSummary(league).userTeamName
         var completedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
         var seasonCompleted = false
         var recaps: [String] = []
@@ -869,7 +870,11 @@ private struct CollegeLeagueHomeView: View {
                 break
             }
             completedGames += 1
-            let recap = Self.skipAheadGameRecap(for: result, gameNumber: completedGames)
+            let recap = Self.skipAheadGameRecap(
+                for: result,
+                gameNumber: completedGames,
+                userTeamName: userTeamName
+            )
             recaps.append(recap)
             if recaps.count % 2 == 0 {
                 let snapshot = recaps
@@ -887,12 +892,54 @@ private struct CollegeLeagueHomeView: View {
         )
     }
 
-    private static func skipAheadGameRecap(for result: UserGameSummary, gameNumber: Int) -> String {
+    private static func skipAheadGameRecap(for result: UserGameSummary, gameNumber: Int, userTeamName: String) -> String {
         let userScore = result.score?.numberValue(for: "user")?.roundedInt ?? 0
         let oppScore = result.score?.numberValue(for: "opponent")?.roundedInt ?? 0
         let opponent = result.opponentName ?? "Unknown"
         let resultMarker = result.won == true ? "W" : "L"
-        return "Game \(gameNumber) vs \(opponent): \(userScore)-\(oppScore) (\(resultMarker))"
+        let leaders = userLeadersFromResult(result, userTeamName: userTeamName)
+        return "Game \(gameNumber) vs \(opponent): \(userScore)-\(oppScore) (\(resultMarker)) | PTS: \(leaders.points) | REB: \(leaders.rebounds) | AST: \(leaders.assists)"
+    }
+
+    private static func userLeadersFromResult(_ result: UserGameSummary, userTeamName: String) -> (points: String, rebounds: String, assists: String) {
+        let teamBox = ParsedTeamBoxScore.parse(from: result.result)
+        guard let userBox = resolveUserTeamBox(from: teamBox, for: result, userTeamName: userTeamName) else {
+            return ("N/A", "N/A", "N/A")
+        }
+
+        let pointsLeader = topLeader(in: userBox.players, stat: \.points)
+        let reboundsLeader = topLeader(in: userBox.players, stat: \.rebounds)
+        let assistsLeader = topLeader(in: userBox.players, stat: \.assists)
+
+        return (
+            pointsLeader.map { "\($0.player.playerName) \($0.value)" } ?? "N/A",
+            reboundsLeader.map { "\($0.player.playerName) \($0.value)" } ?? "N/A",
+            assistsLeader.map { "\($0.player.playerName) \($0.value)" } ?? "N/A"
+        )
+    }
+
+    private static func resolveUserTeamBox(from teams: [ParsedTeamBoxScore], for result: UserGameSummary, userTeamName: String) -> ParsedTeamBoxScore? {
+        guard !teams.isEmpty else { return nil }
+
+        if let exact = teams.first(where: { $0.name.caseInsensitiveCompare(userTeamName) == .orderedSame }) {
+            return exact
+        }
+
+        if let opponentName = result.opponentName,
+           let notOpponent = teams.first(where: { $0.name.caseInsensitiveCompare(opponentName) != .orderedSame }) {
+            return notOpponent
+        }
+
+        return teams.first
+    }
+
+    private static func topLeader(in players: [ParsedPlayerBoxScore], stat: KeyPath<ParsedPlayerBoxScore, Int>) -> (player: ParsedPlayerBoxScore, value: Int)? {
+        players
+            .map { ($0, $0[keyPath: stat]) }
+            .max { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
+                return lhs.0.playerName.localizedCaseInsensitiveCompare(rhs.0.playerName) == .orderedDescending
+            }
     }
 
     private func refreshFromLeague(_ league: LeagueState) {

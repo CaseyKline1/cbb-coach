@@ -67,6 +67,7 @@ public struct SimulatedGameResult: Codable, Equatable, Sendable {
     public var home: SimulatedTeamResult
     public var away: SimulatedTeamResult
     public var winner: String?
+    public var wentToOvertime: Bool
     public var playByPlay: [PlayByPlayEvent]
     public var boxScore: [TeamBoxScore]?
 }
@@ -153,6 +154,7 @@ private struct NativeGameStateStore {
         var gameClockRemaining: Int
         var shotClockRemaining: Int
         var possessionTeamId: Int
+        var playByPlayEnabled: Bool
         var playByPlay: [PlayByPlayEvent]
         var teamFoulsInHalf: [Int]
         var formationCycleIndex: [Int]
@@ -169,7 +171,7 @@ private struct NativeGameStateStore {
     private static nonisolated(unsafe) var nextId = 1
     private static nonisolated(unsafe) var states: [String: StoredState] = [:]
 
-    static func create(home: Team, away: Team, random: inout SeededRandom) -> String {
+    static func create(home: Team, away: Team, random: inout SeededRandom, includePlayByPlay: Bool) -> String {
         lock.lock()
         defer { lock.unlock() }
         let handle = "swift_g_\(nextId)"
@@ -185,6 +187,7 @@ private struct NativeGameStateStore {
             gameClockRemaining: HALF_SECONDS,
             shotClockRemaining: SHOT_CLOCK_SECONDS,
             possessionTeamId: initialPossession,
+            playByPlayEnabled: includePlayByPlay,
             playByPlay: [],
             teamFoulsInHalf: [0, 0],
             formationCycleIndex: [0, 0],
@@ -279,8 +282,18 @@ private struct WeightedSkill: Sendable {
     var score: Double
 }
 
-public func createInitialGameState(homeTeam: Team, awayTeam: Team, random: inout SeededRandom) -> GameState {
-    let handle = NativeGameStateStore.create(home: homeTeam, away: awayTeam, random: &random)
+public func createInitialGameState(
+    homeTeam: Team,
+    awayTeam: Team,
+    random: inout SeededRandom,
+    includePlayByPlay: Bool = true
+) -> GameState {
+    let handle = NativeGameStateStore.create(
+        home: homeTeam,
+        away: awayTeam,
+        random: &random,
+        includePlayByPlay: includePlayByPlay
+    )
     return GameState(handle: handle)
 }
 
@@ -800,38 +813,42 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
             random: &random
         )
 
-        let periodLength = stored.currentHalf <= 2 ? HALF_SECONDS : OVERTIME_SECONDS
-        let elapsedInPeriod = periodLength - stored.gameClockRemaining
-        let elapsedGameSeconds: Int
-        if stored.currentHalf <= 2 {
-            elapsedGameSeconds = (stored.currentHalf - 1) * HALF_SECONDS + elapsedInPeriod
-        } else {
-            elapsedGameSeconds = 2 * HALF_SECONDS + (stored.currentHalf - 3) * OVERTIME_SECONDS + elapsedInPeriod
-        }
-
-        let description = eventDescription(
+        let shouldRecordPlayByPlay = stored.playByPlayEnabled
+        let shouldComputeDescription = shouldRecordPlayByPlay || stored.traceEnabled
+        let description = shouldComputeDescription ? eventDescription(
             eventType: eventType,
             offenseTeam: stored.teams[offenseTeamId].team.name,
             defenseTeam: stored.teams[defenseTeamId].team.name,
             lineup: stored.teams[offenseTeamId].activeLineup,
             playerIndex: ballHandlerIdx
-        )
+        ) : nil
 
-        stored.playByPlay.append(
-            PlayByPlayEvent(
-                half: stored.currentHalf,
-                elapsedSecondsInHalf: elapsedInPeriod,
-                elapsedGameSeconds: elapsedGameSeconds,
-                clockRemaining: stored.gameClockRemaining,
-                type: eventType,
-                teamIndex: offenseTeamId,
-                offenseTeam: stored.teams[offenseTeamId].team.name,
-                defenseTeam: stored.teams[defenseTeamId].team.name,
-                points: points,
-                description: description,
-                detail: nil
+        if shouldRecordPlayByPlay {
+            let periodLength = stored.currentHalf <= 2 ? HALF_SECONDS : OVERTIME_SECONDS
+            let elapsedInPeriod = periodLength - stored.gameClockRemaining
+            let elapsedGameSeconds: Int
+            if stored.currentHalf <= 2 {
+                elapsedGameSeconds = (stored.currentHalf - 1) * HALF_SECONDS + elapsedInPeriod
+            } else {
+                elapsedGameSeconds = 2 * HALF_SECONDS + (stored.currentHalf - 3) * OVERTIME_SECONDS + elapsedInPeriod
+            }
+
+            stored.playByPlay.append(
+                PlayByPlayEvent(
+                    half: stored.currentHalf,
+                    elapsedSecondsInHalf: elapsedInPeriod,
+                    elapsedGameSeconds: elapsedGameSeconds,
+                    clockRemaining: stored.gameClockRemaining,
+                    type: eventType,
+                    teamIndex: offenseTeamId,
+                    offenseTeam: stored.teams[offenseTeamId].team.name,
+                    defenseTeam: stored.teams[defenseTeamId].team.name,
+                    points: points,
+                    description: description,
+                    detail: nil
+                )
             )
-        )
+        }
 
         if stored.traceEnabled {
             stored.actionTraces.append(
@@ -1763,8 +1780,18 @@ public func simulateHalf(state: inout GameState, random: inout SeededRandom) {
     }
 }
 
-public func simulateGame(homeTeam: Team, awayTeam: Team, random: inout SeededRandom) -> SimulatedGameResult {
-    var state = createInitialGameState(homeTeam: homeTeam, awayTeam: awayTeam, random: &random)
+public func simulateGame(
+    homeTeam: Team,
+    awayTeam: Team,
+    random: inout SeededRandom,
+    includePlayByPlay: Bool = true
+) -> SimulatedGameResult {
+    var state = createInitialGameState(
+        homeTeam: homeTeam,
+        awayTeam: awayTeam,
+        random: &random,
+        includePlayByPlay: includePlayByPlay
+    )
     simulateHalf(state: &state, random: &random)
 
     _ = NativeGameStateStore.withState(state.handle) { stored in
@@ -1815,6 +1842,7 @@ public func simulateGame(homeTeam: Team, awayTeam: Team, random: inout SeededRan
         home: SimulatedTeamResult(name: final.teams[0].team.name, score: final.teams[0].score, boxScore: homeBox),
         away: SimulatedTeamResult(name: final.teams[1].team.name, score: final.teams[1].score, boxScore: awayBox),
         winner: final.teams[0].score == final.teams[1].score ? nil : (final.teams[0].score > final.teams[1].score ? final.teams[0].team.name : final.teams[1].team.name),
+        wentToOvertime: overtimeNumber > 0,
         playByPlay: final.playByPlay,
         boxScore: boxScores
     )
@@ -1874,6 +1902,7 @@ public func simulateGameWithQA(homeTeam: Team, awayTeam: Team, random: inout See
         home: SimulatedTeamResult(name: final.teams[0].team.name, score: final.teams[0].score, boxScore: homeBox),
         away: SimulatedTeamResult(name: final.teams[1].team.name, score: final.teams[1].score, boxScore: awayBox),
         winner: final.teams[0].score == final.teams[1].score ? nil : (final.teams[0].score > final.teams[1].score ? final.teams[0].team.name : final.teams[1].team.name),
+        wentToOvertime: overtimeNumber > 0,
         playByPlay: final.playByPlay,
         boxScore: boxScores
     )

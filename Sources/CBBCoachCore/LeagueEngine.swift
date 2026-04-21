@@ -1686,7 +1686,12 @@ private func simulateScheduledGameInState(_ state: inout LeagueStore.State, sche
     var awayTeam = state.teams[awayIndex].teamModel
     applyPreGameModifiers(team: &homeTeam, isHome: !game.neutralSite)
     applyPreGameModifiers(team: &awayTeam, isHome: false)
-    let result = simulateGame(homeTeam: homeTeam, awayTeam: awayTeam, random: &random)
+    let result = simulateGame(
+        homeTeam: homeTeam,
+        awayTeam: awayTeam,
+        random: &random,
+        includePlayByPlay: false
+    )
 
     var homeScore = result.home.score
     var awayScore = result.away.score
@@ -1709,7 +1714,7 @@ private func simulateScheduledGameInState(_ state: inout LeagueStore.State, sche
         homeScore: homeScore,
         awayScore: awayScore,
         winnerTeamId: winnerTeamId,
-        wentToOvertime: result.playByPlay.contains(where: { ($0.half ?? 0) > 2 }),
+        wentToOvertime: result.wentToOvertime,
         boxScore: result.boxScore
     )
 
