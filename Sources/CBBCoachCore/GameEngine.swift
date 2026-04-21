@@ -133,6 +133,7 @@ private let mobilityInteractionRatings: Set<String> = [
 ]
 
 private let clutchRatingImpact = 0.08
+private let interactionVarianceJitter = 0.14
 
 private struct NativeGameStateStore {
     struct TeamTracker {
@@ -314,7 +315,8 @@ public func resolveInteraction(
         offenseUsesMobility: offenseUsesMobility,
         defenseUsesMobility: defenseUsesMobility
     )
-    let edge = (offense.score - defense.score) / 14 + mobilitySizeEdge
+    let interactionJitter = (random.nextUnit() + random.nextUnit() + random.nextUnit() - 1.5) * interactionVarianceJitter
+    let edge = (offense.score - defense.score) / 14 + mobilitySizeEdge + interactionJitter
     let successProbability = clamp(logistic(edge), min: 0.03, max: 0.97)
     let offenseWon = random.nextUnit() < successProbability
 
