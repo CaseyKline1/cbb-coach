@@ -14,6 +14,10 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
   - `drive_advantage`, `drive_strip`, `help_rotation`
   - `screen_navigation_point`, `screen_navigation_big`
   - `roller_seal`, `pnr_handler_read`
+- Converted remaining `resolvePlay` branch gates to interaction-driven decisions:
+  - `post_up_advantage`
+  - `pick_pop_read`, `pop_destination`
+  - `pass_around_creation`
 
 ## Current interaction backbone (already in place)
 - Core interaction function: `resolveInteraction(...)`
@@ -25,25 +29,7 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
 
 ## Remaining non-interaction areas (priority order)
 
-### 1) Play-branch decisions in `resolvePlay`
-Partially completed (drive + pick-and-roll done). Remaining branches still use direct probability gates and heuristic thresholds.
-
-Targets:
-- Pick-and-pop branch gates
-- Post-up branch gates
-- Pass-around branch gates
-- Pop destination / shot type branch heuristics
-
-Recommended approach:
-- Introduce explicit interaction labels for each tactical battle, e.g.:
-  - `drive_advantage`
-  - `help_rotation`
-  - `screen_navigation`
-  - `roller_seal`
-  - `pop_closeout`
-- Convert branch decisions from hardcoded thresholds into interaction outcomes.
-
-### 2) Press subsystem (`maybeResolvePress`)
+### 1) Press subsystem (`maybeResolvePress`)
 Press currently uses derived chances from aggregate formulas.
 
 Targets:
@@ -57,7 +43,7 @@ Recommended approach:
   - `trap_ball_security` (receiver vs top trap defenders)
   - `break_advantage` (decision to attack)
 
-### 3) Non-shooting/technical foul randomness
+### 2) Non-shooting/technical foul randomness
 `maybeCallTechnicalFoul` and `maybeCallNonShootingFoul` contain global random gates.
 
 Recommended approach:
@@ -66,7 +52,7 @@ Recommended approach:
   - fatigue/hustle/defensiveControl interactions
 - Technical fouls can remain partly stochastic but should include frustration proxies (clutch/discipline/foul load).
 
-### 4) Action attempt gate (`willAttemptAction`)
+### 3) Action attempt gate (`willAttemptAction`)
 Current possession-level shot/action attempt is formula based.
 
 Recommended approach:
@@ -88,7 +74,6 @@ Recommended approach:
   - play-by-play still coherent
 
 ## Suggested next implementation sequence
-1. Finish remaining `resolvePlay` branches (pick-and-pop, post-up, pass-around).
-2. Convert `maybeResolvePress` chain.
-3. Convert foul gates.
-4. Convert possession action gate last (hardest to tune globally).
+1. Convert `maybeResolvePress` chain.
+2. Convert foul gates.
+3. Convert possession action gate last (hardest to tune globally).

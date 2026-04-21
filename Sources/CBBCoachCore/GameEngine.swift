@@ -2339,11 +2339,48 @@ private func resolvePlay(
             postScore(offenseLineup[a]) < postScore(offenseLineup[b])
         } ?? ballHandlerIdx
         let shooter = offenseLineup[postIdx]
+        let postDefenderIdx = min(postIdx, defenseLineup.count - 1)
+        let postDefender = defenseLineup[postDefenderIdx]
+        let postAdvantage = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "post_up_advantage",
+            offensePlayer: shooter,
+            defensePlayer: postDefender,
+            offenseRatings: ["postGame.postControl", "postGame.postHooks", "athleticism.strength", "skills.hands"],
+            defenseRatings: ["defense.postDefense", "defense.defensiveControl", "athleticism.strength", "defense.shotContest"],
+            random: &random
+        )
+        let postControl = logistic(postAdvantage.edge)
+        if postControl < 0.3, offenseLineup.count > 1 {
+            let outletIdx = evaluatePassTarget(
+                offenseLineup: offenseLineup,
+                defenseLineup: defenseLineup,
+                ballHandlerIdx: postIdx,
+                random: &random,
+                opennessBonus: 0.06
+            )
+            if outletIdx != postIdx {
+                let outletShooter = offenseLineup[outletIdx]
+                let outletSpot = pickShooterSpot(player: outletShooter, random: &random)
+                let outletShot = chooseShotFromTendencies(shooter: outletShooter, spot: outletSpot, random: &random)
+                return PlayOutcome(
+                    shooterLineupIndex: outletIdx,
+                    defenderLineupIndex: min(outletIdx, defenseLineup.count - 1),
+                    shotType: outletShot,
+                    spot: outletSpot,
+                    edgeBonus: 0.08,
+                    makeBonus: 0.01,
+                    foulBonus: 0,
+                    assistCandidateIndices: [postIdx],
+                    assistForceChance: 0.68
+                )
+            }
+        }
         let spot: OffensiveSpot = random.nextUnit() < 0.5 ? .rightPost : .leftPost
-        let hookW = getRating(shooter, path: "postGame.postHooks") * 1.1
-        let fadeW = getRating(shooter, path: "postGame.postFadeaways") * 0.9
-        let layupW = getRating(shooter, path: "shooting.layups") * 0.8
-        let dunkW = getRating(shooter, path: "shooting.dunks") * 0.5
+        let hookW = getRating(shooter, path: "postGame.postHooks") * (0.72 + postControl * 0.52)
+        let fadeW = getRating(shooter, path: "postGame.postFadeaways") * (0.8 + (1 - postControl) * 0.35)
+        let layupW = getRating(shooter, path: "shooting.layups") * (0.65 + postControl * 0.6)
+        let dunkW = getRating(shooter, path: "shooting.dunks") * (0.35 + postControl * 0.46)
         let total = hookW + fadeW + layupW + dunkW
         let pick = random.nextUnit() * max(total, 1)
         let shotType: ShotType
@@ -2351,16 +2388,14 @@ private func resolvePlay(
         else if pick < hookW + fadeW { shotType = .fadeaway }
         else if pick < hookW + fadeW + layupW { shotType = .layup }
         else { shotType = .dunk }
-        // The post defender is usually the matching slot; approximate by same index.
-        let postDefenderIdx = min(postIdx, defenseLineup.count - 1)
         return PlayOutcome(
             shooterLineupIndex: postIdx,
             defenderLineupIndex: postDefenderIdx,
             shotType: shotType,
             spot: spot,
-            edgeBonus: 0.04,
+            edgeBonus: 0.02 + (postControl - 0.5) * 0.18,
             makeBonus: 0,
-            foulBonus: isRimShot(shotType) ? 0.03 : 0,
+            foulBonus: isRimShot(shotType) ? (0.02 + postControl * 0.03) : 0,
             assistCandidateIndices: postIdx == ballHandlerIdx ? nil : [ballHandlerIdx],
             assistForceChance: 0.45
         )
@@ -2411,13 +2446,33 @@ private func resolvePlay(
             onBallDefender: onBallDefender,
             screenerDefender: screenerDefender
         )
-        let popDest = choosePopDestination(screener: screener, random: &random)
+        let popDest = choosePopDestination(
+            stored: &stored,
+            screener: screener,
+            closeoutDefender: screenerDefender,
+            random: &random
+        )
+        let popRead = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "pick_pop_read",
+            offensePlayer: pickActionBallHandler,
+            defensePlayer: onBallDefender,
+            offenseRatings: ["skills.passingVision", "skills.passingIQ", "skills.shotIQ"],
+            defenseRatings: ["defense.passPerception", "defense.lateralQuickness", "defense.perimeterDefense"],
+            random: &random
+        )
+        let popReadControl = logistic(popRead.edge)
+        let ballHandlerPassLean = clamp(
+            0.55
+                + (50 - getRating(pickActionBallHandler, path: "tendencies.shootVsPass")) / 150
+                + (getRating(pickActionBallHandler, path: "skills.passingVision") - 50) / 300,
+            min: 0.4,
+            max: 0.82
+        )
         let offBallKickChance = clamp(
-            0.24
-                + (100 - getRating(pickActionBallHandler, path: "tendencies.shootVsPass")) / 260
-                + (getRating(pickActionBallHandler, path: "skills.passingVision") - 50) / 320,
+            0.14 + popReadControl * 0.4 + (1 - ballHandlerPassLean) * 0.12 + max(0, screenEdge) * 0.08,
             min: 0.12,
-            max: 0.5
+            max: 0.56
         )
         let alternateShooterIdx: Int? = {
             guard offenseLineup.count > 2 && random.nextUnit() < offBallKickChance else { return nil }
@@ -2458,12 +2513,40 @@ private func resolvePlay(
         )
 
     case .passAroundForShot:
+        // Creation vs shell defense decides if this generates an advantaged teammate shot.
+        let shellDefender = defenseLineup[defenderIdx]
+        let creation = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "pass_around_creation",
+            offensePlayer: ballHandler,
+            defensePlayer: shellDefender,
+            offenseRatings: ["skills.passingVision", "skills.passingIQ", "skills.ballHandling"],
+            defenseRatings: ["defense.offballDefense", "defense.passPerception", "defense.lateralQuickness"],
+            random: &random
+        )
+        let creationControl = logistic(creation.edge)
+        if creationControl < 0.32 {
+            let fallbackSpot = pickShooterSpot(player: ballHandler, random: &random)
+            let fallbackShot = chooseShotFromTendencies(shooter: ballHandler, spot: fallbackSpot, random: &random)
+            return PlayOutcome(
+                shooterLineupIndex: ballHandlerIdx,
+                defenderLineupIndex: defenderIdx,
+                shotType: fallbackShot,
+                spot: fallbackSpot,
+                edgeBonus: -0.03,
+                makeBonus: 0,
+                foulBonus: 0,
+                assistCandidateIndices: nil,
+                assistForceChance: 0.2
+            )
+        }
         // Ball moves to the teammate with the highest open-shot expected value after relocation.
         let receiverIdx = evaluatePassTarget(
             offenseLineup: offenseLineup,
             defenseLineup: defenseLineup,
             ballHandlerIdx: ballHandlerIdx,
-            random: &random
+            random: &random,
+            opennessBonus: (creationControl - 0.5) * 0.18
         )
         let shooter = offenseLineup[receiverIdx]
         let shotDefenderIdx = min(receiverIdx, defenseLineup.count - 1)
@@ -2474,7 +2557,7 @@ private func resolvePlay(
             defenderLineupIndex: shotDefenderIdx,
             shotType: shotType,
             spot: spot,
-            edgeBonus: 0.12,
+            edgeBonus: 0.06 + (creationControl - 0.5) * 0.2,
             makeBonus: 0.02,
             foulBonus: 0,
             assistCandidateIndices: nil,
@@ -2890,12 +2973,27 @@ private struct PopDestination {
     var edgeBonus: Double
 }
 
-private func choosePopDestination(screener: Player, random: inout SeededRandom) -> PopDestination {
+private func choosePopDestination(
+    stored: inout NativeGameStateStore.StoredState,
+    screener: Player,
+    closeoutDefender: Player,
+    random: inout SeededRandom
+) -> PopDestination {
     // Compare expected value: midrange (2 * mid_make_prob) vs three (3 * three_make_prob)
+    let popChoiceInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "pop_destination",
+        offensePlayer: screener,
+        defensePlayer: closeoutDefender,
+        offenseRatings: ["shooting.threePointShooting", "shooting.midrangeShot", "skills.shotIQ"],
+        defenseRatings: ["defense.shotContest", "defense.perimeterDefense", "defense.lateralQuickness"],
+        random: &random
+    )
+    let popControl = logistic(popChoiceInteraction.edge)
     let midRating = getRating(screener, path: "shooting.midrangeShot")
     let threeRating = getRating(screener, path: "shooting.threePointShooting")
-    let midEV = 2 * clamp(0.32 + (midRating - 55) / 250, min: 0.25, max: 0.55)
-    let threeEV = 3 * clamp(0.28 + (threeRating - 55) / 300, min: 0.2, max: 0.48)
+    let midEV = 2 * clamp(0.32 + (midRating - 55) / 250 + (0.5 - popControl) * 0.06, min: 0.25, max: 0.58)
+    let threeEV = 3 * clamp(0.28 + (threeRating - 55) / 300 + (popControl - 0.5) * 0.07, min: 0.2, max: 0.52)
     if threeEV > midEV + 0.1 {
         let spot: OffensiveSpot = random.nextUnit() < 0.5 ? .topRight : .topLeft
         return PopDestination(shotType: .three, spot: spot, edgeBonus: 0.02)
