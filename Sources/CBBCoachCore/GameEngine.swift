@@ -595,7 +595,8 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                         random: &random
                     )
                     let blockDefenseControl = 1 - logistic(blockInteraction.edge)
-                    let blockChance = clamp(0.01 + blockDefenseControl * 0.22, min: 0.01, max: 0.23)
+                    // Raise block rates materially on missed rim attempts so interior contests are impactful.
+                    let blockChance = clamp(0.08 + blockDefenseControl * 0.62, min: 0.07, max: 0.72)
                     if random.nextUnit() < blockChance {
                         addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: play.defenderLineupIndex) { $0.blocks += 1 }
                     }
