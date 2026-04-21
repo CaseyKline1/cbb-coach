@@ -394,13 +394,13 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
         let shooterTendency = getBaseRating(ballHandler, path: "tendencies.shootVsPass")
         let intentBias = clamp((shooterTendency - 55) / 280, min: -0.14, max: 0.16)
         let attemptShotChance = clamp(
-            0.06
+            0.045
                 + Foundation.pow(shotClockPressure, 1.35) * 0.5
                 + (possessionControl - 0.5) * 0.34
                 + intentBias
                 + paceBias,
             min: 0.06,
-            max: 0.85
+            max: 0.8
         )
         let forcedShot = stored.shotClockRemaining <= CHUNK_SECONDS
         let willAttemptAction = forcedShot || random.nextUnit() < attemptShotChance
@@ -873,13 +873,13 @@ private func possessionDurationSeconds(for pace: PaceProfile, random: inout Seed
 
 private func paceShotBias(for pace: PaceProfile) -> Double {
     switch pace {
-    case .verySlow: return -0.08
-    case .slow: return -0.055
-    case .slightlySlow: return -0.03
-    case .normal: return 0
-    case .slightlyFast: return 0.02
-    case .fast: return 0.04
-    case .veryFast: return 0.06
+    case .verySlow: return -0.12
+    case .slow: return -0.085
+    case .slightlySlow: return -0.055
+    case .normal: return -0.03
+    case .slightlyFast: return -0.005
+    case .fast: return 0.015
+    case .veryFast: return 0.035
     }
 }
 
@@ -2587,9 +2587,9 @@ private func resolvePlay(
             sagBonus = helpDefenseControl * 0.05
         }
         let kickChance = clamp(
-            0.12 + helpDefenseControl * 0.55 + max(0, driveControl - 0.5) * 0.18,
-            min: driveTier == 2 ? 0.24 : (driveTier == 1 ? 0.16 : 0.08),
-            max: driveTier == 2 ? 0.82 : 0.64
+            0.18 + helpDefenseControl * 0.52 + max(0, driveControl - 0.5) * 0.2,
+            min: driveTier == 2 ? 0.28 : (driveTier == 1 ? 0.2 : 0.12),
+            max: driveTier == 2 ? 0.84 : 0.68
         )
         if random.nextUnit() < kickChance && offenseLineup.count > 1 {
             let receiverIdx = evaluatePassTarget(
@@ -2676,13 +2676,18 @@ private func resolvePlay(
             random: &random
         )
         let postControl = logistic(postAdvantage.edge)
-        if postControl < 0.3, offenseLineup.count > 1 {
+        let postKickChance = clamp(
+            0.22 + (1 - postControl) * 0.4,
+            min: 0.2,
+            max: 0.62
+        )
+        if offenseLineup.count > 1 && random.nextUnit() < postKickChance {
             let outletIdx = evaluatePassTarget(
                 offenseLineup: offenseLineup,
                 defenseLineup: defenseLineup,
                 ballHandlerIdx: postIdx,
                 random: &random,
-                opennessBonus: 0.06
+                opennessBonus: 0.08 + (1 - postControl) * 0.08
             )
             if outletIdx != postIdx {
                 let outletShooter = offenseLineup[outletIdx]
@@ -2700,11 +2705,11 @@ private func resolvePlay(
                     defenderLineupIndex: outletDefIdx,
                     shotType: outletShot,
                     spot: outletSpot,
-                    edgeBonus: 0.08,
+                    edgeBonus: 0.09,
                     makeBonus: 0.01,
                     foulBonus: 0,
                     assistCandidateIndices: [postIdx],
-                    assistForceChance: 0.68
+                    assistForceChance: 0.72
                 )
             }
         }
@@ -2802,9 +2807,9 @@ private func resolvePlay(
             max: 0.82
         )
         let offBallKickChance = clamp(
-            0.14 + popReadControl * 0.4 + (1 - ballHandlerPassLean) * 0.12 + max(0, screenEdge) * 0.08,
-            min: 0.12,
-            max: 0.56
+            0.2 + popReadControl * 0.38 + ballHandlerPassLean * 0.14 + max(0, screenEdge) * 0.08,
+            min: 0.18,
+            max: 0.62
         )
         let alternateShooterIdx: Int? = {
             guard offenseLineup.count > 2 && random.nextUnit() < offBallKickChance else { return nil }
@@ -3152,7 +3157,7 @@ private func resolvePickAndRollOutcome(
                 isDrive: false
             )
         }
-        if random.nextUnit() < clamp(passLean * 0.34, min: 0.12, max: 0.42) {
+        if random.nextUnit() < clamp(0.14 + passLean * 0.42, min: 0.2, max: 0.56) {
             let receiverIdx = evaluatePassTarget(
                 offenseLineup: offenseLineup,
                 defenseLineup: defenseLineup,
@@ -3201,7 +3206,7 @@ private func resolvePickAndRollOutcome(
         let shootsThree = threeRating >= midRating - 4
         let shotType: ShotType = shootsThree ? .three : .midrange
         let spot: OffensiveSpot = shootsThree ? .topMiddle : .rightElbow
-        if offenseLineup.count > 1 && random.nextUnit() < clamp(passLean * 0.55, min: 0.2, max: 0.62) {
+        if offenseLineup.count > 1 && random.nextUnit() < clamp(0.22 + passLean * 0.5, min: 0.28, max: 0.7) {
             let receiverIdx = evaluatePassTarget(
                 offenseLineup: offenseLineup,
                 defenseLineup: defenseLineup,
@@ -3246,7 +3251,7 @@ private func resolvePickAndRollOutcome(
         let handlerBurst = getRating(ballHandler, path: "athleticism.burst")
         let bigBurst = getRating(defenseLineup[min(screenerDefenderIdx, defenseLineup.count - 1)], path: "athleticism.burst")
         if handlerBurst > bigBurst + 8 {
-            if offenseLineup.count > 1 && random.nextUnit() < clamp(passLean * 0.4, min: 0.16, max: 0.5) {
+            if offenseLineup.count > 1 && random.nextUnit() < clamp(0.18 + passLean * 0.4, min: 0.22, max: 0.58) {
                 let receiverIdx = evaluatePassTarget(
                     offenseLineup: offenseLineup,
                     defenseLineup: defenseLineup,
@@ -3925,14 +3930,14 @@ private func resolvePassInterception(
         )
         let secureEdge = laneInteraction.edge + (receiverWindow - 55) / 100
         // Keep lane-jumpers impactful, but avoid compounding 3 defenders into near-certain steals.
-        let stealSignal = clamp((1 - logistic(secureEdge)) * 0.55, min: 0.01, max: 0.5)
-        let laneBoost = clamp((laneThreat - 60) / 280, min: -0.04, max: 0.07)
+        let stealSignal = clamp((1 - logistic(secureEdge)) * 0.48, min: 0.01, max: 0.46)
+        let laneBoost = clamp((laneThreat - 60) / 320, min: -0.04, max: 0.05)
         let stealWeight = max(0.05, (stealSignal + laneBoost) * 10)
         weights.append(stealWeight)
         defenderIndices.append(idx)
         stealTotal += stealWeight
     }
-    let safePassWeight = max(1.0, 80 - stealTotal * 0.6)
+    let safePassWeight = max(1.0, 84 - stealTotal * 0.55)
     let pick = weightedChoiceIndex(weights: [safePassWeight] + weights, random: &random)
     if pick == 0 {
         return nil
@@ -3993,7 +3998,7 @@ private func maybeResolveFastBreak(
     let leadDefIdx = pickTransitionPointDefenderIndex(lineup: defenseLineup, random: &random)
     let runner = offenseLineup[runnerIdx]
     let leadDef = defenseLineup[leadDefIdx]
-    let sourceBoost: Double = transition.source == "steal" ? 0.12 : (transition.source == "press_break" ? 0.1 : 0.03)
+    let sourceBoost: Double = transition.source == "steal" ? 0.08 : (transition.source == "press_break" ? 0.06 : 0.015)
 
     let pushInteraction = resolveInteractionWithTrace(
         stored: &stored,
@@ -4004,7 +4009,7 @@ private func maybeResolveFastBreak(
         defenseRatings: ["defense.offballDefense", "defense.lateralQuickness", "defense.passPerception"],
         random: &random
     )
-    let pushChance = clamp(0.08 + logistic(pushInteraction.edge) * 0.62 + sourceBoost * 0.4, min: 0.05, max: 0.86)
+    let pushChance = clamp(0.05 + logistic(pushInteraction.edge) * 0.56 + sourceBoost * 0.32, min: 0.04, max: 0.8)
     guard random.nextUnit() < pushChance else { return nil }
 
     let runScore = getRating(runner, path: "athleticism.burst") * 0.38
