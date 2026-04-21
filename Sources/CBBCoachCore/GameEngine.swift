@@ -744,11 +744,21 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                             shotDefenderIndex: play.defenderLineupIndex,
                             random: &random
                         )
+                        let offenseCrashPreference = teamReboundCrashPreference(
+                            crashBoards: stored.teams[offenseTeamId].team.tendencies.crashBoardsOffense,
+                            fastBreakBias: stored.teams[offenseTeamId].team.tendencies.defendFastBreakOffense
+                        )
+                        let defenseCrashPreference = teamReboundCrashPreference(
+                            crashBoards: stored.teams[defenseTeamId].team.tendencies.crashBoardsDefense,
+                            fastBreakBias: stored.teams[defenseTeamId].team.tendencies.attemptFastBreakDefense
+                        )
                         let scramblePair = selectReboundScrambleParticipants(
                             stored: &stored,
                             offenseLineup: stored.teams[offenseTeamId].activeLineup,
                             defenseLineup: stored.teams[defenseTeamId].activeLineup,
                             zone: zone,
+                            offenseCrashPreference: offenseCrashPreference,
+                            defenseCrashPreference: defenseCrashPreference,
                             random: &random
                         )
                         let offenseScrambleIdx = scramblePair.offenseIdx
@@ -778,6 +788,8 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                                 spot: play.spot,
                                 shooterIndex: play.shooterLineupIndex,
                                 shotDefenderIndex: play.defenderLineupIndex,
+                                offenseCrashPreference: offenseCrashPreference,
+                                defenseCrashPreference: defenseCrashPreference,
                                 offensePositioning: 1,
                                 defensePositioning: 1,
                                 random: &random
@@ -1210,6 +1222,47 @@ private func reboundNearbyWeight(_ player: Player, zone: ReboundZone) -> Double 
     return max(0.12, affinity * 0.9 + proximity * 0.45)
 }
 
+private func isPerimeterReboundRole(_ player: Player) -> Bool {
+    switch player.bio.position {
+    case .pg, .sg, .cg:
+        return true
+    default:
+        return false
+    }
+}
+
+private func teamReboundCrashPreference(crashBoards: Double, fastBreakBias: Double) -> Double {
+    let crash = clamp(crashBoards, min: 0, max: 100)
+    let leakOut = clamp(fastBreakBias, min: 0, max: 100)
+    return clamp(0.5 + (crash - leakOut) / 200, min: 0.05, max: 0.95)
+}
+
+private func reboundCrashParticipationWeight(_ player: Player, zone: ReboundZone, crashPreference: Double) -> Double {
+    let crash = clamp(crashPreference, min: 0, max: 1)
+    let perimeter = isPerimeterReboundRole(player)
+    switch zone {
+    case .paint, .leftBlock, .rightBlock:
+        if perimeter {
+            // Perimeter players can crash from outside, but remain disadvantaged versus interior players.
+            return 0.55 + crash * 0.45
+        }
+        return 0.95 + crash * 0.1
+    case .leftPerimeter, .rightPerimeter, .topPerimeter:
+        if perimeter {
+            return 0.78 + crash * 0.28
+        }
+        return 0.92 + crash * 0.08
+    }
+}
+
+private func reboundCandidateCount(crashPreference: Double) -> Int {
+    let crash = clamp(crashPreference, min: 0, max: 1)
+    if crash > 0.72 { return 5 }
+    if crash > 0.56 { return 4 }
+    if crash < 0.28 { return 2 }
+    return 3
+}
+
 private func heightReboundRating(_ player: Player) -> Double {
     let heightInches = getHeightInches(player)
     return clamp((heightInches - 76) * 4 + 56, min: 34, max: 98)
@@ -1270,12 +1323,15 @@ private func topReboundCandidateIndices(
     lineup: [Player],
     offensive: Bool,
     zone: ReboundZone,
+    crashPreference: Double,
     count: Int = 2
 ) -> [Int] {
     guard !lineup.isEmpty else { return [0] }
     let ranked = lineup.enumerated().map { idx, player in
         let base = offensive ? offensiveReboundSkillScore(player, zone: zone) : defensiveReboundSkillScore(player, zone: zone)
-        let score = max(0.1, base * reboundNearbyWeight(player, zone: zone))
+        let nearby = reboundNearbyWeight(player, zone: zone)
+        let crashWeight = reboundCrashParticipationWeight(player, zone: zone, crashPreference: crashPreference)
+        let score = max(0.1, base * nearby * crashWeight)
         return (idx, score)
     }
     return ranked.sorted { $0.1 > $1.1 }.prefix(max(1, count)).map(\.0)
@@ -1286,11 +1342,25 @@ private func selectReboundScrambleParticipants(
     offenseLineup: [Player],
     defenseLineup: [Player],
     zone: ReboundZone,
+    offenseCrashPreference: Double,
+    defenseCrashPreference: Double,
     random: inout SeededRandom
 ) -> (offenseIdx: Int, defenseIdx: Int) {
     guard !offenseLineup.isEmpty, !defenseLineup.isEmpty else { return (0, 0) }
-    let offenseCandidates = topReboundCandidateIndices(lineup: offenseLineup, offensive: true, zone: zone, count: 3)
-    let defenseCandidates = topReboundCandidateIndices(lineup: defenseLineup, offensive: false, zone: zone, count: 3)
+    let offenseCandidates = topReboundCandidateIndices(
+        lineup: offenseLineup,
+        offensive: true,
+        zone: zone,
+        crashPreference: offenseCrashPreference,
+        count: reboundCandidateCount(crashPreference: offenseCrashPreference)
+    )
+    let defenseCandidates = topReboundCandidateIndices(
+        lineup: defenseLineup,
+        offensive: false,
+        zone: zone,
+        crashPreference: defenseCrashPreference,
+        count: reboundCandidateCount(crashPreference: defenseCrashPreference)
+    )
 
     var bestPair: (Int, Int)?
     var bestEdge = -Double.infinity
@@ -1325,6 +1395,8 @@ private func resolveReboundOutcome(
     spot: OffensiveSpot,
     shooterIndex: Int,
     shotDefenderIndex: Int,
+    offenseCrashPreference: Double,
+    defenseCrashPreference: Double,
     offensePositioning: Double,
     defensePositioning: Double,
     random: inout SeededRandom
@@ -1341,8 +1413,20 @@ private func resolveReboundOutcome(
         shotDefenderIndex: shotDefenderIndex,
         random: &random
     )
-    let offenseCandidates = topReboundCandidateIndices(lineup: offenseLineup, offensive: true, zone: zone, count: 3)
-    let defenseCandidates = topReboundCandidateIndices(lineup: defenseLineup, offensive: false, zone: zone, count: 3)
+    let offenseCandidates = topReboundCandidateIndices(
+        lineup: offenseLineup,
+        offensive: true,
+        zone: zone,
+        crashPreference: offenseCrashPreference,
+        count: reboundCandidateCount(crashPreference: offenseCrashPreference)
+    )
+    let defenseCandidates = topReboundCandidateIndices(
+        lineup: defenseLineup,
+        offensive: false,
+        zone: zone,
+        crashPreference: defenseCrashPreference,
+        count: reboundCandidateCount(crashPreference: defenseCrashPreference)
+    )
 
     var bestOffenseIdx = offenseCandidates[0]
     var bestDefenseIdx = defenseCandidates[0]
@@ -4189,6 +4273,14 @@ private func maybeResolveFastBreak(
     }
 
     // Missed break finish: still interaction-based, but transition positioning usually favors set defenders.
+    let offenseCrashPreference = teamReboundCrashPreference(
+        crashBoards: stored.teams[offenseTeamId].team.tendencies.crashBoardsOffense,
+        fastBreakBias: stored.teams[offenseTeamId].team.tendencies.defendFastBreakOffense
+    )
+    let defenseCrashPreference = teamReboundCrashPreference(
+        crashBoards: stored.teams[defenseTeamId].team.tendencies.crashBoardsDefense,
+        fastBreakBias: stored.teams[defenseTeamId].team.tendencies.attemptFastBreakDefense
+    )
     let rebound = resolveReboundOutcome(
         stored: &stored,
         offenseLineup: offenseLineup,
@@ -4197,6 +4289,8 @@ private func maybeResolveFastBreak(
         spot: .middlePaint,
         shooterIndex: runnerIdx,
         shotDefenderIndex: leadDefIdx,
+        offenseCrashPreference: offenseCrashPreference,
+        defenseCrashPreference: defenseCrashPreference,
         offensePositioning: 0.88,
         defensePositioning: 1.12,
         random: &random
