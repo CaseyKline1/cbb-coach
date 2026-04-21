@@ -641,7 +641,14 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                     let andOneChance = clamp(0.018 + andOneDefenseControl * 0.15 + play.foulBonus * 0.6, min: 0.02, max: 0.2)
                     if random.nextUnit() < andOneChance {
                         registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: play.defenderLineupIndex, shooting: true)
-                        let ftMade = random.nextUnit() < clamp(getBaseRating(shooter, path: "shooting.freeThrows") / 120, min: 0.45, max: 0.92) ? 1 : 0
+                        let ftProb = freeThrowMakeProbability(
+                            stored: &stored,
+                            shooter: shooter,
+                            defenseTeamId: defenseTeamId,
+                            label: "free_throw_focus_and_one",
+                            random: &random
+                        )
+                        let ftMade = random.nextUnit() < ftProb ? 1 : 0
                         addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: play.shooterLineupIndex) { line in
                             line.ftAttempts += 1
                             line.ftMade += ftMade
@@ -671,7 +678,14 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                         let ftAttempts = isThree ? 3 : 2
                         var ftMade = 0
                         for _ in 0..<ftAttempts {
-                            if random.nextUnit() < clamp(getBaseRating(shooter, path: "shooting.freeThrows") / 120, min: 0.45, max: 0.92) {
+                            let ftProb = freeThrowMakeProbability(
+                                stored: &stored,
+                                shooter: shooter,
+                                defenseTeamId: defenseTeamId,
+                                label: "free_throw_focus_shooting_foul",
+                                random: &random
+                            )
+                            if random.nextUnit() < ftProb {
                                 ftMade += 1
                             }
                         }
@@ -689,20 +703,36 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                         switchedPossession = true
                     } else {
                         // Loose-ball foul: rare, called on whichever side didn't secure the rebound.
-                        let looseBallFoulChance = 0.018
+                        let zone = reboundZoneWithShortBias(
+                            initialZone: reboundZone(for: shotType, spot: play.spot),
+                            shotType: shotType,
+                            random: &random
+                        )
+                        let offenseScrambleIdx = pickLikelyReboundParticipantIndex(
+                            lineup: stored.teams[offenseTeamId].activeLineup,
+                            offensive: true,
+                            zone: zone,
+                            random: &random
+                        )
+                        let foulerIdx = pickLikelyReboundParticipantIndex(
+                            lineup: stored.teams[defenseTeamId].activeLineup,
+                            offensive: false,
+                            zone: zone,
+                            random: &random
+                        )
+                        let looseBallInteraction = resolveInteractionWithTrace(
+                            stored: &stored,
+                            label: "loose_ball_scramble",
+                            offensePlayer: stored.teams[offenseTeamId].activeLineup[offenseScrambleIdx],
+                            defensePlayer: stored.teams[defenseTeamId].activeLineup[foulerIdx],
+                            offenseRatings: ["rebounding.offensiveRebounding", "skills.hustle", "skills.hands", "athleticism.burst"],
+                            defenseRatings: ["rebounding.boxouts", "skills.hustle", "defense.defensiveControl", "athleticism.strength"],
+                            random: &random
+                        )
+                        let looseBallDefenseControl = 1 - logistic(looseBallInteraction.edge)
+                        let looseBallFoulChance = clamp(0.004 + looseBallDefenseControl * 0.03, min: 0.003, max: 0.04)
                         if random.nextUnit() < looseBallFoulChance {
                             // Call it on a likely nearby defender in the rebound zone (they were boxing out); offense keeps ball.
-                            let zone = reboundZoneWithShortBias(
-                                initialZone: reboundZone(for: shotType, spot: play.spot),
-                                shotType: shotType,
-                                random: &random
-                            )
-                            let foulerIdx = pickLikelyReboundParticipantIndex(
-                                lineup: stored.teams[defenseTeamId].activeLineup,
-                                offensive: false,
-                                zone: zone,
-                                random: &random
-                            )
                             registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: foulerIdx, shooting: false)
                             eventType = "loose_ball_foul"
                             switchedPossession = false
@@ -1436,13 +1466,24 @@ private func runAutoSubstitutions(stored: inout NativeGameStateStore.StoredState
         let betterBy = best.score - weakest.info.score
         let fatigueUpgrade = weakest.info.energy < 42 && best.energy > weakest.info.energy + 8
         let rotationUpgrade = best.rotationNeed > 2.5 && (weakest.info.minutesPlayed - weakest.info.target > 1.5)
+        let incoming = stored.teams[teamId].team.players[best.rosterIndex]
+        let outgoing = stored.teams[teamId].team.players[weakest.info.rosterIndex]
+        let swapInteraction = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "rotation_swap",
+            offensePlayer: incoming,
+            defensePlayer: outgoing,
+            offenseRatings: ["skills.hustle", "athleticism.stamina", "defense.offballDefense", "skills.shotIQ"],
+            defenseRatings: ["skills.hustle", "athleticism.stamina", "defense.offballDefense", "skills.shotIQ"],
+            random: &random
+        )
+        let swapConfidence = logistic(swapInteraction.edge)
 
-        if !(betterBy > 6 || fatigueUpgrade || rotationUpgrade) { break }
+        if !(swapConfidence > 0.56 || betterBy > 6 || fatigueUpgrade || rotationUpgrade) { break }
 
         current[weakest.slot] = best.rosterIndex
         swaps += 1
         bench = ranked.filter { !current.contains($0.rosterIndex) }
-        _ = random.nextUnit() // Keep determinism parity with prior implementation's random use.
     }
 
     if swaps > 0 {
@@ -2152,6 +2193,71 @@ private func chooseShotFromTendencies(shooter: Player, spot: OffensiveSpot, rand
     return .close
 }
 
+private func chooseInteractionSpotAndShot(
+    stored: inout NativeGameStateStore.StoredState,
+    shooter: Player,
+    defender: Player,
+    random: inout SeededRandom
+) -> (spot: OffensiveSpot, shotType: ShotType) {
+    let spotInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "shot_spot_selection",
+        offensePlayer: shooter,
+        defensePlayer: defender,
+        offenseRatings: ["skills.offballOffense", "skills.shotIQ", "tendencies.threePoint", "tendencies.inside", "tendencies.post"],
+        defenseRatings: ["defense.offballDefense", "defense.perimeterDefense", "defense.postDefense", "defense.lateralQuickness"],
+        random: &random
+    )
+    let perimeterControl = logistic(spotInteraction.edge)
+    let spot: OffensiveSpot
+    if perimeterControl > 0.64 {
+        let cornerLean = getBaseRating(shooter, path: "shooting.cornerThrees")
+        let topLean = getBaseRating(shooter, path: "shooting.upTopThrees")
+        if cornerLean > topLean + 5 {
+            spot = random.nextUnit() < 0.5 ? .leftCorner : .rightCorner
+        } else {
+            let picks: [OffensiveSpot] = [.topLeft, .topMiddle, .topRight]
+            spot = picks[random.int(0, picks.count - 1)]
+        }
+    } else if perimeterControl < 0.36 {
+        let postLean = getBaseRating(shooter, path: "tendencies.post")
+        if postLean > 58 {
+            spot = random.nextUnit() < 0.5 ? .leftPost : .rightPost
+        } else {
+            spot = .middlePaint
+        }
+    } else {
+        let picks: [OffensiveSpot] = [.leftElbow, .rightElbow, .topMiddle]
+        spot = picks[random.int(0, picks.count - 1)]
+    }
+
+    let shotInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "shot_type_selection",
+        offensePlayer: shooter,
+        defensePlayer: defender,
+        offenseRatings: ["skills.shotIQ", "shooting.threePointShooting", "shooting.midrangeShot", "shooting.closeShot", "shooting.layups"],
+        defenseRatings: ["defense.shotContest", "defense.perimeterDefense", "defense.postDefense"],
+        random: &random
+    )
+    let shotControl = logistic(shotInteraction.edge)
+    let shotType: ShotType
+    if spot == .middlePaint || spot == .leftPost || spot == .rightPost {
+        if shotControl > 0.68 {
+            shotType = getBaseRating(shooter, path: "shooting.dunks") > getBaseRating(shooter, path: "shooting.layups") + 4 ? .dunk : .layup
+        } else if shotControl > 0.44 {
+            shotType = getBaseRating(shooter, path: "postGame.postHooks") > getBaseRating(shooter, path: "postGame.postFadeaways") ? .hook : .fadeaway
+        } else {
+            shotType = .close
+        }
+    } else if spot == .leftCorner || spot == .rightCorner || spot == .topLeft || spot == .topMiddle || spot == .topRight {
+        shotType = shotControl > 0.48 ? .three : .midrange
+    } else {
+        shotType = shotControl > 0.56 ? .midrange : .close
+    }
+    return (spot, shotType)
+}
+
 // MARK: - Play types
 
 private enum PlayType {
@@ -2172,7 +2278,13 @@ private struct PlayOutcome {
     var forcedTurnoverStealerLineupIndex: Int? = nil
 }
 
-private func choosePlayType(offenseTeam: Team, ballHandler: Player, random: inout SeededRandom) -> PlayType {
+private func choosePlayType(
+    stored: inout NativeGameStateStore.StoredState,
+    offenseTeam: Team,
+    ballHandler: Player,
+    primaryDefender: Player,
+    random: inout SeededRandom
+) -> PlayType {
     let drive = getRating(ballHandler, path: "tendencies.drive")
     let post = getRating(ballHandler, path: "tendencies.post")
     let pickAndRoll = getRating(ballHandler, path: "tendencies.pickAndRoll")
@@ -2197,9 +2309,68 @@ private func choosePlayType(offenseTeam: Team, ballHandler: Player, random: inou
         (.pickAndPop, max(1, pickAndPop * 0.62 + passAroundProfile * 0.2 + (100 - shootVsPass) * 0.18) * pickFormationBoost * 0.42),
         (.passAroundForShot, max(1, passAround) * passAroundFormationBoost * 0.68),
     ]
-    let total = weights.reduce(0) { $0 + $1.1 }
+    var adjusted: [(PlayType, Double)] = []
+    for (type, baseWeight) in weights {
+        let interaction: InteractionResult
+        switch type {
+        case .dribbleDrive:
+            interaction = resolveInteractionWithTrace(
+                stored: &stored,
+                label: "play_type_drive",
+                offensePlayer: ballHandler,
+                defensePlayer: primaryDefender,
+                offenseRatings: ["tendencies.drive", "athleticism.burst", "skills.ballHandling"],
+                defenseRatings: ["defense.perimeterDefense", "defense.lateralQuickness", "defense.defensiveControl"],
+                random: &random
+            )
+        case .postUp:
+            interaction = resolveInteractionWithTrace(
+                stored: &stored,
+                label: "play_type_post",
+                offensePlayer: ballHandler,
+                defensePlayer: primaryDefender,
+                offenseRatings: ["tendencies.post", "postGame.postControl", "athleticism.strength"],
+                defenseRatings: ["defense.postDefense", "defense.defensiveControl", "athleticism.strength"],
+                random: &random
+            )
+        case .pickAndRoll:
+            interaction = resolveInteractionWithTrace(
+                stored: &stored,
+                label: "play_type_pnr",
+                offensePlayer: ballHandler,
+                defensePlayer: primaryDefender,
+                offenseRatings: ["tendencies.pickAndRoll", "skills.passingVision", "skills.ballHandling"],
+                defenseRatings: ["defense.passPerception", "defense.lateralQuickness", "defense.perimeterDefense"],
+                random: &random
+            )
+        case .pickAndPop:
+            interaction = resolveInteractionWithTrace(
+                stored: &stored,
+                label: "play_type_pnp",
+                offensePlayer: ballHandler,
+                defensePlayer: primaryDefender,
+                offenseRatings: ["tendencies.pickAndPop", "skills.passingIQ", "skills.shotIQ"],
+                defenseRatings: ["defense.passPerception", "defense.offballDefense", "defense.perimeterDefense"],
+                random: &random
+            )
+        case .passAroundForShot:
+            interaction = resolveInteractionWithTrace(
+                stored: &stored,
+                label: "play_type_motion",
+                offensePlayer: ballHandler,
+                defensePlayer: primaryDefender,
+                offenseRatings: ["skills.passingVision", "skills.passingIQ", "tendencies.shootVsPass"],
+                defenseRatings: ["defense.offballDefense", "defense.passPerception", "defense.lateralQuickness"],
+                random: &random
+            )
+        }
+        let boost = clamp((logistic(interaction.edge) - 0.5) * 0.9, min: -0.35, max: 0.45)
+        adjusted.append((type, max(1, baseWeight * (1 + boost))))
+    }
+
+    let total = adjusted.reduce(0) { $0 + $1.1 }
     var pick = random.nextUnit() * max(total, 1)
-    for (type, weight) in weights {
+    for (type, weight) in adjusted {
         pick -= weight
         if pick <= 0 { return type }
     }
@@ -2216,7 +2387,14 @@ private func resolvePlay(
     random: inout SeededRandom
 ) -> PlayOutcome {
     let ballHandler = offenseLineup[ballHandlerIdx]
-    let playType = choosePlayType(offenseTeam: team, ballHandler: ballHandler, random: &random)
+    let primaryDefender = defenseLineup[min(defenderIdx, defenseLineup.count - 1)]
+    let playType = choosePlayType(
+        stored: &stored,
+        offenseTeam: team,
+        ballHandler: ballHandler,
+        primaryDefender: primaryDefender,
+        random: &random
+    )
     let pickActionBallHandlerIdx: Int
     if playType == .pickAndRoll || playType == .pickAndPop {
         pickActionBallHandlerIdx = pickLineupIndexForPickActionBallHandler(lineup: offenseLineup, random: &random)
@@ -2328,9 +2506,15 @@ private func resolvePlay(
                 opennessBonus: sagBonus
             )
             let shooter = offenseLineup[receiverIdx]
-            let spot = pickShooterSpot(player: shooter, random: &random)
-            let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
             let shotDefenderIdx = positionMatchedDefenderIndex(shooter: shooter, defenseLineup: defenseLineup, fallback: receiverIdx)
+            let selection = chooseInteractionSpotAndShot(
+                stored: &stored,
+                shooter: shooter,
+                defender: defenseLineup[shotDefenderIdx],
+                random: &random
+            )
+            let spot = selection.spot
+            let shotType = selection.shotType
             let kickEdgeBonus = driveTier == 2 ? 0.2 : (driveTier == 1 ? 0.14 : 0.1)
             let kickMakeBonus = driveTier == 2 ? 0.03 : (driveTier == 1 ? 0.015 : 0.01)
             return PlayOutcome(
@@ -2352,14 +2536,20 @@ private func resolvePlay(
             max: 0.86
         )
         let takesRim = random.nextUnit() < rimChance
-        let spot: OffensiveSpot = takesRim ? .middlePaint : pickShooterSpot(player: ballHandler, random: &random)
+        let nonRimSelection = chooseInteractionSpotAndShot(
+            stored: &stored,
+            shooter: ballHandler,
+            defender: onBallDefender,
+            random: &random
+        )
+        let spot: OffensiveSpot = takesRim ? .middlePaint : nonRimSelection.spot
         let shotType: ShotType
         if takesRim {
             shotType = getRating(ballHandler, path: "shooting.dunks") > getRating(ballHandler, path: "shooting.layups") + 5 && random.nextUnit() < 0.35
                 ? .dunk
                 : .layup
         } else {
-            shotType = chooseShotFromTendencies(shooter: ballHandler, spot: spot, random: &random)
+            shotType = nonRimSelection.shotType
         }
         return PlayOutcome(
             shooterLineupIndex: ballHandlerIdx,
@@ -2402,11 +2592,18 @@ private func resolvePlay(
             )
             if outletIdx != postIdx {
                 let outletShooter = offenseLineup[outletIdx]
-                let outletSpot = pickShooterSpot(player: outletShooter, random: &random)
-                let outletShot = chooseShotFromTendencies(shooter: outletShooter, spot: outletSpot, random: &random)
+                let outletDefIdx = min(outletIdx, defenseLineup.count - 1)
+                let outletSelection = chooseInteractionSpotAndShot(
+                    stored: &stored,
+                    shooter: outletShooter,
+                    defender: defenseLineup[outletDefIdx],
+                    random: &random
+                )
+                let outletSpot = outletSelection.spot
+                let outletShot = outletSelection.shotType
                 return PlayOutcome(
                     shooterLineupIndex: outletIdx,
-                    defenderLineupIndex: min(outletIdx, defenseLineup.count - 1),
+                    defenderLineupIndex: outletDefIdx,
                     shotType: outletShot,
                     spot: outletSpot,
                     edgeBonus: 0.08,
@@ -2527,11 +2724,18 @@ private func resolvePlay(
         }()
         if let receiverIdx = alternateShooterIdx {
             let shooter = offenseLineup[receiverIdx]
-            let spot = pickShooterSpot(player: shooter, random: &random)
-            let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
+            let receiverDefIdx = min(receiverIdx, defenseLineup.count - 1)
+            let selection = chooseInteractionSpotAndShot(
+                stored: &stored,
+                shooter: shooter,
+                defender: defenseLineup[receiverDefIdx],
+                random: &random
+            )
+            let spot = selection.spot
+            let shotType = selection.shotType
             return PlayOutcome(
                 shooterLineupIndex: receiverIdx,
-                defenderLineupIndex: min(receiverIdx, defenseLineup.count - 1),
+                defenderLineupIndex: receiverDefIdx,
                 shotType: shotType,
                 spot: spot,
                 edgeBonus: screenEdge * 0.22 + 0.08,
@@ -2567,8 +2771,14 @@ private func resolvePlay(
         )
         let creationControl = logistic(creation.edge)
         if creationControl < 0.32 {
-            let fallbackSpot = pickShooterSpot(player: ballHandler, random: &random)
-            let fallbackShot = chooseShotFromTendencies(shooter: ballHandler, spot: fallbackSpot, random: &random)
+            let fallbackSelection = chooseInteractionSpotAndShot(
+                stored: &stored,
+                shooter: ballHandler,
+                defender: defenseLineup[defenderIdx],
+                random: &random
+            )
+            let fallbackSpot = fallbackSelection.spot
+            let fallbackShot = fallbackSelection.shotType
             return PlayOutcome(
                 shooterLineupIndex: ballHandlerIdx,
                 defenderLineupIndex: defenderIdx,
@@ -2591,8 +2801,14 @@ private func resolvePlay(
         )
         let shooter = offenseLineup[receiverIdx]
         let shotDefenderIdx = min(receiverIdx, defenseLineup.count - 1)
-        let spot = pickShooterSpot(player: shooter, random: &random)
-        let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
+        let selection = chooseInteractionSpotAndShot(
+            stored: &stored,
+            shooter: shooter,
+            defender: defenseLineup[shotDefenderIdx],
+            random: &random
+        )
+        let spot = selection.spot
+        let shotType = selection.shotType
         return PlayOutcome(
             shooterLineupIndex: receiverIdx,
             defenderLineupIndex: shotDefenderIdx,
@@ -2850,11 +3066,18 @@ private func resolvePickAndRollOutcome(
                 random: &random
             )
             let shooter = offenseLineup[receiverIdx]
-            let spot = pickShooterSpot(player: shooter, random: &random)
-            let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
+            let receiverDefIdx = min(receiverIdx, defenseLineup.count - 1)
+            let selection = chooseInteractionSpotAndShot(
+                stored: &stored,
+                shooter: shooter,
+                defender: defenseLineup[receiverDefIdx],
+                random: &random
+            )
+            let spot = selection.spot
+            let shotType = selection.shotType
             return PlayOutcome(
                 shooterLineupIndex: receiverIdx,
-                defenderLineupIndex: min(receiverIdx, defenseLineup.count - 1),
+                defenderLineupIndex: receiverDefIdx,
                 shotType: shotType,
                 spot: spot,
                 edgeBonus: screenEdge * 0.24 + 0.06,
@@ -2892,11 +3115,18 @@ private func resolvePickAndRollOutcome(
                 random: &random
             )
             let shooter = offenseLineup[receiverIdx]
-            let spot = pickShooterSpot(player: shooter, random: &random)
-            let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
+            let receiverDefIdx = min(receiverIdx, defenseLineup.count - 1)
+            let selection = chooseInteractionSpotAndShot(
+                stored: &stored,
+                shooter: shooter,
+                defender: defenseLineup[receiverDefIdx],
+                random: &random
+            )
+            let spot = selection.spot
+            let shotType = selection.shotType
             return PlayOutcome(
                 shooterLineupIndex: receiverIdx,
-                defenderLineupIndex: min(receiverIdx, defenseLineup.count - 1),
+                defenderLineupIndex: receiverDefIdx,
                 shotType: shotType,
                 spot: spot,
                 edgeBonus: screenEdge * 0.16 + 0.08,
@@ -2930,11 +3160,18 @@ private func resolvePickAndRollOutcome(
                     random: &random
                 )
                 let shooter = offenseLineup[receiverIdx]
-                let spot = pickShooterSpot(player: shooter, random: &random)
-                let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
+                let receiverDefIdx = min(receiverIdx, defenseLineup.count - 1)
+                let selection = chooseInteractionSpotAndShot(
+                    stored: &stored,
+                    shooter: shooter,
+                    defender: defenseLineup[receiverDefIdx],
+                    random: &random
+                )
+                let spot = selection.spot
+                let shotType = selection.shotType
                 return PlayOutcome(
                     shooterLineupIndex: receiverIdx,
-                    defenderLineupIndex: min(receiverIdx, defenseLineup.count - 1),
+                    defenderLineupIndex: receiverDefIdx,
                     shotType: shotType,
                     spot: spot,
                     edgeBonus: 0.14,
@@ -2980,11 +3217,18 @@ private func resolvePickAndRollOutcome(
                 .max { a, b in openShotUtility(offenseLineup[a]) < openShotUtility(offenseLineup[b]) }
                 ?? ballHandlerIdx
             let shooter = offenseLineup[receiverIdx]
-            let spot = pickShooterSpot(player: shooter, random: &random)
-            let shotType = chooseShotFromTendencies(shooter: shooter, spot: spot, random: &random)
+            let receiverDefIdx = min(receiverIdx, defenseLineup.count - 1)
+            let selection = chooseInteractionSpotAndShot(
+                stored: &stored,
+                shooter: shooter,
+                defender: defenseLineup[receiverDefIdx],
+                random: &random
+            )
+            let spot = selection.spot
+            let shotType = selection.shotType
             return PlayOutcome(
                 shooterLineupIndex: receiverIdx,
-                defenderLineupIndex: min(receiverIdx, defenseLineup.count - 1),
+                defenderLineupIndex: receiverDefIdx,
                 shotType: shotType,
                 spot: spot,
                 edgeBonus: 0.06,
@@ -3131,11 +3375,12 @@ private func maybeCallTechnicalFoul(stored: inout NativeGameStateStore.StoredSta
         let second = candidateForTechnical(teamId: 1, opponentTeamId: 0)
     else { return }
 
-    let noTechWeight = max(1.0, 1.0 - (first.chance + second.chance))
-    let pick = weightedChoiceIndex(weights: [noTechWeight, first.chance, second.chance], random: &random)
-    guard pick != 0 else { return }
-    let offendingTeamId = pick == 1 ? 0 : 1
-    let offendingLineupIdx = pick == 1 ? first.lineupIdx : second.lineupIdx
+    let offender = first.chance >= second.chance
+        ? (teamId: 0, lineupIdx: first.lineupIdx, chance: first.chance)
+        : (teamId: 1, lineupIdx: second.lineupIdx, chance: second.chance)
+    guard offender.chance >= 0.0025 else { return }
+    let offendingTeamId = offender.teamId
+    let offendingLineupIdx = offender.lineupIdx
     let benefitingTeamId = offendingTeamId == 0 ? 1 : 0
     guard !stored.teams[benefitingTeamId].activeLineup.isEmpty else { return }
     // Pick best FT shooter on the benefiting team's floor.
@@ -3147,7 +3392,13 @@ private func maybeCallTechnicalFoul(stored: inout NativeGameStateStore.StoredSta
         if ft > bestFT { bestFT = ft; bestIdx = idx }
     }
     let shooter = lineup[bestIdx]
-    let made = random.nextUnit() < clamp(getBaseRating(shooter, path: "shooting.freeThrows") / 120, min: 0.45, max: 0.92)
+    let made = random.nextUnit() < freeThrowMakeProbability(
+        stored: &stored,
+        shooter: shooter,
+        defenseTeamId: offendingTeamId,
+        label: "free_throw_focus_technical",
+        random: &random
+    )
     let ftMade = made ? 1 : 0
     addPlayerStat(stored: &stored, teamId: benefitingTeamId, lineupIndex: bestIdx) { line in
         line.ftAttempts += 1
@@ -3168,14 +3419,36 @@ private func maybeCallTechnicalFoul(stored: inout NativeGameStateStore.StoredSta
 private func maybeCallTimeout(stored: inout NativeGameStateStore.StoredState, teamId: Int, random: inout SeededRandom) {
     guard teamId >= 0, teamId < stored.teams.count else { return }
     guard stored.teams[teamId].team.timeouts > 0 else { return }
-    let scoreDelta = stored.teams[teamId].score - stored.teams[teamId == 0 ? 1 : 0].score
+    let oppId = teamId == 0 ? 1 : 0
+    let scoreDelta = stored.teams[teamId].score - stored.teams[oppId].score
     // Use timeout when down by a lot late, or when starters are gassed.
     let lateAndTrailing = stored.gameClockRemaining < 240 && scoreDelta < -6
     let starterTired = stored.teams[teamId].activeLineup.contains { ($0.condition.energy) < 45 }
-    if lateAndTrailing && random.nextUnit() < 0.25 {
+    guard !stored.teams[teamId].activeLineup.isEmpty, !stored.teams[oppId].activeLineup.isEmpty else { return }
+    let tiredIdx = stored.teams[teamId].activeLineup.enumerated().min { $0.element.condition.energy < $1.element.condition.energy }?.offset ?? 0
+    let pressureIdx = stored.teams[oppId].activeLineup.enumerated().max { lhs, rhs in
+        let l = getBaseRating(lhs.element, path: "defense.offballDefense") * 0.4
+            + getBaseRating(lhs.element, path: "defense.defensiveControl") * 0.35
+            + getBaseRating(lhs.element, path: "skills.hustle") * 0.25
+        let r = getBaseRating(rhs.element, path: "defense.offballDefense") * 0.4
+            + getBaseRating(rhs.element, path: "defense.defensiveControl") * 0.35
+            + getBaseRating(rhs.element, path: "skills.hustle") * 0.25
+        return l < r
+    }?.offset ?? 0
+    let timeoutInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "timeout_pressure",
+        offensePlayer: stored.teams[teamId].activeLineup[tiredIdx],
+        defensePlayer: stored.teams[oppId].activeLineup[pressureIdx],
+        offenseRatings: ["skills.shotIQ", "skills.clutch", "skills.ballSafety"],
+        defenseRatings: ["defense.offballDefense", "defense.defensiveControl", "skills.hustle"],
+        random: &random
+    )
+    let timeoutNeed = 1 - logistic(timeoutInteraction.edge)
+    if lateAndTrailing && timeoutNeed > 0.42 {
         stored.teams[teamId].team.timeouts -= 1
         recoverTeam(stored: &stored, teamId: teamId, amount: 18)
-    } else if starterTired && random.nextUnit() < 0.05 {
+    } else if starterTired && timeoutNeed > 0.62 {
         stored.teams[teamId].team.timeouts -= 1
         recoverTeam(stored: &stored, teamId: teamId, amount: 12)
     }
@@ -3241,6 +3514,43 @@ private func registerDefensiveFoul(stored: inout NativeGameStateStore.StoredStat
     }
 }
 
+private func freeThrowMakeProbability(
+    stored: inout NativeGameStateStore.StoredState,
+    shooter: Player,
+    defenseTeamId: Int?,
+    label: String,
+    random: inout SeededRandom
+) -> Double {
+    let base = clamp(getBaseRating(shooter, path: "shooting.freeThrows") / 120, min: 0.45, max: 0.92)
+    guard let defenseTeamId, defenseTeamId >= 0, defenseTeamId < stored.teams.count else {
+        return base
+    }
+    let defenseLineup = stored.teams[defenseTeamId].activeLineup
+    guard !defenseLineup.isEmpty else { return base }
+
+    let pressureDefender = defenseLineup.max { lhs, rhs in
+        let l = getBaseRating(lhs, path: "defense.defensiveControl") * 0.5
+            + getBaseRating(lhs, path: "skills.hustle") * 0.3
+            + getBaseRating(lhs, path: "skills.clutch") * 0.2
+        let r = getBaseRating(rhs, path: "defense.defensiveControl") * 0.5
+            + getBaseRating(rhs, path: "skills.hustle") * 0.3
+            + getBaseRating(rhs, path: "skills.clutch") * 0.2
+        return l < r
+    } ?? defenseLineup[0]
+
+    let interaction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: label,
+        offensePlayer: shooter,
+        defensePlayer: pressureDefender,
+        offenseRatings: ["shooting.freeThrows", "skills.shotIQ", "skills.clutch"],
+        defenseRatings: ["defense.defensiveControl", "skills.hustle", "skills.clutch"],
+        random: &random
+    )
+    let focusBoost = (logistic(interaction.edge) - 0.5) * 0.18
+    return clamp(base + focusBoost, min: 0.4, max: 0.95)
+}
+
 private func teamFoulsForPeriod(_ stored: NativeGameStateStore.StoredState, teamId: Int) -> Int {
     guard teamId >= 0, teamId < stored.teamFoulsInHalf.count else { return 0 }
     return stored.teamFoulsInHalf[teamId]
@@ -3297,7 +3607,14 @@ private func maybeCallNonShootingFoul(
         let shooter = stored.teams[offenseTeamId].activeLineup[ballHandlerIdx]
         var ftMade = 0
         for _ in 0..<2 {
-            if random.nextUnit() < clamp(getBaseRating(shooter, path: "shooting.freeThrows") / 120, min: 0.45, max: 0.92) {
+            let ftProb = freeThrowMakeProbability(
+                stored: &stored,
+                shooter: shooter,
+                defenseTeamId: defenseTeamId,
+                label: "free_throw_focus_bonus",
+                random: &random
+            )
+            if random.nextUnit() < ftProb {
                 ftMade += 1
             }
         }
@@ -3316,12 +3633,26 @@ private func maybeCallNonShootingFoul(
     } else if teamFouls >= 7 {
         // 1-and-1.
         let shooter = stored.teams[offenseTeamId].activeLineup[ballHandlerIdx]
-        let first = random.nextUnit() < clamp(getBaseRating(shooter, path: "shooting.freeThrows") / 120, min: 0.45, max: 0.92)
+        let firstProb = freeThrowMakeProbability(
+            stored: &stored,
+            shooter: shooter,
+            defenseTeamId: defenseTeamId,
+            label: "free_throw_focus_one_and_one",
+            random: &random
+        )
+        let first = random.nextUnit() < firstProb
         var ftAtt = 1
         var ftMade = first ? 1 : 0
         if first {
             ftAtt = 2
-            if random.nextUnit() < clamp(getBaseRating(shooter, path: "shooting.freeThrows") / 120, min: 0.45, max: 0.92) {
+            let secondProb = freeThrowMakeProbability(
+                stored: &stored,
+                shooter: shooter,
+                defenseTeamId: defenseTeamId,
+                label: "free_throw_focus_one_and_one",
+                random: &random
+            )
+            if random.nextUnit() < secondProb {
                 ftMade += 1
             }
         }
@@ -3613,9 +3944,20 @@ private func maybeResolveFastBreak(
         defenseRatings: profile.defenseRatings,
         random: &random
     )
+    let finishQuality = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "fast_break_finish_quality",
+        offensePlayer: runner,
+        defensePlayer: leadDef,
+        offenseRatings: profile.offenseRatings + ["skills.hands", "skills.shotIQ"],
+        defenseRatings: profile.defenseRatings + ["defense.defensiveControl", "defense.shotContest"],
+        random: &random
+    )
     let madeProb = clamp(
-        baseMakeProbability(for: shotType) + 0.18
-            + (logistic(shotInteraction.edge + 0.5) - 0.5) * makeScale(for: shotType),
+        baseMakeProbability(for: shotType)
+            + (logistic(shotInteraction.edge + 0.3) - 0.5) * makeScale(for: shotType) * 0.58
+            + (logistic(finishQuality.edge) - 0.5) * 0.42
+            + 0.06,
         min: minMakeProbability(for: shotType),
         max: maxMakeProbability(for: shotType)
     )

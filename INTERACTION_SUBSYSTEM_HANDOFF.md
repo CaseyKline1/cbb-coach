@@ -14,39 +14,40 @@ The engine is now largely interaction-driven for possession flow, play branches,
 - `and_one_contact`
 - `shooting_foul_contact`
 
+3. Fast-break finish continuation converted to interaction-driven quality gate:
+- `fast_break_finish_quality`
+
+4. Free-throw makes converted to interaction-informed focus model:
+- `free_throw_focus_and_one`
+- `free_throw_focus_shooting_foul`
+- `free_throw_focus_bonus`
+- `free_throw_focus_one_and_one`
+- `free_throw_focus_technical`
+
+5. Loose-ball foul trigger converted to interaction-driven scramble gate:
+- `loose_ball_scramble`
+
+6. Set-piece selectors converted to interaction-driven decisions:
+- `play_type_*` labels in play selection
+- `shot_spot_selection`
+- `shot_type_selection`
+
+7. Timeout and rotation management interactionized:
+- `timeout_pressure`
+- `rotation_swap`
+
+8. Technical/no-tech selection moved to interaction-determined offender selection (no stochastic chooser layer).
+
 ## What Is Still Not Fully Interaction-Based
-These are the highest-impact remaining pockets:
+No major subsystem-level backlog items remain from this handoff list.
 
-1. Set-piece selection randomness and weighted picks
-- `choosePlayType` weighted random selection
-- `pickShooterSpot` weighted/random location picks
-- `chooseShotFromTendencies` weighted branch picks
-- Various branch-level random shot-type/spot tie-breakers
-
-2. Fast-break continuation formulas
-- `madeProb` in fast break still uses formula blend after finish interaction
-- Could become a direct interaction-derived terminal resolution (or stronger mapping)
-
-3. Free-throw resolution remains attribute-only random roll
-- FT events currently do not use direct shooter-vs-context interactions
-- This may be acceptable by design, but if strict interaction-only is required, add:
-  - `free_throw_focus` (shooter vs pressure context)
-
-4. Timeout and rotation management (non-play simulation logic)
-- `maybeCallTimeout`, substitution scoring, minute targets
-- Not really "player duel" mechanics, but still probabilistic/heuristic subsystems
-
-5. Misc event randomness
-- technical/no-tech selection still has stochastic weighting (now interaction-informed)
-- loose-ball foul branch is still a direct rare-event roll
+Remaining work is calibration-oriented:
+- tune event-rate distributions after the expanded interaction graph
+- decide whether to retain minor utility randomness in tie-breakers/selectors for variety
 
 ## Recommended Next Order
-1. Replace `choosePlayType` and shot/spot selectors with interaction-driven tactical contests.
-2. Tighten fast-break finish mapping so make/fail is more directly interaction-determined.
-3. Decide policy for FTs:
-- keep attribute-only as intentional model simplification, or
-- move to interaction-informed pressure model.
-4. If strict interpretation includes management systems, interactionize timeout/sub logic too.
+1. Run calibration pass (TO%, foul rate, block rate, transition frequency, FT rate).
+2. Add QA report tooling for interaction label frequency / edge distributions.
 
 ## Guardrails
 - Keep output semantics stable (`eventType`, possession switch, stat deltas).
