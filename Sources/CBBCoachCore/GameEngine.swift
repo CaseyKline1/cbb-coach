@@ -1040,14 +1040,45 @@ private func computeTargetMinutesMap(tracker: NativeGameStateStore.TeamTracker) 
         }
     }
 
-    let floor: Double = roster.count > 5 ? 4 : 0
-    let remaining = max(0, totalTeamMinutes - floor * Double(roster.count))
-    let weights = roster.map { max(1, playerOverallSkill($0)) }
-    let totalWeight = weights.reduce(0, +)
+    // Default CPU-style pattern: 10-man rotation (5 starters ~28, 5 backups ~12).
+    // If roster size differs, preserve this shape and scale to 200 team minutes.
+    let listedStarters = Array((tracker.team.lineup.isEmpty ? roster : tracker.team.lineup).prefix(5))
+    var used: Set<Int> = []
+    var starterIndices: [Int] = []
+    for starter in listedStarters {
+        if let idx = roster.enumerated().first(where: { pair in
+            !used.contains(pair.offset)
+                && pair.element.bio.name == starter.bio.name
+                && pair.element.bio.position == starter.bio.position
+        })?.offset {
+            starterIndices.append(idx)
+            used.insert(idx)
+        }
+    }
+    if starterIndices.count < 5 {
+        for idx in roster.indices where !used.contains(idx) {
+            starterIndices.append(idx)
+            used.insert(idx)
+            if starterIndices.count == 5 { break }
+        }
+    }
+
+    let benchIndices = roster.indices.filter { !used.contains($0) }.prefix(5)
+
+    var rawTargets: [Int: Double] = [:]
+    for idx in starterIndices { rawTargets[idx] = 28 }
+    for idx in benchIndices { rawTargets[idx] = 12 }
+
+    let rawTotal = rawTargets.values.reduce(0, +)
+    guard rawTotal > 0 else {
+        return Dictionary(uniqueKeysWithValues: roster.indices.map { ($0, 0) })
+    }
+
+    let scale = totalTeamMinutes / rawTotal
     var map: [Int: Double] = [:]
     for idx in roster.indices {
-        let share = totalWeight > 0 ? remaining * (weights[idx] / totalWeight) : remaining / Double(roster.count)
-        map[idx] = clamp(floor + share, min: 0, max: 40)
+        let raw = rawTargets[idx] ?? 0
+        map[idx] = clamp(raw * scale, min: 0, max: 40)
     }
     return map
 }
@@ -1156,12 +1187,12 @@ private func elapsedGameSecondsTotal(stored: NativeGameStateStore.StoredState) -
 }
 
 private func minuteTarget(for tracker: NativeGameStateStore.TeamTracker, rosterIndex: Int, isStarterSlot: Bool) -> Double {
-    guard rosterIndex >= 0, rosterIndex < tracker.team.players.count else { return isStarterSlot ? 30 : 14 }
+    guard rosterIndex >= 0, rosterIndex < tracker.team.players.count else { return isStarterSlot ? 28 : 12 }
     let playerName = tracker.team.players[rosterIndex].bio.name
     if let target = tracker.team.rotation?.minuteTargets[playerName], target.isFinite {
         return clamp(target, min: 4, max: 40)
     }
-    return isStarterSlot ? 30 : 14
+    return isStarterSlot ? 28 : 12
 }
 
 private func addTeamExtra(stored: inout NativeGameStateStore.StoredState, teamId: Int, key: String, amount: Int) {

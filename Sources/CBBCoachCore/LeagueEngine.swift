@@ -1861,12 +1861,12 @@ private func defaultRotationSlots(for team: Team) -> [UserRotationSlot] {
 
     let starterSlots = starters.enumerated().map { idx, player in
         let playerIndex = team.players.firstIndex(where: { $0.bio.name == player.bio.name })
-        return UserRotationSlot(slot: idx, playerIndex: playerIndex, position: player.bio.position.rawValue, minutes: idx < 2 ? 32 : 30)
+        return UserRotationSlot(slot: idx, playerIndex: playerIndex, position: player.bio.position.rawValue, minutes: 28)
     }
 
     let benchPlayers = team.players.enumerated().filter { !lineupNames.contains($0.element.bio.name) }
     let benchSlots = benchPlayers.prefix(5).enumerated().map { benchIdx, pair in
-        UserRotationSlot(slot: benchIdx + 5, playerIndex: pair.offset, position: pair.element.bio.position.rawValue, minutes: benchIdx < 2 ? 18 : 12)
+        UserRotationSlot(slot: benchIdx + 5, playerIndex: pair.offset, position: pair.element.bio.position.rawValue, minutes: 12)
     }
 
     return starterSlots + benchSlots
