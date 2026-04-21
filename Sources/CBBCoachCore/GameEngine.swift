@@ -394,13 +394,13 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
         let shooterTendency = getBaseRating(ballHandler, path: "tendencies.shootVsPass")
         let intentBias = clamp((shooterTendency - 55) / 280, min: -0.14, max: 0.16)
         let attemptShotChance = clamp(
-            0.045
+            0.035
                 + Foundation.pow(shotClockPressure, 1.35) * 0.5
                 + (possessionControl - 0.5) * 0.34
                 + intentBias
                 + paceBias,
             min: 0.06,
-            max: 0.8
+            max: 0.75
         )
         let forcedShot = stored.shotClockRemaining <= CHUNK_SECONDS
         let willAttemptAction = forcedShot || random.nextUnit() < attemptShotChance
@@ -873,13 +873,13 @@ private func possessionDurationSeconds(for pace: PaceProfile, random: inout Seed
 
 private func paceShotBias(for pace: PaceProfile) -> Double {
     switch pace {
-    case .verySlow: return -0.12
-    case .slow: return -0.085
-    case .slightlySlow: return -0.055
-    case .normal: return -0.03
-    case .slightlyFast: return -0.005
-    case .fast: return 0.015
-    case .veryFast: return 0.035
+    case .verySlow: return -0.15
+    case .slow: return -0.11
+    case .slightlySlow: return -0.075
+    case .normal: return -0.05
+    case .slightlyFast: return -0.02
+    case .fast: return 0
+    case .veryFast: return 0.02
     }
 }
 
@@ -3998,7 +3998,7 @@ private func maybeResolveFastBreak(
     let leadDefIdx = pickTransitionPointDefenderIndex(lineup: defenseLineup, random: &random)
     let runner = offenseLineup[runnerIdx]
     let leadDef = defenseLineup[leadDefIdx]
-    let sourceBoost: Double = transition.source == "steal" ? 0.08 : (transition.source == "press_break" ? 0.06 : 0.015)
+    let sourceBoost: Double = transition.source == "steal" ? 0.06 : (transition.source == "press_break" ? 0.045 : 0.01)
 
     let pushInteraction = resolveInteractionWithTrace(
         stored: &stored,
@@ -4009,7 +4009,7 @@ private func maybeResolveFastBreak(
         defenseRatings: ["defense.offballDefense", "defense.lateralQuickness", "defense.passPerception"],
         random: &random
     )
-    let pushChance = clamp(0.05 + logistic(pushInteraction.edge) * 0.56 + sourceBoost * 0.32, min: 0.04, max: 0.8)
+    let pushChance = clamp(0.04 + logistic(pushInteraction.edge) * 0.5 + sourceBoost * 0.25, min: 0.03, max: 0.72)
     guard random.nextUnit() < pushChance else { return nil }
 
     let runScore = getRating(runner, path: "athleticism.burst") * 0.38
