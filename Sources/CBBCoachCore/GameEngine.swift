@@ -518,12 +518,17 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 var tookCharge = false
                 if !passIntercepted {
                 if play.isDrive {
-                    let defenderStanding = getBaseRating(shotDefender, path: "defense.defensiveControl") * 0.5
-                        + getBaseRating(shotDefender, path: "defense.offballDefense") * 0.25
-                        + getBaseRating(shotDefender, path: "skills.hustle") * 0.25
-                    let shooterControl = getBaseRating(shooter, path: "skills.ballHandling") * 0.5
-                        + getBaseRating(shooter, path: "skills.shotIQ") * 0.5
-                    let chargeChance = clamp(0.012 + (defenderStanding - shooterControl) / 1400, min: 0.005, max: 0.04)
+                    let chargeInteraction = resolveInteractionWithTrace(
+                        stored: &stored,
+                        label: "charge_call",
+                        offensePlayer: shooter,
+                        defensePlayer: shotDefender,
+                        offenseRatings: ["skills.ballHandling", "skills.shotIQ", "athleticism.burst"],
+                        defenseRatings: ["defense.defensiveControl", "defense.offballDefense", "skills.hustle"],
+                        random: &random
+                    )
+                    let chargeDefenseControl = 1 - logistic(chargeInteraction.edge)
+                    let chargeChance = clamp(0.004 + chargeDefenseControl * 0.043, min: 0.004, max: 0.045)
                     if random.nextUnit() < chargeChance {
                         addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: play.shooterLineupIndex) { line in
                             line.fouls += 1
@@ -580,11 +585,17 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 }
 
                 if !made && isRimShot(shotType) {
-                    let blockChance = clamp(
-                        0.025 + (getBaseRating(shotDefender, path: "defense.shotBlocking") - 50) / 260,
-                        min: 0.01,
-                        max: 0.22
+                    let blockInteraction = resolveInteractionWithTrace(
+                        stored: &stored,
+                        label: "rim_block_attempt",
+                        offensePlayer: shooter,
+                        defensePlayer: shotDefender,
+                        offenseRatings: ["shooting.layups", "shooting.closeShot", "athleticism.vertical", "skills.hands"],
+                        defenseRatings: ["defense.shotBlocking", "defense.shotContest", "athleticism.vertical", "athleticism.strength"],
+                        random: &random
                     )
+                    let blockDefenseControl = 1 - logistic(blockInteraction.edge)
+                    let blockChance = clamp(0.01 + blockDefenseControl * 0.22, min: 0.01, max: 0.23)
                     if random.nextUnit() < blockChance {
                         addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: play.defenderLineupIndex) { $0.blocks += 1 }
                     }
@@ -617,7 +628,17 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                         addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: assistIdx) { $0.assists += 1 }
                     }
 
-                    let andOneChance = clamp(0.05 + max(0, -shotInteraction.edge) * 0.04 + play.foulBonus, min: 0.02, max: 0.18)
+                    let andOneInteraction = resolveInteractionWithTrace(
+                        stored: &stored,
+                        label: "and_one_contact",
+                        offensePlayer: shooter,
+                        defensePlayer: shotDefender,
+                        offenseRatings: ["shooting.drawFoul", "athleticism.strength", "athleticism.vertical", "skills.ballHandling"],
+                        defenseRatings: ["defense.shotContest", "defense.defensiveControl", "skills.hustle"],
+                        random: &random
+                    )
+                    let andOneDefenseControl = 1 - logistic(andOneInteraction.edge)
+                    let andOneChance = clamp(0.018 + andOneDefenseControl * 0.15 + play.foulBonus * 0.6, min: 0.02, max: 0.2)
                     if random.nextUnit() < andOneChance {
                         registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: play.defenderLineupIndex, shooting: true)
                         let ftMade = random.nextUnit() < clamp(getBaseRating(shooter, path: "shooting.freeThrows") / 120, min: 0.45, max: 0.92) ? 1 : 0
@@ -634,7 +655,17 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                     }
                     eventType = "made_shot"
                 } else {
-                    let shootingFoulChance = clamp(0.08 + max(0, -shotInteraction.edge) * 0.08 + play.foulBonus, min: 0.04, max: 0.28)
+                    let shootingFoulInteraction = resolveInteractionWithTrace(
+                        stored: &stored,
+                        label: "shooting_foul_contact",
+                        offensePlayer: shooter,
+                        defensePlayer: shotDefender,
+                        offenseRatings: ["shooting.drawFoul", "athleticism.burst", "skills.ballHandling", "skills.shotIQ"],
+                        defenseRatings: ["defense.shotContest", "defense.defensiveControl", "defense.lateralQuickness", "skills.hustle"],
+                        random: &random
+                    )
+                    let foulDefenseControl = 1 - logistic(shootingFoulInteraction.edge)
+                    let shootingFoulChance = clamp(0.035 + foulDefenseControl * 0.24 + play.foulBonus * 0.7, min: 0.04, max: 0.32)
                     if random.nextUnit() < shootingFoulChance {
                         registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: play.defenderLineupIndex, shooting: true)
                         let ftAttempts = isThree ? 3 : 2
