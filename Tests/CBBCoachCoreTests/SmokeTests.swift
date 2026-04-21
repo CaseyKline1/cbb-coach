@@ -191,10 +191,17 @@ func conferenceTournamentsFollowRegularSeason() throws {
     autoFillUserNonConferenceOpponents(&league)
     generateSeasonSchedule(&league)
 
-    _ = advanceToNextUserGame(&league)
+    var safetyCounter = 0
+    while safetyCounter < 50 {
+        safetyCounter += 1
+        let summary = advanceToNextUserGame(&league)
+        if summary?.done == true {
+            break
+        }
+    }
 
-    let userSchedule = getUserSchedule(league)
-    let tournamentGames = userSchedule.filter { $0.type == "conference_tournament" }
+    let completed = getCompletedLeagueGames(league)
+    let tournamentGames = completed.filter { $0.type == "conference_tournament" }
     #expect(!tournamentGames.isEmpty)
 }
 
