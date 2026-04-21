@@ -25,6 +25,8 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
 - Converted foul triggers to interaction-driven gates:
   - `non_shooting_foul_pressure`
   - `technical_temper`
+- Converted possession action gate to interaction-driven contest:
+  - `possession_advantage`
 
 ## Current interaction backbone (already in place)
 - Core interaction function: `resolveInteraction(...)`
@@ -35,13 +37,6 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
   - Fast-break finish contest
 
 ## Remaining non-interaction areas (priority order)
-
-### 1) Action attempt gate (`willAttemptAction`)
-Current possession-level shot/action attempt is formula based.
-
-Recommended approach:
-- Add `possession_advantage` interaction between ball-handler and primary defense shell.
-- Blend with shot clock pressure so late-clock force still works.
 
 ## Guardrails for remaining work
 - Keep existing event/stat outputs stable (`eventType`, possession switching, stat increments).
@@ -58,4 +53,5 @@ Recommended approach:
   - play-by-play still coherent
 
 ## Suggested next implementation sequence
-1. Convert possession action gate last (hardest to tune globally).
+1. Calibration and balancing pass for event rates (TO, foul, transition, shot mix) now that all major gates are interaction-driven.
+2. Expand QA trace tooling/reporting to summarize interaction label distributions by game/season.

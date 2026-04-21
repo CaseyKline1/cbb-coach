@@ -381,13 +381,23 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
             max: 1
         )
         let paceBias = paceShotBias(for: stored.teams[offenseTeamId].team.pace)
-        let shotIQ = getBaseRating(ballHandler, path: "skills.shotIQ")
+        let possessionInteraction = resolveInteractionWithTrace(
+            stored: &stored,
+            label: "possession_advantage",
+            offensePlayer: ballHandler,
+            defensePlayer: primaryDefender,
+            offenseRatings: ["skills.ballHandling", "skills.shotIQ", "skills.passingIQ", "tendencies.shootVsPass"],
+            defenseRatings: ["defense.perimeterDefense", "defense.lateralQuickness", "defense.offballDefense", "defense.defensiveControl"],
+            random: &random
+        )
+        let possessionControl = logistic(possessionInteraction.edge)
         let shooterTendency = getBaseRating(ballHandler, path: "tendencies.shootVsPass")
+        let intentBias = clamp((shooterTendency - 55) / 280, min: -0.14, max: 0.16)
         let attemptShotChance = clamp(
-            0.08
-                + Foundation.pow(shotClockPressure, 1.4) * 0.56
-                + (shotIQ - 55) / 320
-                + (shooterTendency - 55) / 320
+            0.06
+                + Foundation.pow(shotClockPressure, 1.35) * 0.5
+                + (possessionControl - 0.5) * 0.34
+                + intentBias
                 + paceBias,
             min: 0.06,
             max: 0.85
