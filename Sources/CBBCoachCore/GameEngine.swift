@@ -3259,42 +3259,71 @@ private func maybeResolvePress(
 ) -> (event: String, switchedPossession: Bool, points: Int)? {
     let pressChance = shouldApplyPress(stored: stored, offenseTeamId: offenseTeamId, defenseTeamId: defenseTeamId)
     guard pressChance > 0 else { return nil }
-    guard random.nextUnit() < pressChance else { return nil }
 
     let offenseLineup = stored.teams[offenseTeamId].activeLineup
     let defenseLineup = stored.teams[defenseTeamId].activeLineup
     guard !offenseLineup.isEmpty, !defenseLineup.isEmpty else { return nil }
 
-    // Pick a "receiver" (likely the team's best ball-handler) and two trap defenders.
+    // Pick a "receiver" (likely the team's best ball-handler) and trap defenders.
     let receiverIdx = pickLineupIndexForBallHandler(lineup: offenseLineup, random: &random)
     let receiver = offenseLineup[receiverIdx]
 
-    // Press break skill of the receiver and team passing support.
-    let breakSkill = getRating(receiver, path: "skills.ballHandling") * 0.45
-        + getRating(receiver, path: "skills.ballSafety") * 0.25
-        + getRating(receiver, path: "skills.passingIQ") * 0.2
-        + getRating(receiver, path: "athleticism.burst") * 0.1
-    let teamPressBreak = stored.teams[offenseTeamId].team.tendencies.pressBreakPass / 50.0
+    var trapCandidates: [(Int, Double)] = []
+    trapCandidates.reserveCapacity(defenseLineup.count)
+    for (idx, defender) in defenseLineup.enumerated() {
+        let trapScore = getRating(defender, path: "defense.steals") * 0.42
+            + getRating(defender, path: "skills.hands") * 0.24
+            + getRating(defender, path: "defense.lateralQuickness") * 0.2
+            + getRating(defender, path: "defense.passPerception") * 0.14
+        trapCandidates.append((idx, trapScore))
+    }
+    trapCandidates.sort { $0.1 > $1.1 }
+    let leadTrapIdx = trapCandidates.first?.0 ?? 0
+    let supportTrapIdx = trapCandidates.count > 1 ? trapCandidates[1].0 : leadTrapIdx
+    let leadTrap = defenseLineup[leadTrapIdx]
 
-    // Average of top two trap defenders' steal/hands.
-    let defenderScores = defenseLineup.map { defender in
-        getRating(defender, path: "defense.steals") * 0.45
-            + getRating(defender, path: "skills.hands") * 0.25
-            + getRating(defender, path: "defense.lateralQuickness") * 0.3
-    }.sorted(by: >)
-    let trapPressure = defenderScores.prefix(2).reduce(0, +) / 2
+    let setupInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "press_setup",
+        offensePlayer: receiver,
+        defensePlayer: leadTrap,
+        offenseRatings: ["skills.ballHandling", "skills.ballSafety", "skills.passingIQ", "athleticism.burst"],
+        defenseRatings: ["defense.offballDefense", "defense.lateralQuickness", "defense.defensiveControl"],
+        random: &random
+    )
+    let setupDefenseControl = 1 - logistic(setupInteraction.edge)
+    let trapTriggerChance = clamp(pressChance * 0.42 + setupDefenseControl * 0.5, min: 0.05, max: 0.9)
+    guard random.nextUnit() < trapTriggerChance else { return nil }
 
-    let edge = (breakSkill * teamPressBreak - trapPressure) / 100
-
-    let stealChance = clamp(0.09 - edge * 0.25, min: 0.02, max: 0.22)
+    let trapInteraction = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "trap_ball_security",
+        offensePlayer: receiver,
+        defensePlayer: leadTrap,
+        offenseRatings: ["skills.ballHandling", "skills.ballSafety", "skills.hands", "skills.passingIQ"],
+        defenseRatings: ["defense.steals", "skills.hands", "defense.passPerception", "defense.lateralQuickness"],
+        random: &random
+    )
+    let trapDefenseControl = 1 - logistic(trapInteraction.edge)
+    let supportPressure = defenseLineup[supportTrapIdx]
+    let supportBoost = clamp(
+        (
+            getRating(supportPressure, path: "defense.steals") * 0.45
+                + getRating(supportPressure, path: "skills.hands") * 0.3
+                + getRating(supportPressure, path: "defense.passPerception") * 0.25
+        ) / 100,
+        min: 0.2,
+        max: 0.95
+    )
+    let stealChance = clamp(0.03 + trapDefenseControl * 0.32 + supportBoost * 0.08, min: 0.02, max: 0.28)
     if random.nextUnit() < stealChance {
-        // Trap steal.
-        var bestDefIdx = 0
-        var bestScore = -1.0
-        for (idx, d) in defenseLineup.enumerated() {
-            let s = getRating(d, path: "defense.steals") + getRating(d, path: "skills.hands") * 0.5
-            if s > bestScore { bestScore = s; bestDefIdx = idx }
+        let stealerPool = [leadTrapIdx, supportTrapIdx]
+        let stealerWeights = stealerPool.map { idx in
+            getRating(defenseLineup[idx], path: "defense.steals") * 0.58
+                + getRating(defenseLineup[idx], path: "skills.hands") * 0.42
         }
+        let stealPick = weightedChoiceIndex(weights: stealerWeights, random: &random)
+        let bestDefIdx = stealerPool[stealPick]
         addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: receiverIdx) { $0.turnovers += 1 }
         addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: bestDefIdx) { $0.steals += 1 }
         addTeamExtra(stored: &stored, teamId: offenseTeamId, key: "turnovers", amount: 1)
@@ -3302,9 +3331,22 @@ private func maybeResolvePress(
         return (event: "turnover", switchedPossession: true, points: 0)
     }
 
-    // Survived the press cleanly → possible transition for offense.
+    let breakAdvantage = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "break_advantage",
+        offensePlayer: receiver,
+        defensePlayer: leadTrap,
+        offenseRatings: ["athleticism.burst", "athleticism.speed", "skills.passingVision", "skills.ballHandling"],
+        defenseRatings: ["defense.lateralQuickness", "defense.offballDefense", "defense.passPerception"],
+        random: &random
+    )
     let attackAfterBreak = stored.teams[offenseTeamId].team.tendencies.pressBreakAttack / 50.0
-    if random.nextUnit() < clamp(0.25 + (attackAfterBreak - 1) * 0.3 + edge * 0.2, min: 0.1, max: 0.7) {
+    let breakChance = clamp(
+        0.12 + logistic(breakAdvantage.edge) * 0.48 + (attackAfterBreak - 1) * 0.15,
+        min: 0.08,
+        max: 0.75
+    )
+    if random.nextUnit() < breakChance {
         stored.pendingTransition = NativeGameStateStore.PendingTransition(source: "press_break")
     }
     return nil  // Let the normal possession play out.

@@ -18,6 +18,10 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
   - `post_up_advantage`
   - `pick_pop_read`, `pop_destination`
   - `pass_around_creation`
+- Converted `maybeResolvePress` to interaction-driven chain:
+  - `press_setup`
+  - `trap_ball_security`
+  - `break_advantage`
 
 ## Current interaction backbone (already in place)
 - Core interaction function: `resolveInteraction(...)`
@@ -29,21 +33,7 @@ Finish migrating `GameEngine` so outcomes are decided by explicit player-vs-play
 
 ## Remaining non-interaction areas (priority order)
 
-### 1) Press subsystem (`maybeResolvePress`)
-Press currently uses derived chances from aggregate formulas.
-
-Targets:
-- Trigger probability
-- Trap steal chance
-- Attack-after-break trigger
-
-Recommended approach:
-- Model as chained interactions:
-  - `press_setup` (team context can influence via players on floor)
-  - `trap_ball_security` (receiver vs top trap defenders)
-  - `break_advantage` (decision to attack)
-
-### 2) Non-shooting/technical foul randomness
+### 1) Non-shooting/technical foul randomness
 `maybeCallTechnicalFoul` and `maybeCallNonShootingFoul` contain global random gates.
 
 Recommended approach:
@@ -52,7 +42,7 @@ Recommended approach:
   - fatigue/hustle/defensiveControl interactions
 - Technical fouls can remain partly stochastic but should include frustration proxies (clutch/discipline/foul load).
 
-### 3) Action attempt gate (`willAttemptAction`)
+### 2) Action attempt gate (`willAttemptAction`)
 Current possession-level shot/action attempt is formula based.
 
 Recommended approach:
@@ -74,6 +64,5 @@ Recommended approach:
   - play-by-play still coherent
 
 ## Suggested next implementation sequence
-1. Convert `maybeResolvePress` chain.
-2. Convert foul gates.
-3. Convert possession action gate last (hardest to tune globally).
+1. Convert foul gates.
+2. Convert possession action gate last (hardest to tune globally).
