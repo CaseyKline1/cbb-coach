@@ -3923,14 +3923,15 @@ private func resolvePassInterception(
             random: &random
         )
         let secureEdge = laneInteraction.edge + (receiverWindow - 55) / 100
-        let stealSignal = clamp(1 - logistic(secureEdge), min: 0.03, max: 0.9)
-        let laneBoost = clamp((laneThreat - 60) / 180, min: -0.06, max: 0.12)
-        let stealWeight = max(0.1, (stealSignal + laneBoost) * 30)
+        // Keep lane-jumpers impactful, but avoid compounding 3 defenders into near-certain steals.
+        let stealSignal = clamp((1 - logistic(secureEdge)) * 0.55, min: 0.01, max: 0.5)
+        let laneBoost = clamp((laneThreat - 60) / 280, min: -0.04, max: 0.07)
+        let stealWeight = max(0.05, (stealSignal + laneBoost) * 10)
         weights.append(stealWeight)
         defenderIndices.append(idx)
         stealTotal += stealWeight
     }
-    let safePassWeight = max(1.0, 42 - stealTotal)
+    let safePassWeight = max(1.0, 80 - stealTotal * 0.6)
     let pick = weightedChoiceIndex(weights: [safePassWeight] + weights, random: &random)
     if pick == 0 {
         return nil
