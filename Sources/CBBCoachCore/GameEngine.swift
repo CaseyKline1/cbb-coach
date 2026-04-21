@@ -77,6 +77,8 @@ public struct QAInteractionTrace: Codable, Equatable, Sendable {
     public var defensePlayer: String
     public var offenseRatings: [String]
     public var defenseRatings: [String]
+    public var offenseRatingValues: [String: Double]
+    public var defenseRatingValues: [String: Double]
     public var offenseScore: Double
     public var defenseScore: Double
     public var edge: Double
@@ -331,6 +333,8 @@ private func resolveInteractionWithTrace(
             defensePlayer: defensePlayer.bio.name,
             offenseRatings: offenseRatings,
             defenseRatings: defenseRatings,
+            offenseRatingValues: Dictionary(uniqueKeysWithValues: offenseRatings.map { ($0, getRating(offensePlayer, path: $0)) }),
+            defenseRatingValues: Dictionary(uniqueKeysWithValues: defenseRatings.map { ($0, getRating(defensePlayer, path: $0)) }),
             offenseScore: result.offenseScore,
             defenseScore: result.defenseScore,
             edge: result.edge,
@@ -639,50 +643,50 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                         switchedPossession = true
                     } else {
                         // Loose-ball foul: rare, called on whichever side didn't secure the rebound.
-	                        let looseBallFoulChance = 0.018
-	                        if random.nextUnit() < looseBallFoulChance {
-	                            // Call it on a likely nearby defender in the rebound zone (they were boxing out); offense keeps ball.
-	                            let zone = reboundZoneWithShortBias(
-	                                initialZone: reboundZone(for: shotType, spot: play.spot),
-	                                shotType: shotType,
-	                                random: &random
-	                            )
-	                            let foulerIdx = pickLikelyReboundParticipantIndex(
-	                                lineup: stored.teams[defenseTeamId].activeLineup,
-	                                offensive: false,
-	                                zone: zone,
-	                                random: &random
-	                            )
-	                            registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: foulerIdx, shooting: false)
-	                            eventType = "loose_ball_foul"
-	                            switchedPossession = false
-	                        } else {
-	                            let rebound = resolveReboundOutcome(
-	                                offenseLineup: stored.teams[offenseTeamId].activeLineup,
-	                                defenseLineup: stored.teams[defenseTeamId].activeLineup,
-	                                shotType: shotType,
-	                                spot: play.spot,
-	                                offensePositioning: 1,
-	                                defensePositioning: 1,
-	                                random: &random
-	                            )
-	                            if rebound.offensive {
-	                                addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: rebound.lineupIndex) { line in
-	                                line.rebounds += 1
-	                                line.offensiveRebounds += 1
-	                                }
-	                                switchedPossession = false
-	                            } else {
-	                                addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: rebound.lineupIndex) { line in
-	                                line.rebounds += 1
-	                                line.defensiveRebounds += 1
-	                                }
-	                                switchedPossession = true
-	                                stored.pendingTransition = NativeGameStateStore.PendingTransition(source: "def_rebound")
-	                            }
-	                            eventType = "missed_shot"
-	                        } // close: loose-ball else
-	                    }
+                        let looseBallFoulChance = 0.018
+                        if random.nextUnit() < looseBallFoulChance {
+                            // Call it on a likely nearby defender in the rebound zone (they were boxing out); offense keeps ball.
+                            let zone = reboundZoneWithShortBias(
+                                initialZone: reboundZone(for: shotType, spot: play.spot),
+                                shotType: shotType,
+                                random: &random
+                            )
+                            let foulerIdx = pickLikelyReboundParticipantIndex(
+                                lineup: stored.teams[defenseTeamId].activeLineup,
+                                offensive: false,
+                                zone: zone,
+                                random: &random
+                            )
+                            registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: foulerIdx, shooting: false)
+                            eventType = "loose_ball_foul"
+                            switchedPossession = false
+                        } else {
+                            let rebound = resolveReboundOutcome(
+                                offenseLineup: stored.teams[offenseTeamId].activeLineup,
+                                defenseLineup: stored.teams[defenseTeamId].activeLineup,
+                                shotType: shotType,
+                                spot: play.spot,
+                                offensePositioning: 1,
+                                defensePositioning: 1,
+                                random: &random
+                            )
+                            if rebound.offensive {
+                                addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: rebound.lineupIndex) { line in
+                                    line.rebounds += 1
+                                    line.offensiveRebounds += 1
+                                }
+                                switchedPossession = false
+                            } else {
+                                addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: rebound.lineupIndex) { line in
+                                    line.rebounds += 1
+                                    line.defensiveRebounds += 1
+                                }
+                                switchedPossession = true
+                                stored.pendingTransition = NativeGameStateStore.PendingTransition(source: "def_rebound")
+                            }
+                            eventType = "missed_shot"
+                        } // close: loose-ball else
+                    }
 	                }
                 } // close: if !tookCharge
                 } // close: if !passIntercepted
@@ -1513,7 +1517,6 @@ private func appendPlayerStatDeltaRecords(
         )
     }
 
-    appendIfChanged("minutes", before.minutes, after.minutes)
     appendIfChanged("points", Double(before.points), Double(after.points))
     appendIfChanged("fgMade", Double(before.fgMade), Double(after.fgMade))
     appendIfChanged("fgAttempts", Double(before.fgAttempts), Double(after.fgAttempts))
@@ -1530,7 +1533,6 @@ private func appendPlayerStatDeltaRecords(
     appendIfChanged("turnovers", Double(before.turnovers), Double(after.turnovers))
     appendIfChanged("fouls", Double(before.fouls), Double(after.fouls))
     appendIfChanged("plusMinus", Double(before.plusMinus ?? 0), Double(after.plusMinus ?? 0))
-    appendIfChanged("energy", before.energy ?? 0, after.energy ?? 0)
 }
 
 private func eventDescription(eventType: String, offenseTeam: String, defenseTeam: String, lineup: [Player], playerIndex: Int) -> String? {
