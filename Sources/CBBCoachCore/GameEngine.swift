@@ -133,7 +133,9 @@ private let mobilityInteractionRatings: Set<String> = [
 ]
 
 private let clutchRatingImpact = 0.08
-private let interactionVarianceJitter = 0.14
+private let interactionVarianceJitter = 0.17
+private let ballHandlerShareTarget = 0.40
+private let ballHandlerWarmupActions = 8
 
 private enum BlowoutRotationMode {
     case none
@@ -149,6 +151,8 @@ private struct NativeGameStateStore {
         var activeLineupBoxIndices: [Int]
         var boxPlayers: [PlayerBoxScore]
         var teamExtras: [String: Int]
+        var initiatedActionCount: Int
+        var initiatedActionCountByBoxIndex: [Int: Int]
     }
 
     struct PendingTransition: Sendable {
@@ -280,7 +284,9 @@ private struct NativeGameStateStore {
                 "turnovers": 0,
                 "fastBreakPoints": 0,
                 "pointsInPaint": 0,
-            ]
+            ],
+            initiatedActionCount: 0,
+            initiatedActionCountByBoxIndex: [:]
         )
     }
 }
@@ -405,8 +411,12 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
 
         let ballHandlerIdx = pickLineupIndexForBallHandler(
             lineup: stored.teams[offenseTeamId].activeLineup,
+            lineupBoxIndices: stored.teams[offenseTeamId].activeLineupBoxIndices,
+            initiatedActionCountByBoxIndex: stored.teams[offenseTeamId].initiatedActionCountByBoxIndex,
+            totalInitiatedActions: stored.teams[offenseTeamId].initiatedActionCount,
             random: &random
         )
+        recordActionInitiator(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx)
         let defenderIdx = min(ballHandlerIdx, stored.teams[defenseTeamId].activeLineup.count - 1)
         let ballHandler = stored.teams[offenseTeamId].activeLineup[ballHandlerIdx]
         let primaryDefender = stored.teams[defenseTeamId].activeLineup[defenderIdx]
@@ -514,6 +524,7 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                     stored: &stored,
                     offenseLineup: stored.teams[offenseTeamId].activeLineup,
                     defenseLineup: stored.teams[defenseTeamId].activeLineup,
+                    offenseTeamId: offenseTeamId,
                     ballHandlerIdx: ballHandlerIdx,
                     defenderIdx: defenderIdx,
                     team: stored.teams[offenseTeamId].team,
@@ -1003,10 +1014,13 @@ private func syncPossessionRoles(stored: inout NativeGameStateStore.StoredState)
 
 private func pickLineupIndexForBallHandler(
     lineup: [Player],
+    lineupBoxIndices: [Int],
+    initiatedActionCountByBoxIndex: [Int: Int],
+    totalInitiatedActions: Int,
     random: inout SeededRandom
 ) -> Int {
     guard !lineup.isEmpty else { return 0 }
-    let weights = lineup.enumerated().map { _, player -> Double in
+    let weights = lineup.enumerated().map { idx, player -> Double in
         let base = getBaseRating(player, path: "skills.ballHandling") * 0.33
             + getBaseRating(player, path: "skills.passingVision") * 0.2
             + getBaseRating(player, path: "skills.passingIQ") * 0.15
@@ -1034,7 +1048,16 @@ private func pickLineupIndexForBallHandler(
         let softenedSkill = min(skillWeighted, 95) + max(0, skillWeighted - 95) * 0.35
         let compressed = Foundation.pow(softenedSkill, 0.58)
         let equalTouchFloor = 34.0
-        return max(1, compressed + equalTouchFloor)
+        let boxIndex = idx < lineupBoxIndices.count ? lineupBoxIndices[idx] : idx
+        let usageMultiplier = ballHandlerUsageMultiplier(
+            boxIndex: boxIndex,
+            lineupCount: lineup.count,
+            initiatedActionCountByBoxIndex: initiatedActionCountByBoxIndex,
+            totalInitiatedActions: totalInitiatedActions,
+            shareTarget: ballHandlerShareTarget
+        )
+        let selectionVariance = 0.92 + random.nextUnit() * 0.16
+        return max(1, (compressed + equalTouchFloor) * usageMultiplier * selectionVariance)
     }
     return weightedChoiceIndex(weights: weights, random: &random)
 }
@@ -1056,10 +1079,13 @@ private func isFourFiveLike(_ player: Player) -> Bool {
 
 private func pickLineupIndexForPickActionBallHandler(
     lineup: [Player],
+    lineupBoxIndices: [Int],
+    initiatedActionCountByBoxIndex: [Int: Int],
+    totalInitiatedActions: Int,
     random: inout SeededRandom
 ) -> Int {
     guard !lineup.isEmpty else { return 0 }
-    let weights = lineup.enumerated().map { _, player -> Double in
+    let weights = lineup.enumerated().map { idx, player -> Double in
         let base = getBaseRating(player, path: "skills.ballHandling") * 0.34
             + getBaseRating(player, path: "skills.passingVision") * 0.16
             + getBaseRating(player, path: "skills.passingIQ") * 0.14
@@ -1087,9 +1113,51 @@ private func pickLineupIndexForPickActionBallHandler(
         let softenedSkill = min(skillWeighted, 95) + max(0, skillWeighted - 95) * 0.38
         let compressed = Foundation.pow(softenedSkill, 0.56)
         let equalTouchFloor = 36.0
-        return max(1, compressed + equalTouchFloor)
+        let boxIndex = idx < lineupBoxIndices.count ? lineupBoxIndices[idx] : idx
+        let usageMultiplier = ballHandlerUsageMultiplier(
+            boxIndex: boxIndex,
+            lineupCount: lineup.count,
+            initiatedActionCountByBoxIndex: initiatedActionCountByBoxIndex,
+            totalInitiatedActions: totalInitiatedActions,
+            shareTarget: 0.38
+        )
+        let selectionVariance = 0.9 + random.nextUnit() * 0.2
+        return max(1, (compressed + equalTouchFloor) * usageMultiplier * selectionVariance)
     }
     return weightedChoiceIndex(weights: weights, random: &random)
+}
+
+private func ballHandlerUsageMultiplier(
+    boxIndex: Int,
+    lineupCount: Int,
+    initiatedActionCountByBoxIndex: [Int: Int],
+    totalInitiatedActions: Int,
+    shareTarget: Double
+) -> Double {
+    guard lineupCount > 0, totalInitiatedActions >= ballHandlerWarmupActions else { return 1.0 }
+    let initiatedByPlayer = initiatedActionCountByBoxIndex[boxIndex] ?? 0
+    let share = Double(initiatedByPlayer) / Double(max(1, totalInitiatedActions))
+    let evenShare = 1.0 / Double(lineupCount)
+    let overTarget = max(0, share - shareTarget)
+    let overEven = max(0, share - evenShare)
+    let underEven = max(0, evenShare - share)
+
+    let capPenalty = clamp(1 - overTarget * 9.2, min: 0.05, max: 1)
+    let spreadPenalty = clamp(1 - overEven * 1.45, min: 0.48, max: 1)
+    let underuseBoost = clamp(1 + underEven * 1.55, min: 1, max: 1.42)
+    return capPenalty * spreadPenalty * underuseBoost
+}
+
+private func recordActionInitiator(
+    stored: inout NativeGameStateStore.StoredState,
+    teamId: Int,
+    lineupIndex: Int
+) {
+    guard teamId >= 0, teamId < stored.teams.count else { return }
+    guard lineupIndex >= 0, lineupIndex < stored.teams[teamId].activeLineupBoxIndices.count else { return }
+    let boxIndex = stored.teams[teamId].activeLineupBoxIndices[lineupIndex]
+    stored.teams[teamId].initiatedActionCount += 1
+    stored.teams[teamId].initiatedActionCountByBoxIndex[boxIndex, default: 0] += 1
 }
 
 private func resolveAssistLineupIndex(
@@ -3048,6 +3116,7 @@ private func resolvePlay(
     stored: inout NativeGameStateStore.StoredState,
     offenseLineup: [Player],
     defenseLineup: [Player],
+    offenseTeamId: Int,
     ballHandlerIdx: Int,
     defenderIdx: Int,
     team: Team,
@@ -3067,6 +3136,9 @@ private func resolvePlay(
     if playType == .pickAndRoll || playType == .pickAndPop {
         pickActionBallHandlerIdx = pickLineupIndexForPickActionBallHandler(
             lineup: offenseLineup,
+            lineupBoxIndices: stored.teams[offenseTeamId].activeLineupBoxIndices,
+            initiatedActionCountByBoxIndex: stored.teams[offenseTeamId].initiatedActionCountByBoxIndex,
+            totalInitiatedActions: stored.teams[offenseTeamId].initiatedActionCount,
             random: &random
         )
     } else {
@@ -4390,6 +4462,9 @@ private func maybeResolvePress(
     // Pick a "receiver" (likely the team's best ball-handler) and trap defenders.
     let receiverIdx = pickLineupIndexForBallHandler(
         lineup: offenseLineup,
+        lineupBoxIndices: stored.teams[offenseTeamId].activeLineupBoxIndices,
+        initiatedActionCountByBoxIndex: stored.teams[offenseTeamId].initiatedActionCountByBoxIndex,
+        totalInitiatedActions: stored.teams[offenseTeamId].initiatedActionCount,
         random: &random
     )
     let receiver = offenseLineup[receiverIdx]
@@ -4522,14 +4597,14 @@ private func resolvePassInterception(
         )
         let secureEdge = laneInteraction.edge + (receiverWindow - 55) / 100
         // Keep lane-jumpers impactful, but tune interception rate lower so picks are rarer.
-        let stealSignal = clamp((1 - logistic(secureEdge)) * 0.4, min: 0.008, max: 0.32)
+        let stealSignal = clamp((1 - logistic(secureEdge)) * 0.34, min: 0.006, max: 0.27)
         let laneBoost = clamp((laneThreat - 60) / 320, min: -0.04, max: 0.05)
-        let stealWeight = max(0.025, (stealSignal + laneBoost) * riskScale * 4.6)
+        let stealWeight = max(0.02, (stealSignal + laneBoost) * riskScale * 4.0)
         weights.append(stealWeight)
         defenderIndices.append(idx)
         stealTotal += stealWeight
     }
-    let safePassWeight = max(1.0, (84 - stealTotal * 0.55) * safeScale)
+    let safePassWeight = max(1.2, (90 - stealTotal * 0.5) * safeScale)
     let pick = weightedChoiceIndex(weights: [safePassWeight] + weights, random: &random)
     if pick == 0 {
         return nil

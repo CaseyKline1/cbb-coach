@@ -360,6 +360,53 @@ func fatigueSuppressesExtremeScorerAverages() {
     #expect(maxSingleGame < 72)
 }
 
+@Test("Action initiation share is distributed beyond a single dominant handler")
+func actionInitiationShareStaysBalanced() {
+    func makePlayer(name: String, position: PlayerPosition, handle: Int, pass: Int, shotIQ: Int, burst: Int, drive: Int) -> Player {
+        var p = createPlayer()
+        p.bio.name = name
+        p.bio.position = position
+        p.skills.ballHandling = handle
+        p.skills.passingVision = pass
+        p.skills.passingIQ = pass
+        p.skills.shotIQ = shotIQ
+        p.athleticism.burst = burst
+        p.tendencies.drive = drive
+        p.condition.energy = 100
+        return p
+    }
+
+    var random = SeededRandom(seed: 4242)
+    let star = makePlayer(name: "Primary Guard", position: .pg, handle: 97, pass: 94, shotIQ: 92, burst: 92, drive: 90)
+    let wing1 = makePlayer(name: "Wing 1", position: .sg, handle: 74, pass: 72, shotIQ: 71, burst: 73, drive: 69)
+    let wing2 = makePlayer(name: "Wing 2", position: .sf, handle: 70, pass: 69, shotIQ: 70, burst: 71, drive: 68)
+    let big1 = makePlayer(name: "Big 1", position: .pf, handle: 62, pass: 63, shotIQ: 67, burst: 65, drive: 58)
+    let big2 = makePlayer(name: "Big 2", position: .c, handle: 58, pass: 60, shotIQ: 66, burst: 61, drive: 54)
+
+    let opp1 = makePlayer(name: "Opp 1", position: .pg, handle: 72, pass: 71, shotIQ: 70, burst: 72, drive: 70)
+    let opp2 = makePlayer(name: "Opp 2", position: .sg, handle: 71, pass: 70, shotIQ: 69, burst: 71, drive: 69)
+    let opp3 = makePlayer(name: "Opp 3", position: .sf, handle: 70, pass: 69, shotIQ: 68, burst: 70, drive: 68)
+    let opp4 = makePlayer(name: "Opp 4", position: .pf, handle: 64, pass: 64, shotIQ: 67, burst: 66, drive: 60)
+    let opp5 = makePlayer(name: "Opp 5", position: .c, handle: 60, pass: 61, shotIQ: 66, burst: 62, drive: 56)
+
+    let home = createTeam(options: CreateTeamOptions(name: "Star U", players: [star, wing1, wing2, big1, big2]), random: &random)
+    let away = createTeam(options: CreateTeamOptions(name: "Balanced State", players: [opp1, opp2, opp3, opp4, opp5]), random: &random)
+    let qa = simulateGameWithQA(homeTeam: home, awayTeam: away, random: &random)
+
+    let homeInitiators = qa.actions
+        .filter { $0.offenseTeam == "Star U" }
+        .compactMap { action in
+            action.interactions.first(where: { $0.label == "possession_advantage" })?.offensePlayer
+        }
+
+    let total = homeInitiators.count
+    #expect(total > 30)
+    let starInitiations = homeInitiators.filter { $0 == "Primary Guard" }.count
+    let starShare = Double(starInitiations) / Double(max(1, total))
+
+    #expect(starShare <= 0.42)
+}
+
 @Test("User roster summary includes full player rating payload")
 func userRosterIncludesFullAttributeSet() throws {
     let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "roster-attributes"))
