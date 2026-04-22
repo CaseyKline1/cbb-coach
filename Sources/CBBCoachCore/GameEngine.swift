@@ -1021,17 +1021,18 @@ private func pickLineupIndexForBallHandler(
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
-            positionMultiplier = 1.04
-        case .sg:
             positionMultiplier = 1.02
+        case .sg:
+            positionMultiplier = 1.01
         case .sf, .wing, .f:
             positionMultiplier = 1.0
         case .pf, .c, .big:
-            positionMultiplier = 0.98
+            positionMultiplier = 0.99
         }
         let skillWeighted = max(1, base * positionMultiplier * fatigueTax)
-        let compressed = Foundation.pow(skillWeighted, 0.7)
-        let equalTouchFloor = 22.0
+        let softenedSkill = min(skillWeighted, 95) + max(0, skillWeighted - 95) * 0.35
+        let compressed = Foundation.pow(softenedSkill, 0.58)
+        let equalTouchFloor = 34.0
         return max(1, compressed + equalTouchFloor)
     }
     return weightedChoiceIndex(weights: weights, random: &random)
@@ -1073,17 +1074,18 @@ private func pickLineupIndexForPickActionBallHandler(
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
-            positionMultiplier = 1.08
+            positionMultiplier = 1.04
         case .sg:
-            positionMultiplier = 1.03
+            positionMultiplier = 1.02
         case .sf, .wing, .f:
             positionMultiplier = 1.0
         case .pf, .c, .big:
-            positionMultiplier = 0.98
+            positionMultiplier = 0.99
         }
         let skillWeighted = max(1, base * positionMultiplier * fatigueTax)
-        let compressed = Foundation.pow(skillWeighted, 0.68)
-        let equalTouchFloor = 24.0
+        let softenedSkill = min(skillWeighted, 95) + max(0, skillWeighted - 95) * 0.38
+        let compressed = Foundation.pow(softenedSkill, 0.56)
+        let equalTouchFloor = 36.0
         return max(1, compressed + equalTouchFloor)
     }
     return weightedChoiceIndex(weights: weights, random: &random)
