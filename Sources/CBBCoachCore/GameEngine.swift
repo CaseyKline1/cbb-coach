@@ -971,12 +971,21 @@ private func blowoutRotationMode(stored: NativeGameStateStore.StoredState, teamI
     guard stored.currentHalf >= 2 else { return .none }
     let oppId = teamId == 0 ? 1 : 0
     let lead = stored.teams[teamId].score - stored.teams[oppId].score
-    guard lead >= 30 else { return .none }
+    let inFinalTenRegulation = stored.currentHalf == 2 && stored.gameClockRemaining <= 600
+    let inFinalFiveRegulation = stored.currentHalf == 2 && stored.gameClockRemaining <= 300
+    let inOvertime = stored.currentHalf > 2
 
-    // Final 10 minutes of regulation: prioritize deep bench.
-    if (stored.currentHalf == 2 && stored.gameClockRemaining <= 600) || stored.currentHalf > 2 {
+    if lead >= 50 {
         return .deepBench
     }
+    if inFinalFiveRegulation && lead >= 20 {
+        return .deepBench
+    }
+    // Existing deep-bench behavior for 30+ in final 10 and all overtime.
+    if (inFinalTenRegulation && lead >= 30) || (inOvertime && lead >= 30) {
+        return .deepBench
+    }
+    guard lead >= 30 else { return .none }
     return .bench
 }
 
