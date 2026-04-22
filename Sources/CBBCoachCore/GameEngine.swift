@@ -345,6 +345,12 @@ private func resolveInteractionWithTrace(
         random: &random
     )
     guard stored.traceEnabled else { return result }
+    let offenseRatingValues = offenseRatings.reduce(into: [String: Double]()) { values, path in
+        values[path] = getRating(offensePlayer, path: path)
+    }
+    let defenseRatingValues = defenseRatings.reduce(into: [String: Double]()) { values, path in
+        values[path] = getRating(defensePlayer, path: path)
+    }
     stored.currentActionInteractions.append(
         QAInteractionTrace(
             label: label,
@@ -352,8 +358,8 @@ private func resolveInteractionWithTrace(
             defensePlayer: defensePlayer.bio.name,
             offenseRatings: offenseRatings,
             defenseRatings: defenseRatings,
-            offenseRatingValues: Dictionary(uniqueKeysWithValues: offenseRatings.map { ($0, getRating(offensePlayer, path: $0)) }),
-            defenseRatingValues: Dictionary(uniqueKeysWithValues: defenseRatings.map { ($0, getRating(defensePlayer, path: $0)) }),
+            offenseRatingValues: offenseRatingValues,
+            defenseRatingValues: defenseRatingValues,
             offenseScore: result.offenseScore,
             defenseScore: result.defenseScore,
             edge: result.edge,
