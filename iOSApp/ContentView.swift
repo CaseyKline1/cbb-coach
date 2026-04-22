@@ -2778,9 +2778,9 @@ private struct TeamAggregateStats {
         return (Double(ftMade) / Double(ftAttempts)) * 100
     }
     var offensiveReboundPct: Double {
-        let denominator = offensiveRebounds + opponentDefensiveRebounds
-        guard denominator > 0 else { return 0 }
-        return (Double(offensiveRebounds) / Double(denominator)) * 100
+        let missedFieldGoals = max(0, fgAttempts - fgMade)
+        guard missedFieldGoals > 0 else { return 0 }
+        return (Double(offensiveRebounds) / Double(missedFieldGoals)) * 100
     }
 }
 
