@@ -4404,7 +4404,7 @@ private func resolvePassInterception(
         // Keep lane-jumpers impactful, but tune interception rate lower so picks are rarer.
         let stealSignal = clamp((1 - logistic(secureEdge)) * 0.4, min: 0.008, max: 0.32)
         let laneBoost = clamp((laneThreat - 60) / 320, min: -0.04, max: 0.05)
-        let stealWeight = max(0.03, (stealSignal + laneBoost) * riskScale * 5.2)
+        let stealWeight = max(0.025, (stealSignal + laneBoost) * riskScale * 4.6)
         weights.append(stealWeight)
         defenderIndices.append(idx)
         stealTotal += stealWeight
