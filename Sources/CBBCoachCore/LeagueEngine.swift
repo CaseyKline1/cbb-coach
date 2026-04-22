@@ -1961,8 +1961,9 @@ private func buildTeamRoster(teamName: String, prestige: Double, random: inout S
     let positionCycle: [PlayerPosition] = [.pg, .sg, .sf, .pf, .c, .cg, .wing, .f, .big, .pg, .sg, .sf, .pf]
     let yearCycle: [PlayerYear] = [.fr, .so, .jr, .sr]
     let normalizedPrestige = clamp(prestige, min: 0, max: 1)
-    let teamQualityBaseline = Int((52 + normalizedPrestige * 24).rounded())
-    let lowPrestigeLift = Int(((1 - normalizedPrestige) * 4).rounded())
+    let teamQualityBaseline = Int((56 + normalizedPrestige * 14).rounded())
+    let lowPrestigeLift = Int(((1 - normalizedPrestige) * 2).rounded())
+    let teamVariance = random.int(-5, 5)
 
     var usedNames = Set<String>()
     return (0..<13).map { idx in
@@ -1982,11 +1983,11 @@ private func buildTeamRoster(teamName: String, prestige: Double, random: inout S
 
         let tierAdjustment: Int
         switch idx {
-        case 0...2: tierAdjustment = random.int(4, 12)
-        case 3...7: tierAdjustment = random.int(-4, 6)
-        default: tierAdjustment = random.int(-11, 5)
+        case 0...2: tierAdjustment = random.int(2, 14)
+        case 3...7: tierAdjustment = random.int(-6, 8)
+        default: tierAdjustment = random.int(-14, 6)
         }
-        let base = clamp(teamQualityBaseline + lowPrestigeLift + tierAdjustment + random.int(-11, 11), min: 39, max: 93)
+        let base = clamp(teamQualityBaseline + lowPrestigeLift + teamVariance + tierAdjustment + random.int(-14, 14), min: 42, max: 93)
         player.bio.potential = clamp(base + random.int(-7, 15), min: 30, max: 99)
         applyRatings(&player, base: base, random: &random)
 
