@@ -1471,12 +1471,12 @@ private func reboundNearbyWeight(
 ) -> Double {
     let fallbackAffinity = zonePresenceAffinity(player, zone: zone)
     let fallbackProximity = positionProximity(player, zone: zone)
-    let fallback = max(0.12, fallbackAffinity * 0.9 + fallbackProximity * 0.45)
+    let fallback = max(0.2, fallbackAffinity * 0.84 + fallbackProximity * 0.5)
     guard let locationHints, lineupIndex >= 0, lineupIndex < locationHints.count, let spot = locationHints[lineupIndex] else {
         return fallback
     }
     let location = locationProximityToReboundZone(spot: spot, zone: zone)
-    return max(0.12, location * 0.72 + fallback * 0.4)
+    return max(0.2, location * 0.66 + fallback * 0.52)
 }
 
 private func teamReboundCrashPreference(crashBoards: Double, fastBreakBias: Double) -> Double {
@@ -1499,18 +1499,25 @@ private func reboundCrashParticipationWeight(
         }
         return locationProximityToReboundZone(spot: spot, zone: zone)
     }()
+    let roleFactor = clamp(
+        0.76
+            + positionProximity(player, zone: zone) * 0.2
+            + zonePresenceAffinity(player, zone: zone) * 0.16,
+        min: 0.72,
+        max: 1.24
+    )
     if let location {
         // Location-first crash model: players farther from the landing zone gain more from high crash intent.
         let base = 0.68 + location * 0.28
         let distance = clamp(1.35 - location, min: 0, max: 1)
         let crashGain = 0.32 + distance * 0.78
-        return max(0.2, base + crash * crashGain)
+        return max(0.2, (base + crash * crashGain) * roleFactor)
     }
     let mobility = getBaseRating(player, path: "athleticism.burst") * 0.42
         + getBaseRating(player, path: "athleticism.speed") * 0.3
         + getBaseRating(player, path: "skills.hustle") * 0.28
     let mobilityScale = clamp((mobility - 50) / 100, min: -0.18, max: 0.24)
-    return max(0.2, 0.84 + crash * (0.34 + mobilityScale))
+    return max(0.2, (0.84 + crash * (0.34 + mobilityScale)) * roleFactor)
 }
 
 private func reboundCandidateCount(crashPreference: Double) -> Int {
@@ -1625,8 +1632,7 @@ private func selectReboundScrambleParticipants(
         locationHints: defenseLocationHints
     )
 
-    var bestPair: (Int, Int)?
-    var bestEdge = -Double.infinity
+    var pairOptions: [(offenseIdx: Int, defenseIdx: Int, score: Double)] = []
     for offenseIdx in offenseCandidates {
         for defenseIdx in defenseCandidates {
             let interaction = resolveInteractionWithTrace(
@@ -1640,14 +1646,15 @@ private func selectReboundScrambleParticipants(
             )
             let sizeEdge = (heightReboundRating(offenseLineup[offenseIdx]) - heightReboundRating(defenseLineup[defenseIdx])) * 0.011
                 + (wingspanReboundRating(offenseLineup[offenseIdx]) - wingspanReboundRating(defenseLineup[defenseIdx])) * 0.013
-            let adjusted = interaction.edge + sizeEdge
-            if adjusted > bestEdge {
-                bestEdge = adjusted
-                bestPair = (offenseIdx, defenseIdx)
-            }
+            pairOptions.append((offenseIdx, defenseIdx, interaction.edge + sizeEdge))
         }
     }
-    return bestPair ?? (offenseCandidates[0], defenseCandidates[0])
+    guard !pairOptions.isEmpty else { return (offenseCandidates[0], defenseCandidates[0]) }
+    let pairWeights = pairOptions.map { option in
+        Foundation.exp(clamp(option.score * 0.95, min: -2.1, max: 2.1))
+    }
+    let chosen = pairOptions[weightedChoiceIndex(weights: pairWeights, random: &random)]
+    return (chosen.offenseIdx, chosen.defenseIdx)
 }
 
 private func resolveReboundOutcome(
@@ -1694,32 +1701,32 @@ private func resolveReboundOutcome(
         count: reboundCandidateCount(crashPreference: defenseCrashPreference),
         locationHints: defenseLocationHints
     )
-
-    var bestOffenseIdx = offenseCandidates[0]
-    var bestDefenseIdx = defenseCandidates[0]
-    var bestSlipEdge = -Double.infinity
-    for offenseIdx in offenseCandidates {
-        for defenseIdx in defenseCandidates {
-            let boxoutBattle = resolveInteractionWithTrace(
-                stored: &stored,
-                label: "rebound_boxout_battle",
-                offensePlayer: offenseLineup[offenseIdx],
-                defensePlayer: defenseLineup[defenseIdx],
-                offenseRatings: ["rebounding.offensiveRebounding", "skills.hustle", "athleticism.vertical", "athleticism.strength", "skills.hands"],
-                defenseRatings: ["rebounding.boxouts", "rebounding.defensiveRebound", "athleticism.strength", "athleticism.vertical", "defense.defensiveControl"],
-                random: &random
-            )
-            let sizeEdge = (heightReboundRating(offenseLineup[offenseIdx]) - heightReboundRating(defenseLineup[defenseIdx])) * 0.012
-                + (wingspanReboundRating(offenseLineup[offenseIdx]) - wingspanReboundRating(defenseLineup[defenseIdx])) * 0.014
-            let positioningEdge = (offensePositioning - defensePositioning) * 0.18
-            let adjustedSlipEdge = boxoutBattle.edge + sizeEdge + positioningEdge
-            if adjustedSlipEdge > bestSlipEdge {
-                bestSlipEdge = adjustedSlipEdge
-                bestOffenseIdx = offenseIdx
-                bestDefenseIdx = defenseIdx
-            }
-        }
-    }
+    let scramblePair = selectReboundScrambleParticipants(
+        stored: &stored,
+        offenseLineup: offenseLineup,
+        defenseLineup: defenseLineup,
+        zone: zone,
+        offenseCrashPreference: offenseCrashPreference,
+        defenseCrashPreference: defenseCrashPreference,
+        offenseLocationHints: offenseLocationHints,
+        defenseLocationHints: defenseLocationHints,
+        random: &random
+    )
+    let bestOffenseIdx = scramblePair.offenseIdx
+    let bestDefenseIdx = scramblePair.defenseIdx
+    let boxoutBattle = resolveInteractionWithTrace(
+        stored: &stored,
+        label: "rebound_boxout_battle",
+        offensePlayer: offenseLineup[bestOffenseIdx],
+        defensePlayer: defenseLineup[bestDefenseIdx],
+        offenseRatings: ["rebounding.offensiveRebounding", "skills.hustle", "athleticism.vertical", "athleticism.strength", "skills.hands"],
+        defenseRatings: ["rebounding.boxouts", "rebounding.defensiveRebound", "athleticism.strength", "athleticism.vertical", "defense.defensiveControl"],
+        random: &random
+    )
+    let boxoutSizeEdge = (heightReboundRating(offenseLineup[bestOffenseIdx]) - heightReboundRating(defenseLineup[bestDefenseIdx])) * 0.012
+        + (wingspanReboundRating(offenseLineup[bestOffenseIdx]) - wingspanReboundRating(defenseLineup[bestDefenseIdx])) * 0.014
+    let boxoutPositioningEdge = (offensePositioning - defensePositioning) * 0.16
+    let slipEdge = boxoutBattle.edge + boxoutSizeEdge + boxoutPositioningEdge
 
     let gatherBattle = resolveInteractionWithTrace(
         stored: &stored,
@@ -1732,8 +1739,12 @@ private func resolveReboundOutcome(
     )
     let gatherSizeEdge = (heightReboundRating(offenseLineup[bestOffenseIdx]) - heightReboundRating(defenseLineup[bestDefenseIdx])) * 0.012
         + (wingspanReboundRating(offenseLineup[bestOffenseIdx]) - wingspanReboundRating(defenseLineup[bestDefenseIdx])) * 0.015
-    let finalEdge = gatherBattle.edge + gatherSizeEdge + (offensePositioning - defensePositioning) * 0.15 + bestSlipEdge * 0.35
-    if finalEdge >= 0 {
+    let finalEdge = gatherBattle.edge + gatherSizeEdge + (offensePositioning - defensePositioning) * 0.12 + slipEdge * 0.4
+    let crashEdge = (offenseCrashPreference - defenseCrashPreference) * 0.26
+    // Defensive teams convert more misses by default; offense needs a real edge to sustain OREBs.
+    let defensiveAdvantage = 0.84 + clamp((defensePositioning - offensePositioning) * 0.08, min: -0.08, max: 0.12)
+    let offenseCollectProbability = clamp(logistic(finalEdge + crashEdge - defensiveAdvantage), min: 0.08, max: 0.62)
+    if random.nextUnit() < offenseCollectProbability {
         let rebounderIdx = selectReboundCollectorViaInteractions(
             stored: &stored,
             offenseLineup: offenseLineup,
@@ -1786,8 +1797,7 @@ private func selectReboundCollectorViaInteractions(
     let defensePriority = Set(priorityDefenseIndices.filter { $0 >= 0 && $0 < defenseLineup.count })
 
     if offenseCollects {
-        var bestIdx = 0
-        var bestScore = -Double.infinity
+        var collectorScores: [(idx: Int, score: Double)] = []
         for offenseIdx in offenseLineup.indices {
             let nearby = reboundNearbyWeight(offenseLineup[offenseIdx], lineupIndex: offenseIdx, zone: zone, locationHints: offenseLocationHints)
             let crashWeight = reboundCrashParticipationWeight(
@@ -1798,7 +1808,7 @@ private func selectReboundCollectorViaInteractions(
                 locationHints: offenseLocationHints
             )
             let participationBoost = offensePriority.contains(offenseIdx) ? 0.05 : -0.03
-            var candidateBest = -Double.infinity
+            var interactionEdges: [Double] = []
             for defenseIdx in defenseLineup.indices {
                 let interaction = resolveInteractionWithTrace(
                     stored: &stored,
@@ -1809,19 +1819,24 @@ private func selectReboundCollectorViaInteractions(
                     defenseRatings: ["rebounding.defensiveRebound", "rebounding.boxouts", "skills.hands", "skills.hustle", "athleticism.strength"],
                     random: &random
                 )
-                let score = interaction.edge + (nearby - 1) * 0.34 + (crashWeight - 1) * 0.22 + participationBoost
-                candidateBest = max(candidateBest, score)
+                let sizeEdge = (heightReboundRating(offenseLineup[offenseIdx]) - heightReboundRating(defenseLineup[defenseIdx])) * 0.009
+                    + (wingspanReboundRating(offenseLineup[offenseIdx]) - wingspanReboundRating(defenseLineup[defenseIdx])) * 0.01
+                interactionEdges.append(interaction.edge + sizeEdge)
             }
-            if candidateBest > bestScore {
-                bestScore = candidateBest
-                bestIdx = offenseIdx
-            }
+            let matchupMean = average(interactionEdges)
+            let matchupBest = interactionEdges.max() ?? matchupMean
+            let matchupScore = matchupMean * 0.7 + matchupBest * 0.3
+            let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost
+            collectorScores.append((offenseIdx, score))
         }
-        return bestIdx
+        let collectorWeights = collectorScores.map { candidate in
+            let jitter = 0.92 + random.nextUnit() * 0.16
+            return Foundation.exp(clamp(candidate.score * 0.92, min: -2.2, max: 2.2)) * jitter
+        }
+        return collectorScores[weightedChoiceIndex(weights: collectorWeights, random: &random)].idx
     }
 
-    var bestIdx = 0
-    var bestScore = -Double.infinity
+    var collectorScores: [(idx: Int, score: Double)] = []
     for defenseIdx in defenseLineup.indices {
         let nearby = reboundNearbyWeight(defenseLineup[defenseIdx], lineupIndex: defenseIdx, zone: zone, locationHints: defenseLocationHints)
         let crashWeight = reboundCrashParticipationWeight(
@@ -1832,7 +1847,7 @@ private func selectReboundCollectorViaInteractions(
             locationHints: defenseLocationHints
         )
         let participationBoost = defensePriority.contains(defenseIdx) ? 0.05 : -0.03
-        var candidateBest = -Double.infinity
+        var interactionEdges: [Double] = []
         for offenseIdx in offenseLineup.indices {
             let interaction = resolveInteractionWithTrace(
                 stored: &stored,
@@ -1843,15 +1858,21 @@ private func selectReboundCollectorViaInteractions(
                 defenseRatings: ["rebounding.defensiveRebound", "rebounding.boxouts", "skills.hands", "skills.hustle", "athleticism.strength"],
                 random: &random
             )
-            let score = -interaction.edge + (nearby - 1) * 0.34 + (crashWeight - 1) * 0.22 + participationBoost
-            candidateBest = max(candidateBest, score)
+            let sizeEdge = (heightReboundRating(defenseLineup[defenseIdx]) - heightReboundRating(offenseLineup[offenseIdx])) * 0.009
+                + (wingspanReboundRating(defenseLineup[defenseIdx]) - wingspanReboundRating(offenseLineup[offenseIdx])) * 0.01
+            interactionEdges.append(-interaction.edge + sizeEdge)
         }
-        if candidateBest > bestScore {
-            bestScore = candidateBest
-            bestIdx = defenseIdx
-        }
+        let matchupMean = average(interactionEdges)
+        let matchupBest = interactionEdges.max() ?? matchupMean
+        let matchupScore = matchupMean * 0.7 + matchupBest * 0.3
+        let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost
+        collectorScores.append((defenseIdx, score))
     }
-    return bestIdx
+    let collectorWeights = collectorScores.map { candidate in
+        let jitter = 0.92 + random.nextUnit() * 0.16
+        return Foundation.exp(clamp(candidate.score * 0.92, min: -2.2, max: 2.2)) * jitter
+    }
+    return collectorScores[weightedChoiceIndex(weights: collectorWeights, random: &random)].idx
 }
 
 private func weightedRandomIndex(lineup: [Player], random: inout SeededRandom, weight: (Player) -> Double) -> Int {
