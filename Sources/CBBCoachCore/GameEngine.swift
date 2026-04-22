@@ -1405,7 +1405,7 @@ private func reboundNearbyWeight(
         return fallback
     }
     let location = locationProximityToReboundZone(spot: spot, zone: zone)
-    return max(0.12, location * 0.85 + fallback * 0.25)
+    return max(0.12, location * 0.72 + fallback * 0.4)
 }
 
 private func teamReboundCrashPreference(crashBoards: Double, fastBreakBias: Double) -> Double {
@@ -1430,9 +1430,9 @@ private func reboundCrashParticipationWeight(
     }()
     if let location {
         // Location-first crash model: players farther from the landing zone gain more from high crash intent.
-        let base = 0.72 + location * 0.36
-        let distance = clamp(1.28 - location, min: 0, max: 0.9)
-        let crashGain = 0.24 + distance * 0.62
+        let base = 0.68 + location * 0.28
+        let distance = clamp(1.35 - location, min: 0, max: 1)
+        let crashGain = 0.32 + distance * 0.78
         return max(0.2, base + crash * crashGain)
     }
     let mobility = getBaseRating(player, path: "athleticism.burst") * 0.42
