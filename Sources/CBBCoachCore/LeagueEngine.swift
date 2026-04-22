@@ -518,8 +518,8 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
         let isUser = teamRef.id == userTeamRef.id
         let teamPrestige = prestigeForTeam(teamId: teamRef.id, conferenceId: conference.id)
         let teamLastYearResult = lastYearResultForTeam(teamId: teamRef.id, conferenceId: conference.id)
-        var rosterRandom = random
-        let roster = buildTeamRoster(teamName: teamRef.name, prestige: teamPrestige, random: &rosterRandom)
+        // Keep using the shared league RNG so each team's roster draw is unique.
+        let roster = buildTeamRoster(teamName: teamRef.name, prestige: teamPrestige, random: &random)
 
         var createTeamOptions = CreateTeamOptions(name: teamRef.name, players: roster)
         createTeamOptions.formation = random.choose(OffensiveFormation.allCases) ?? .motion

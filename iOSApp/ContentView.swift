@@ -819,7 +819,8 @@ private struct CollegeLeagueHomeView: View {
 
     private func createLeague() {
         do {
-            var options = CreateLeagueOptions(userTeamName: teamName, seed: "ios-league-\(profile.fullName)-\(teamName)")
+            let leagueSeed = "ios-league-\(UUID().uuidString.lowercased())"
+            var options = CreateLeagueOptions(userTeamName: teamName, seed: leagueSeed)
             options.userHeadCoachName = profile.fullName
             options.userHeadCoachSkills = profile.archetype.initialSkills
             options.userHeadCoachAlmaMater = profile.almaMater
