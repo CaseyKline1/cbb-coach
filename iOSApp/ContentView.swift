@@ -668,7 +668,11 @@ private struct CollegeLeagueHomeView: View {
                         }
                     )
                 case .playerStats:
-                    PlayerStatsView(schedule: schedule, userTeamName: summary?.userTeamName ?? teamName)
+                    PlayerStatsView(
+                        schedule: schedule,
+                        userTeamName: summary?.userTeamName ?? teamName,
+                        roster: roster
+                    )
                 case .teamStats:
                     TeamStatsView(
                         games: completedLeagueGames,
@@ -677,7 +681,12 @@ private struct CollegeLeagueHomeView: View {
                         conferenceIdByTeamId: conferenceIdByTeamId
                     )
                 case .statLeaders:
-                    StatLeadersView(games: completedLeagueGames)
+                    StatLeadersView(
+                        games: completedLeagueGames,
+                        schedule: schedule,
+                        userTeamName: summary?.userTeamName ?? teamName,
+                        roster: roster
+                    )
                 case .standings:
                     ConferenceStandingsView(
                         standingsByConference: conferenceStandings,
@@ -2568,6 +2577,7 @@ private struct PlayerStatsRow: Hashable {
 private struct PlayerStatsView: View {
     let schedule: [UserGameSummary]
     let userTeamName: String
+    let roster: [UserRosterPlayerSummary]
     @State private var sortColumn: String = "points"
     @State private var isAscending: Bool = false
 
@@ -2647,7 +2657,26 @@ private struct PlayerStatsView: View {
                 onSort: toggleSort
             ) { row in
                 HStack(spacing: 0) {
-                    AppTableTextCell(text: row.name, width: 170, alignment: .leading)
+                    if let player = playerForRow(named: row.name) {
+                        NavigationLink {
+                            PlayerCardDetailView(
+                                player: player,
+                                schedule: schedule,
+                                userTeamName: userTeamName
+                            )
+                        } label: {
+                            AppTableTextCell(
+                                text: row.name,
+                                width: 170,
+                                alignment: .leading,
+                                font: .caption.monospacedDigit().weight(.semibold),
+                                foreground: AppTheme.accent
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        AppTableTextCell(text: row.name, width: 170, alignment: .leading)
+                    }
                     AppTableTextCell(text: "\(row.games)", width: 42)
                     AppTableTextCell(text: format(row.minutesPerGame), width: 48)
                     AppTableTextCell(text: format(row.pointsPerGame), width: 48)
@@ -2665,6 +2694,10 @@ private struct PlayerStatsView: View {
         .background(AppTheme.background)
         .navigationTitle("Player Stats")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func playerForRow(named playerName: String) -> UserRosterPlayerSummary? {
+        roster.first(where: { $0.name == playerName })
     }
 
     private func toggleSort(_ id: String) {
@@ -3136,6 +3169,9 @@ private struct NationalLeaderStats {
 
 private struct StatLeadersView: View {
     let games: [LeagueGameSummary]
+    let schedule: [UserGameSummary]
+    let userTeamName: String
+    let roster: [UserRosterPlayerSummary]
 
     private enum StatCategory: String, CaseIterable {
         case points = "Points"
@@ -3382,9 +3418,24 @@ private struct StatLeadersView: View {
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.playerName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppTheme.ink)
+                    if let player = playerForEntry(entry) {
+                        NavigationLink {
+                            PlayerCardDetailView(
+                                player: player,
+                                schedule: schedule,
+                                userTeamName: userTeamName
+                            )
+                        } label: {
+                            Text(entry.playerName)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(AppTheme.accent)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(entry.playerName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.ink)
+                    }
                     Text(entry.sub)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -3412,6 +3463,11 @@ private struct StatLeadersView: View {
 
     private func format(_ value: Double) -> String {
         String(format: "%.1f", value)
+    }
+
+    private func playerForEntry(_ entry: LeaderEntry) -> UserRosterPlayerSummary? {
+        guard entry.teamName == userTeamName else { return nil }
+        return roster.first(where: { $0.name == entry.playerName })
     }
 }
 
