@@ -68,6 +68,18 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
     }
 }
 
+public struct TeamRosterSummary: Codable, Equatable, Sendable {
+    public var teamId: String
+    public var teamName: String
+    public var players: [UserRosterPlayerSummary]
+
+    public init(teamId: String, teamName: String, players: [UserRosterPlayerSummary]) {
+        self.teamId = teamId
+        self.teamName = teamName
+        self.players = players
+    }
+}
+
 public struct UserRotationSlot: Codable, Equatable, Sendable, Identifiable {
     public var slot: Int
     public var playerIndex: Int?
@@ -719,8 +731,27 @@ public func getUserRoster(_ league: LeagueState) -> [UserRosterPlayerSummary] {
         return []
     }
 
-    let lineupNames = Set(user.teamModel.lineup.map { $0.bio.name })
-    return user.teamModel.players.enumerated().map { idx, player in
+    let lineupNames = Set(user.teamModel.lineup.map(\.bio.name))
+    return rosterSummaryPlayers(from: user.teamModel, lineupNames: lineupNames)
+}
+
+public func getTeamRosters(_ league: LeagueState) -> [TeamRosterSummary] {
+    guard let state = LeagueStore.get(league.handle) else {
+        return []
+    }
+
+    return state.teams.map { team in
+        let lineupNames = Set(team.teamModel.lineup.map(\.bio.name))
+        return TeamRosterSummary(
+            teamId: team.teamId,
+            teamName: team.teamModel.name,
+            players: rosterSummaryPlayers(from: team.teamModel, lineupNames: lineupNames)
+        )
+    }
+}
+
+private func rosterSummaryPlayers(from team: Team, lineupNames: Set<String>) -> [UserRosterPlayerSummary] {
+    team.players.enumerated().map { idx, player in
         UserRosterPlayerSummary(
             playerIndex: idx,
             name: player.bio.name,

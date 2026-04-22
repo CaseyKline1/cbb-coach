@@ -522,6 +522,7 @@ private struct CollegeLeagueHomeView: View {
     @State private var conferenceNamesById: [String: String] = [:]
     @State private var rankings: LeagueRankings?
     @State private var completedLeagueGames: [LeagueGameSummary] = []
+    @State private var teamRostersByName: [String: [UserRosterPlayerSummary]] = [:]
     @State private var showingSkipAheadOptions = false
     @State private var isSkipAheadInProgress = false
     @State private var skipAheadTitle = ""
@@ -672,7 +673,8 @@ private struct CollegeLeagueHomeView: View {
                         schedule: schedule,
                         games: completedLeagueGames,
                         userTeamName: summary?.userTeamName ?? teamName,
-                        roster: roster
+                        roster: roster,
+                        teamRostersByName: teamRostersByName
                     )
                 case .teamStats:
                     TeamStatsView(
@@ -685,7 +687,8 @@ private struct CollegeLeagueHomeView: View {
                     StatLeadersView(
                         games: completedLeagueGames,
                         userTeamName: summary?.userTeamName ?? teamName,
-                        roster: roster
+                        roster: roster,
+                        teamRostersByName: teamRostersByName
                     )
                 case .standings:
                     ConferenceStandingsView(
@@ -962,6 +965,10 @@ private struct CollegeLeagueHomeView: View {
         conferenceNamesById = standingsData.conferenceNames
         rankings = getRankings(league)
         completedLeagueGames = getCompletedLeagueGames(league)
+        teamRostersByName = Dictionary(
+            getTeamRosters(league).map { ($0.teamName, $0.players) },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 
     private func resultSummaryText(for game: UserGameSummary) -> String {
@@ -999,6 +1006,10 @@ private struct CollegeLeagueHomeView: View {
         rotationSlots = setUserRotation(&currentLeague, slots: updated)
         league = currentLeague
         roster = getUserRoster(currentLeague)
+        teamRostersByName = Dictionary(
+            getTeamRosters(currentLeague).map { ($0.teamName, $0.players) },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 
     private func saveAssistantFocus(assistantIndex: Int, focus: AssistantFocus) {
@@ -2617,6 +2628,7 @@ private struct PlayerStatsView: View {
     let games: [LeagueGameSummary]
     let userTeamName: String
     let roster: [UserRosterPlayerSummary]
+    let teamRostersByName: [String: [UserRosterPlayerSummary]]
     @State private var sortColumn: String = "points"
     @State private var isAscending: Bool = false
 
@@ -2729,6 +2741,9 @@ private struct PlayerStatsView: View {
         if let rosterPlayer = roster.first(where: { $0.name == playerName }) {
             return rosterPlayer
         }
+        if let teamPlayer = rosterForTeam(named: userTeamName)?.first(where: { $0.name == playerName }) {
+            return teamPlayer
+        }
 
         return UserRosterPlayerSummary(
             playerIndex: -1,
@@ -2764,6 +2779,15 @@ private struct PlayerStatsView: View {
             }
         }
         return nil
+    }
+
+    private func rosterForTeam(named teamName: String) -> [UserRosterPlayerSummary]? {
+        if let direct = teamRostersByName[teamName] {
+            return direct
+        }
+        return teamRostersByName.first(where: {
+            $0.key.caseInsensitiveCompare(teamName) == .orderedSame
+        })?.value
     }
 
     private func toggleSort(_ id: String) {
@@ -3237,6 +3261,7 @@ private struct StatLeadersView: View {
     let games: [LeagueGameSummary]
     let userTeamName: String
     let roster: [UserRosterPlayerSummary]
+    let teamRostersByName: [String: [UserRosterPlayerSummary]]
 
     private enum StatCategory: String, CaseIterable {
         case points = "Points"
@@ -3525,6 +3550,10 @@ private struct StatLeadersView: View {
     }
 
     private func playerForEntry(_ entry: LeaderEntry) -> UserRosterPlayerSummary {
+        if let fullProfile = rosterPlayer(for: entry) {
+            return fullProfile
+        }
+
         if entry.teamName == userTeamName,
            let rosterPlayer = roster.first(where: { $0.name == entry.playerName }) {
             return rosterPlayer
@@ -3564,6 +3593,32 @@ private struct StatLeadersView: View {
             }
         }
         return nil
+    }
+
+    private func rosterPlayer(for entry: LeaderEntry) -> UserRosterPlayerSummary? {
+        guard let teamRoster = rosterForTeam(named: entry.teamName) else { return nil }
+        let nameMatches = teamRoster.filter { $0.name == entry.playerName }
+        guard !nameMatches.isEmpty else { return nil }
+
+        if nameMatches.count == 1 {
+            return nameMatches[0]
+        }
+
+        if let inferredPosition = inferredPosition(for: entry),
+           let positionalMatch = nameMatches.first(where: { $0.position == inferredPosition }) {
+            return positionalMatch
+        }
+
+        return nameMatches.first
+    }
+
+    private func rosterForTeam(named teamName: String) -> [UserRosterPlayerSummary]? {
+        if let direct = teamRostersByName[teamName] {
+            return direct
+        }
+        return teamRostersByName.first(where: {
+            $0.key.caseInsensitiveCompare(teamName) == .orderedSame
+        })?.value
     }
 }
 
