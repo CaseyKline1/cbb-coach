@@ -40,6 +40,32 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
     public var overall: Int
     public var isStarter: Bool
     public var attributes: [String: Int]?
+
+    public init(
+        playerIndex: Int,
+        name: String,
+        position: String,
+        year: String,
+        home: String?,
+        height: String?,
+        weight: String?,
+        wingspan: String?,
+        overall: Int,
+        isStarter: Bool,
+        attributes: [String: Int]?
+    ) {
+        self.playerIndex = playerIndex
+        self.name = name
+        self.position = position
+        self.year = year
+        self.home = home
+        self.height = height
+        self.weight = weight
+        self.wingspan = wingspan
+        self.overall = overall
+        self.isStarter = isStarter
+        self.attributes = attributes
+    }
 }
 
 public struct UserRotationSlot: Codable, Equatable, Sendable, Identifiable {
