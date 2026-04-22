@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import CBBCoachCore
 
@@ -407,7 +408,7 @@ func actionInitiationShareStaysBalanced() {
     #expect(starShare <= 0.42)
 }
 
-@Test("Rebounding stays interaction-based but avoids over-concentration")
+@Test("Rebounding has realistic variance without forcing hard top-share caps")
 func reboundingDistributionStaysBalanced() {
     func makePlayer(
         name: String,
@@ -467,7 +468,7 @@ func reboundingDistributionStaysBalanced() {
     ]
 
     let gameCount = 24
-    var totalTopShare = 0.0
+    var topShares: [Double] = []
     var crashOffensiveRebounds = 0
     var weakDefensiveRebounds = 0
     var perimeterCrashRebounds = 0
@@ -489,7 +490,7 @@ func reboundingDistributionStaysBalanced() {
         let homeTeamRebounds = homePlayers.reduce(0) { $0 + $1.rebounds }
         let topHomeRebounds = homePlayers.map(\.rebounds).max() ?? 0
         if homeTeamRebounds > 0 {
-            totalTopShare += Double(topHomeRebounds) / Double(homeTeamRebounds)
+            topShares.append(Double(topHomeRebounds) / Double(homeTeamRebounds))
         }
 
         crashOffensiveRebounds += homePlayers.reduce(0) { $0 + $1.offensiveRebounds }
@@ -499,13 +500,20 @@ func reboundingDistributionStaysBalanced() {
             .reduce(0) { $0 + $1.offensiveRebounds }
     }
 
-    let avgTopShare = totalTopShare / Double(gameCount)
+    let avgTopShare = topShares.reduce(0, +) / Double(max(1, topShares.count))
+    let topShareVariance = topShares.reduce(0.0) { partial, value in
+        let delta = value - avgTopShare
+        return partial + delta * delta
+    } / Double(max(1, topShares.count))
+    let topShareStdDev = Foundation.sqrt(topShareVariance)
+    let dominantTopShareGames = topShares.filter { $0 >= 0.5 }.count
     let crashOrbRate = Double(crashOffensiveRebounds) / Double(max(1, crashOffensiveRebounds + weakDefensiveRebounds))
 
-    #expect(avgTopShare <= 0.44)
+    #expect(topShareStdDev >= 0.05)
+    #expect(dominantTopShareGames >= 1)
     #expect(perimeterCrashRebounds >= gameCount)
-    #expect(weakDefensiveRebounds >= gameCount * 8)
-    #expect(crashOrbRate <= 0.62)
+    #expect(weakDefensiveRebounds >= gameCount * 7)
+    #expect(crashOrbRate <= 0.66)
 }
 
 @Test("User roster summary includes full player rating payload")

@@ -1528,6 +1528,17 @@ private func reboundCandidateCount(crashPreference: Double) -> Int {
     return 3
 }
 
+private func reboundChaosScale(for zone: ReboundZone) -> Double {
+    switch zone {
+    case .paint, .leftBlock, .rightBlock:
+        return 0.08
+    case .leftPerimeter, .rightPerimeter:
+        return 0.16
+    case .topPerimeter:
+        return 0.18
+    }
+}
+
 private func heightReboundRating(_ player: Player) -> Double {
     let heightInches = getHeightInches(player)
     return clamp((heightInches - 76) * 4 + 56, min: 34, max: 98)
@@ -1739,11 +1750,13 @@ private func resolveReboundOutcome(
     )
     let gatherSizeEdge = (heightReboundRating(offenseLineup[bestOffenseIdx]) - heightReboundRating(defenseLineup[bestDefenseIdx])) * 0.012
         + (wingspanReboundRating(offenseLineup[bestOffenseIdx]) - wingspanReboundRating(defenseLineup[bestDefenseIdx])) * 0.015
-    let finalEdge = gatherBattle.edge + gatherSizeEdge + (offensePositioning - defensePositioning) * 0.12 + slipEdge * 0.4
-    let crashEdge = (offenseCrashPreference - defenseCrashPreference) * 0.26
+    let chaosScale = reboundChaosScale(for: zone)
+    let reboundChaosNoise = (random.nextUnit() + random.nextUnit() + random.nextUnit() - 1.5) * (chaosScale * 2.3)
+    let finalEdge = gatherBattle.edge + gatherSizeEdge + (offensePositioning - defensePositioning) * 0.12 + slipEdge * 0.4 + reboundChaosNoise
+    let crashEdge = (offenseCrashPreference - defenseCrashPreference) * 0.22
     // Defensive teams convert more misses by default; offense needs a real edge to sustain OREBs.
-    let defensiveAdvantage = 0.84 + clamp((defensePositioning - offensePositioning) * 0.08, min: -0.08, max: 0.12)
-    let offenseCollectProbability = clamp(logistic(finalEdge + crashEdge - defensiveAdvantage), min: 0.08, max: 0.62)
+    let defensiveAdvantage = 0.93 + clamp((defensePositioning - offensePositioning) * 0.09, min: -0.08, max: 0.14)
+    let offenseCollectProbability = clamp(logistic(finalEdge + crashEdge - defensiveAdvantage), min: 0.05, max: 0.66)
     if random.nextUnit() < offenseCollectProbability {
         let rebounderIdx = selectReboundCollectorViaInteractions(
             stored: &stored,
@@ -1829,9 +1842,11 @@ private func selectReboundCollectorViaInteractions(
             let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost
             collectorScores.append((offenseIdx, score))
         }
+        let chaosScale = reboundChaosScale(for: zone)
         let collectorWeights = collectorScores.map { candidate in
-            let jitter = 0.92 + random.nextUnit() * 0.16
-            return Foundation.exp(clamp(candidate.score * 0.92, min: -2.2, max: 2.2)) * jitter
+            let jitter = 0.65 + random.nextUnit() * 0.8
+            let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 1.8
+            return Foundation.exp(clamp(noisyScore * 0.76, min: -2.3, max: 2.3)) * jitter
         }
         return collectorScores[weightedChoiceIndex(weights: collectorWeights, random: &random)].idx
     }
@@ -1868,9 +1883,11 @@ private func selectReboundCollectorViaInteractions(
         let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost
         collectorScores.append((defenseIdx, score))
     }
+    let chaosScale = reboundChaosScale(for: zone)
     let collectorWeights = collectorScores.map { candidate in
-        let jitter = 0.92 + random.nextUnit() * 0.16
-        return Foundation.exp(clamp(candidate.score * 0.92, min: -2.2, max: 2.2)) * jitter
+        let jitter = 0.65 + random.nextUnit() * 0.8
+        let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 1.8
+        return Foundation.exp(clamp(noisyScore * 0.76, min: -2.3, max: 2.3)) * jitter
     }
     return collectorScores[weightedChoiceIndex(weights: collectorWeights, random: &random)].idx
 }
