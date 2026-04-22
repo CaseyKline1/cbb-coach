@@ -944,7 +944,7 @@ private func pickLineupIndexForBallHandler(
     random: inout SeededRandom
 ) -> Int {
     guard !lineup.isEmpty else { return 0 }
-    let weights = lineup.enumerated().map { idx, player -> Double in
+    let weights = lineup.enumerated().map { _, player -> Double in
         let base = getBaseRating(player, path: "skills.ballHandling") * 0.33
             + getBaseRating(player, path: "skills.passingVision") * 0.2
             + getBaseRating(player, path: "skills.passingIQ") * 0.15
@@ -996,7 +996,7 @@ private func pickLineupIndexForPickActionBallHandler(
     random: inout SeededRandom
 ) -> Int {
     guard !lineup.isEmpty else { return 0 }
-    let weights = lineup.enumerated().map { idx, player -> Double in
+    let weights = lineup.enumerated().map { _, player -> Double in
         let base = getBaseRating(player, path: "skills.ballHandling") * 0.34
             + getBaseRating(player, path: "skills.passingVision") * 0.16
             + getBaseRating(player, path: "skills.passingIQ") * 0.14
