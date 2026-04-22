@@ -135,6 +135,12 @@ private let mobilityInteractionRatings: Set<String> = [
 private let clutchRatingImpact = 0.08
 private let interactionVarianceJitter = 0.14
 
+private enum BlowoutRotationMode {
+    case none
+    case bench
+    case deepBench
+}
+
 private struct NativeGameStateStore {
     struct TeamTracker {
         var team: Team
@@ -392,7 +398,9 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
         syncClutchTime(stored: &stored)
         advanceOffensiveFormation(stored: &stored, teamId: offenseTeamId)
 
-        let possessionSeconds = possessionDurationSeconds(for: stored.teams[offenseTeamId].team.pace, random: &random)
+        let blowoutMode = blowoutRotationMode(stored: stored, teamId: offenseTeamId)
+        let effectivePace: PaceProfile = blowoutMode == .none ? stored.teams[offenseTeamId].team.pace : .verySlow
+        let possessionSeconds = possessionDurationSeconds(for: effectivePace, random: &random)
         applyChunkMinutesAndEnergy(stored: &stored, possessionSeconds: possessionSeconds)
 
         let ballHandlerIdx = pickLineupIndexForBallHandler(
@@ -408,7 +416,7 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
             min: 0,
             max: 1
         )
-        let paceBias = paceShotBias(for: stored.teams[offenseTeamId].team.pace)
+        let paceBias = paceShotBias(for: effectivePace)
         let possessionInteraction = resolveInteractionWithTrace(
             stored: &stored,
             label: "possession_advantage",
@@ -927,9 +935,23 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
 }
 
 private func possessionDurationSeconds(for pace: PaceProfile, random: inout SeededRandom) -> Int {
-    _ = pace
-    _ = random
-    return CHUNK_SECONDS
+    let roll = random.nextUnit()
+    switch pace {
+    case .verySlow:
+        return roll < 0.5 ? 7 : 8
+    case .slow:
+        return roll < 0.7 ? 6 : 7
+    case .slightlySlow:
+        return roll < 0.75 ? 6 : 5
+    case .normal:
+        return CHUNK_SECONDS
+    case .slightlyFast:
+        return roll < 0.7 ? 4 : 5
+    case .fast:
+        return roll < 0.85 ? 4 : 5
+    case .veryFast:
+        return roll < 0.9 ? 4 : 5
+    }
 }
 
 private func paceShotBias(for pace: PaceProfile) -> Double {
@@ -942,6 +964,20 @@ private func paceShotBias(for pace: PaceProfile) -> Double {
     case .fast: return 0
     case .veryFast: return 0.02
     }
+}
+
+private func blowoutRotationMode(stored: NativeGameStateStore.StoredState, teamId: Int) -> BlowoutRotationMode {
+    guard teamId >= 0, teamId < stored.teams.count else { return .none }
+    guard stored.currentHalf >= 2 else { return .none }
+    let oppId = teamId == 0 ? 1 : 0
+    let lead = stored.teams[teamId].score - stored.teams[oppId].score
+    guard lead >= 30 else { return .none }
+
+    // Final 10 minutes of regulation: prioritize deep bench.
+    if (stored.currentHalf == 2 && stored.gameClockRemaining <= 600) || stored.currentHalf > 2 {
+        return .deepBench
+    }
+    return .bench
 }
 
 private func syncPossessionRoles(stored: inout NativeGameStateStore.StoredState) {
@@ -1760,7 +1796,7 @@ private func computeTargetMinutesMap(tracker: NativeGameStateStore.TeamTracker) 
     return map
 }
 
-private func rankSubCandidates(tracker: NativeGameStateStore.TeamTracker) -> [SubCandidate] {
+private func rankSubCandidates(tracker: NativeGameStateStore.TeamTracker, blowoutMode: BlowoutRotationMode) -> [SubCandidate] {
     let targetMap = computeTargetMinutesMap(tracker: tracker)
     let roster = tracker.team.players
     return roster.indices.map { idx in
@@ -1771,6 +1807,15 @@ private func rankSubCandidates(tracker: NativeGameStateStore.TeamTracker) -> [Su
         let target = targetMap[idx] ?? 0
         let rotationNeed = clamp(target - minutesPlayed, min: -12, max: 20)
         var score = skill * 0.62 + energy * 0.3 + rotationNeed * 1.9
+        if blowoutMode != .none {
+            // In blowouts, rest high-target rotation players and surface deeper bench options.
+            let deepBenchBias = clamp(20 - target, min: 0, max: 20)
+            score += deepBenchBias * (blowoutMode == .deepBench ? 2.2 : 1.2)
+            score += clamp(72 - skill, min: 0, max: 28) * (blowoutMode == .deepBench ? 0.35 : 0.18)
+            if minutesPlayed > target {
+                score -= (minutesPlayed - target) * (blowoutMode == .deepBench ? 2.0 : 1.0)
+            }
+        }
         let fouledOut = box.fouls >= 5
         if fouledOut { score = -1e9 }
         return SubCandidate(
@@ -1805,12 +1850,18 @@ private func runAutoSubstitutions(stored: inout NativeGameStateStore.StoredState
         return
     }
 
+    let blowoutMode = blowoutRotationMode(stored: stored, teamId: teamId)
     let tracker = stored.teams[teamId]
-    let ranked = rankSubCandidates(tracker: tracker)
+    let ranked = rankSubCandidates(tracker: tracker, blowoutMode: blowoutMode)
     var current = tracker.activeLineupBoxIndices
 
     var swaps = 0
-    let maxSwaps = 2
+    let maxSwaps: Int
+    switch blowoutMode {
+    case .none: maxSwaps = 2
+    case .bench: maxSwaps = 3
+    case .deepBench: maxSwaps = 5
+    }
     var bench = ranked.filter { !current.contains($0.rosterIndex) }
     let scoreByRoster: [Int: SubCandidate] = Dictionary(uniqueKeysWithValues: ranked.map { ($0.rosterIndex, $0) })
 
@@ -1837,6 +1888,8 @@ private func runAutoSubstitutions(stored: inout NativeGameStateStore.StoredState
         let betterBy = best.score - weakest.info.score
         let fatigueUpgrade = weakest.info.energy < 42 && best.energy > weakest.info.energy + 8
         let rotationUpgrade = best.rotationNeed > 2.5 && (weakest.info.minutesPlayed - weakest.info.target > 1.5)
+        let blowoutUpgrade = blowoutMode != .none && best.target + 0.5 < weakest.info.target
+        let deepBenchUpgrade = blowoutMode == .deepBench && best.target + 2 < weakest.info.target
         let incoming = stored.teams[teamId].team.players[best.rosterIndex]
         let outgoing = stored.teams[teamId].team.players[weakest.info.rosterIndex]
         let swapInteraction = resolveInteractionWithTrace(
@@ -1850,7 +1903,7 @@ private func runAutoSubstitutions(stored: inout NativeGameStateStore.StoredState
         )
         let swapConfidence = logistic(swapInteraction.edge)
 
-        if !(swapConfidence > 0.56 || betterBy > 6 || fatigueUpgrade || rotationUpgrade) { break }
+        if !(swapConfidence > 0.56 || betterBy > 6 || fatigueUpgrade || rotationUpgrade || blowoutUpgrade || deepBenchUpgrade) { break }
 
         current[weakest.slot] = best.rosterIndex
         swaps += 1
@@ -4339,10 +4392,10 @@ private func resolvePassInterception(
             random: &random
         )
         let secureEdge = laneInteraction.edge + (receiverWindow - 55) / 100
-        // Keep lane-jumpers impactful, but avoid compounding 3 defenders into near-certain steals.
-        let stealSignal = clamp((1 - logistic(secureEdge)) * 0.48, min: 0.01, max: 0.46)
+        // Keep lane-jumpers impactful, but tune interception rate lower so picks are rarer.
+        let stealSignal = clamp((1 - logistic(secureEdge)) * 0.4, min: 0.008, max: 0.32)
         let laneBoost = clamp((laneThreat - 60) / 320, min: -0.04, max: 0.05)
-        let stealWeight = max(0.05, (stealSignal + laneBoost) * riskScale * 10)
+        let stealWeight = max(0.03, (stealSignal + laneBoost) * riskScale * 5.2)
         weights.append(stealWeight)
         defenderIndices.append(idx)
         stealTotal += stealWeight
