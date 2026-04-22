@@ -815,8 +815,9 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                                 shotDefenderIndex: play.defenderLineupIndex,
                                 offenseCrashPreference: offenseCrashPreference,
                                 defenseCrashPreference: defenseCrashPreference,
-                                offensePositioning: 1,
-                                defensePositioning: 1,
+                                // In half-court misses, defenders usually hold inside boxout position.
+                                offensePositioning: 0.95,
+                                defensePositioning: 1.05,
                                 offenseLocationHints: reboundLocationHints.offense,
                                 defenseLocationHints: reboundLocationHints.defense,
                                 random: &random
@@ -2937,6 +2938,7 @@ private func resolvePlay(
     team: Team,
     random: inout SeededRandom
 ) -> PlayOutcome {
+    let actionPassDecisionBias = 0.03
     let ballHandler = offenseLineup[ballHandlerIdx]
     let primaryDefender = defenseLineup[min(defenderIdx, defenseLineup.count - 1)]
     let playType = choosePlayType(
@@ -3047,9 +3049,9 @@ private func resolvePlay(
             sagBonus = helpDefenseControl * 0.05
         }
         let kickChance = clamp(
-            0.18 + helpDefenseControl * 0.52 + max(0, driveControl - 0.5) * 0.2,
-            min: driveTier == 2 ? 0.28 : (driveTier == 1 ? 0.2 : 0.12),
-            max: driveTier == 2 ? 0.84 : 0.68
+            0.18 + helpDefenseControl * 0.52 + max(0, driveControl - 0.5) * 0.2 + actionPassDecisionBias,
+            min: driveTier == 2 ? 0.28 + actionPassDecisionBias : (driveTier == 1 ? 0.2 + actionPassDecisionBias : 0.12 + actionPassDecisionBias),
+            max: driveTier == 2 ? 0.84 : 0.68 + actionPassDecisionBias
         )
         if random.nextUnit() < kickChance && offenseLineup.count > 1 {
             let receiverIdx = evaluatePassTarget(
@@ -3138,9 +3140,9 @@ private func resolvePlay(
         )
         let postControl = logistic(postAdvantage.edge)
         let postKickChance = clamp(
-            0.22 + (1 - postControl) * 0.4,
-            min: 0.2,
-            max: 0.62
+            0.22 + (1 - postControl) * 0.4 + actionPassDecisionBias,
+            min: 0.2 + actionPassDecisionBias,
+            max: 0.62 + actionPassDecisionBias
         )
         if offenseLineup.count > 1 && random.nextUnit() < postKickChance {
             let outletIdx = evaluatePassTarget(
@@ -3270,9 +3272,9 @@ private func resolvePlay(
             max: 0.82
         )
         let offBallKickChance = clamp(
-            0.2 + popReadControl * 0.38 + ballHandlerPassLean * 0.14 + max(0, screenEdge) * 0.08,
-            min: 0.18,
-            max: 0.62
+            0.2 + popReadControl * 0.38 + ballHandlerPassLean * 0.14 + max(0, screenEdge) * 0.08 + actionPassDecisionBias,
+            min: 0.18 + actionPassDecisionBias,
+            max: 0.62 + actionPassDecisionBias
         )
         let alternateShooterIdx: Int? = {
             guard offenseLineup.count > 2 && random.nextUnit() < offBallKickChance else { return nil }
@@ -3572,6 +3574,7 @@ private func resolvePickAndRollOutcome(
     let screener = offenseLineup[screenerIdx]
     let onBallDefender = defenseLineup[defenderIdx]
     let screenerDefender = defenseLineup[screenerDefenderIdx]
+    let pnrPassDecisionBias = 0.03
     let passLean = clamp(
         0.55
             + (50 - getRating(ballHandler, path: "tendencies.shootVsPass")) / 150
@@ -3624,7 +3627,7 @@ private func resolvePickAndRollOutcome(
                 isDrive: false
             )
         }
-        if random.nextUnit() < clamp(0.14 + passLean * 0.42, min: 0.2, max: 0.56) {
+        if random.nextUnit() < clamp(0.14 + passLean * 0.42 + pnrPassDecisionBias, min: 0.2 + pnrPassDecisionBias, max: 0.56 + pnrPassDecisionBias) {
             let receiverIdx = evaluatePassTarget(
                 offenseLineup: offenseLineup,
                 defenseLineup: defenseLineup,
@@ -3673,7 +3676,7 @@ private func resolvePickAndRollOutcome(
         let shootsThree = threeRating >= midRating - 4
         let shotType: ShotType = shootsThree ? .three : .midrange
         let spot: OffensiveSpot = shootsThree ? .topMiddle : .rightElbow
-        if offenseLineup.count > 1 && random.nextUnit() < clamp(0.22 + passLean * 0.5, min: 0.28, max: 0.7) {
+        if offenseLineup.count > 1 && random.nextUnit() < clamp(0.22 + passLean * 0.5 + pnrPassDecisionBias, min: 0.28 + pnrPassDecisionBias, max: 0.7) {
             let receiverIdx = evaluatePassTarget(
                 offenseLineup: offenseLineup,
                 defenseLineup: defenseLineup,
@@ -3718,7 +3721,7 @@ private func resolvePickAndRollOutcome(
         let handlerBurst = getRating(ballHandler, path: "athleticism.burst")
         let bigBurst = getRating(defenseLineup[min(screenerDefenderIdx, defenseLineup.count - 1)], path: "athleticism.burst")
         if handlerBurst > bigBurst + 8 {
-            if offenseLineup.count > 1 && random.nextUnit() < clamp(0.18 + passLean * 0.4, min: 0.22, max: 0.58) {
+            if offenseLineup.count > 1 && random.nextUnit() < clamp(0.18 + passLean * 0.4 + pnrPassDecisionBias, min: 0.22 + pnrPassDecisionBias, max: 0.58 + pnrPassDecisionBias) {
                 let receiverIdx = evaluatePassTarget(
                     offenseLineup: offenseLineup,
                     defenseLineup: defenseLineup,
@@ -3776,7 +3779,7 @@ private func resolvePickAndRollOutcome(
         }
     case .ice:
         // Defense cuts off the middle; ball handler forced sideline → tough midrange or reset to a passer.
-        if random.nextUnit() < clamp(0.58 + (passLean - 0.55) * 0.25, min: 0.42, max: 0.72) {
+        if random.nextUnit() < clamp(0.58 + (passLean - 0.55) * 0.25 + pnrPassDecisionBias, min: 0.42 + pnrPassDecisionBias, max: 0.72) {
             // Reset pass to best-open teammate for a shot.
             let receiverIdx = offenseLineup.indices
                 .filter { $0 != ballHandlerIdx && $0 != screenerIdx }
