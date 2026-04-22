@@ -519,12 +519,13 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 // Pass delivery: if shooter differs from ball handler, the ball has to get there.
                 var passIntercepted = false
                 if play.shooterLineupIndex != ballHandlerIdx {
-                    applyPlayerUsageEnergyCost(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx, energyCost: 0.12)
+                    applyPlayerUsageEnergyCost(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx, energyCost: 0.18)
                     if let stealerIdx = resolvePassInterception(
                         stored: &stored,
                         passer: ballHandler,
                         receiver: shooter,
                         defenseLineup: stored.teams[defenseTeamId].activeLineup,
+                        riskShift: play.passInterceptionRiskShift,
                         random: &random
                     ) {
                         addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx) { $0.turnovers += 1 }
@@ -540,9 +541,9 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                 // Offensive charge: only on drives. Depends on defender positioning.
                 var tookCharge = false
                 if !passIntercepted {
-                applyPlayerUsageEnergyCost(stored: &stored, teamId: offenseTeamId, lineupIndex: play.shooterLineupIndex, energyCost: 0.22)
+                applyPlayerUsageEnergyCost(stored: &stored, teamId: offenseTeamId, lineupIndex: play.shooterLineupIndex, energyCost: 0.34)
                 if play.isDrive {
-                    applyPlayerUsageEnergyCost(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx, energyCost: 0.12)
+                    applyPlayerUsageEnergyCost(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx, energyCost: 0.18)
                     let chargeInteraction = resolveInteractionWithTrace(
                         stored: &stored,
                         label: "charge_call",
@@ -959,15 +960,18 @@ private func pickLineupIndexForBallHandler(
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
-            positionMultiplier = 1.15
+            positionMultiplier = 1.04
         case .sg:
-            positionMultiplier = 1.06
+            positionMultiplier = 1.02
         case .sf, .wing, .f:
-            positionMultiplier = 0.97
+            positionMultiplier = 1.0
         case .pf, .c, .big:
-            positionMultiplier = 0.86
+            positionMultiplier = 0.98
         }
-        return max(1, base * positionMultiplier * fatigueTax)
+        let skillWeighted = max(1, base * positionMultiplier * fatigueTax)
+        let compressed = Foundation.pow(skillWeighted, 0.7)
+        let equalTouchFloor = 22.0
+        return max(1, compressed + equalTouchFloor)
     }
     return weightedChoiceIndex(weights: weights, random: &random)
 }
@@ -1008,15 +1012,18 @@ private func pickLineupIndexForPickActionBallHandler(
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
-            positionMultiplier = 1.55
+            positionMultiplier = 1.08
         case .sg:
-            positionMultiplier = 1.12
+            positionMultiplier = 1.03
         case .sf, .wing, .f:
-            positionMultiplier = 0.96
+            positionMultiplier = 1.0
         case .pf, .c, .big:
-            positionMultiplier = 0.74
+            positionMultiplier = 0.98
         }
-        return max(1, base * positionMultiplier * fatigueTax)
+        let skillWeighted = max(1, base * positionMultiplier * fatigueTax)
+        let compressed = Foundation.pow(skillWeighted, 0.68)
+        let equalTouchFloor = 24.0
+        return max(1, compressed + equalTouchFloor)
     }
     return weightedChoiceIndex(weights: weights, random: &random)
 }
@@ -1224,6 +1231,15 @@ private func reboundNearbyWeight(_ player: Player, zone: ReboundZone) -> Double 
     return max(0.12, affinity * 0.9 + proximity * 0.45)
 }
 
+private func isPostReboundRole(_ player: Player) -> Bool {
+    switch player.bio.position {
+    case .c, .pf, .big:
+        return true
+    default:
+        return false
+    }
+}
+
 private func isPerimeterReboundRole(_ player: Player) -> Bool {
     switch player.bio.position {
     case .pg, .sg, .cg:
@@ -1242,18 +1258,22 @@ private func teamReboundCrashPreference(crashBoards: Double, fastBreakBias: Doub
 private func reboundCrashParticipationWeight(_ player: Player, zone: ReboundZone, crashPreference: Double) -> Double {
     let crash = clamp(crashPreference, min: 0, max: 1)
     let perimeter = isPerimeterReboundRole(player)
+    let postRole = isPostReboundRole(player)
+    let nonPost = !postRole
     switch zone {
     case .paint, .leftBlock, .rightBlock:
-        if perimeter {
-            // Perimeter players can crash from outside, but remain disadvantaged versus interior players.
-            return 0.55 + crash * 0.45
+        if nonPost {
+            // Non-post players can now meaningfully impact interior misses when teams dial up crash tendency.
+            let baseline = perimeter ? 0.7 : 0.82
+            return baseline + crash * 0.8
         }
-        return 0.95 + crash * 0.1
+        return 0.9 + crash * 0.2
     case .leftPerimeter, .rightPerimeter, .topPerimeter:
-        if perimeter {
-            return 0.78 + crash * 0.28
+        if nonPost {
+            let baseline = perimeter ? 0.82 : 0.88
+            return baseline + crash * 0.55
         }
-        return 0.92 + crash * 0.08
+        return 0.9 + crash * 0.12
     }
 }
 
@@ -1495,7 +1515,7 @@ private func weightedChoiceIndex(weights: [Double], random: inout SeededRandom) 
 
 private func applyChunkMinutesAndEnergy(stored: inout NativeGameStateStore.StoredState, possessionSeconds: Int) {
     let minuteDelta = Double(possessionSeconds) / 60
-    let energyDelta = Double(possessionSeconds) * 0.025
+    let energyDelta = Double(possessionSeconds) * 0.034
     for teamId in stored.teams.indices {
         for lineupIndex in stored.teams[teamId].activeLineup.indices {
             addPlayerStat(stored: &stored, teamId: teamId, lineupIndex: lineupIndex) { line in
@@ -2190,8 +2210,8 @@ private func getRating(_ player: Player, path: String, fallback: Double = 50) ->
     let impact: Double
     switch group {
     case "athleticism": impact = 0.33
-    case "shooting": impact = 0.23
-    case "skills": impact = 0.31
+    case "shooting": impact = 0.27
+    case "skills": impact = 0.35
     case "defense": impact = 0.24
     case "rebounding", "postGame": impact = 0.22
     default: impact = 0.22
@@ -2203,8 +2223,8 @@ private func getRating(_ player: Player, path: String, fallback: Double = 50) ->
         || path == "tendencies.drive"
         || path == "tendencies.pickAndRoll"
         || path == "tendencies.pickAndPop"
-    let creatorPenalty = creatorPath ? clamp(0.09 + fatigue * 0.12 - staminaRecovery * 0.04, min: 0.03, max: 0.19) : 0
-    let effectiveImpact = clamp(impact - staminaRecovery * 0.05 + creatorPenalty, min: 0.12, max: 0.55)
+    let creatorPenalty = creatorPath ? clamp(0.1 + fatigue * 0.16 - staminaRecovery * 0.05, min: 0.04, max: 0.24) : 0
+    let effectiveImpact = clamp(impact - staminaRecovery * 0.05 + creatorPenalty, min: 0.14, max: 0.62)
 
     let fatigueAdjusted = applyClutchModifier(player, rating: raw * (1 - fatigue * effectiveImpact))
     let role = player.condition.possessionRole
@@ -2549,6 +2569,7 @@ private struct PlayOutcome {
     var foulBonus: Double
     var assistCandidateIndices: [Int]?
     var assistForceChance: Double?
+    var passInterceptionRiskShift: Double = 0
     var isDrive: Bool = false
     var forcedTurnoverStealerLineupIndex: Int? = nil
 }
@@ -2808,7 +2829,8 @@ private func resolvePlay(
                 makeBonus: kickMakeBonus,
                 foulBonus: 0,
                 assistCandidateIndices: [ballHandlerIdx],
-                assistForceChance: driveTier == 2 ? 0.82 : 0.73
+                assistForceChance: driveTier == 2 ? 0.82 : 0.73,
+                passInterceptionRiskShift: 0.12
             )
         }
 
@@ -2897,7 +2919,8 @@ private func resolvePlay(
                     makeBonus: 0.01,
                     foulBonus: 0,
                     assistCandidateIndices: [postIdx],
-                    assistForceChance: 0.72
+                    assistForceChance: 0.72,
+                    passInterceptionRiskShift: 0.08
                 )
             }
         }
@@ -2922,7 +2945,8 @@ private func resolvePlay(
             makeBonus: 0,
             foulBonus: isRimShot(shotType) ? (0.02 + postControl * 0.03) : 0,
             assistCandidateIndices: postIdx == ballHandlerIdx ? nil : [ballHandlerIdx],
-            assistForceChance: 0.45
+            assistForceChance: 0.45,
+            passInterceptionRiskShift: postIdx == ballHandlerIdx ? 0 : 0.08
         )
 
     case .pickAndRoll:
@@ -3105,7 +3129,8 @@ private func resolvePlay(
             makeBonus: 0.02,
             foulBonus: 0,
             assistCandidateIndices: nil,
-            assistForceChance: 0.75
+            assistForceChance: 0.75,
+            passInterceptionRiskShift: -0.22
         )
     }
 }
@@ -3763,7 +3788,7 @@ private func recoverAllPlayersForHalftime(stored: inout NativeGameStateStore.Sto
     for teamId in stored.teams.indices {
         for boxIndex in stored.teams[teamId].boxPlayers.indices {
             let current = stored.teams[teamId].boxPlayers[boxIndex].energy ?? 100
-            let next = min(100, current + 40)
+            let next = min(100, current + 30)
             stored.teams[teamId].boxPlayers[boxIndex].energy = next
             if boxIndex < stored.teams[teamId].team.players.count {
                 stored.teams[teamId].team.players[boxIndex].condition.energy = next
@@ -4091,6 +4116,7 @@ private func resolvePassInterception(
     passer: Player,
     receiver: Player,
     defenseLineup: [Player],
+    riskShift: Double = 0,
     random: inout SeededRandom
 ) -> Int? {
     guard !defenseLineup.isEmpty else { return nil }
@@ -4107,6 +4133,9 @@ private func resolvePassInterception(
     let candidates = laneThreats.sorted { $0.1 > $1.1 }.prefix(min(3, defenseLineup.count))
     let receiverWindow = getRating(receiver, path: "skills.hands") * 0.58
         + getRating(receiver, path: "skills.shotIQ") * 0.42
+
+    let riskScale = clamp(1 + riskShift, min: 0.55, max: 1.45)
+    let safeScale = clamp(2 - riskScale, min: 0.7, max: 1.45)
 
     var weights: [Double] = []
     var defenderIndices: [Int] = []
@@ -4126,12 +4155,12 @@ private func resolvePassInterception(
         // Keep lane-jumpers impactful, but avoid compounding 3 defenders into near-certain steals.
         let stealSignal = clamp((1 - logistic(secureEdge)) * 0.48, min: 0.01, max: 0.46)
         let laneBoost = clamp((laneThreat - 60) / 320, min: -0.04, max: 0.05)
-        let stealWeight = max(0.05, (stealSignal + laneBoost) * 10)
+        let stealWeight = max(0.05, (stealSignal + laneBoost) * riskScale * 10)
         weights.append(stealWeight)
         defenderIndices.append(idx)
         stealTotal += stealWeight
     }
-    let safePassWeight = max(1.0, 84 - stealTotal * 0.55)
+    let safePassWeight = max(1.0, (84 - stealTotal * 0.55) * safeScale)
     let pick = weightedChoiceIndex(weights: [safePassWeight] + weights, random: &random)
     if pick == 0 {
         return nil
