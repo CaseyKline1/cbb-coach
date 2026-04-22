@@ -635,8 +635,8 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                         random: &random
                     )
                     let blockDefenseControl = 1 - logistic(blockInteraction.edge)
-                    // Raise block rates materially on missed rim attempts so interior contests are impactful.
-                    let blockChance = clamp(0.08 + blockDefenseControl * 0.62, min: 0.07, max: 0.72)
+                    // Keep interior contests meaningful with a slightly higher block environment.
+                    let blockChance = clamp(0.09 + blockDefenseControl * 0.66, min: 0.08, max: 0.76)
                     if random.nextUnit() < blockChance {
                         addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: play.defenderLineupIndex) { $0.blocks += 1 }
                     }
@@ -2536,7 +2536,7 @@ private func shotProfile(for shotType: ShotType) -> ShotProfile {
 
 private func baseMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.33
+    case .three: return 0.322
     case .midrange: return 0.38
     case .close: return 0.45
     case .layup: return 0.56
