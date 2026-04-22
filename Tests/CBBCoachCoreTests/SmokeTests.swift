@@ -283,6 +283,83 @@ func substitutionFlowUsesBenchMinutes() {
     #expect(awayBenchMinutes > 0)
 }
 
+@Test("Fatigue keeps high-usage scorers out of unrealistic average ranges")
+func fatigueSuppressesExtremeScorerAverages() {
+    func makePlayer(
+        name: String,
+        position: PlayerPosition,
+        stamina: Int,
+        shotIQ: Int,
+        handle: Int,
+        three: Int,
+        mid: Int,
+        close: Int,
+        pass: Int,
+        perimeterDefense: Int,
+        lateral: Int
+    ) -> Player {
+        var p = createPlayer()
+        p.bio.name = name
+        p.bio.position = position
+        p.athleticism.stamina = stamina
+        p.skills.shotIQ = shotIQ
+        p.skills.ballHandling = handle
+        p.skills.passingVision = pass
+        p.skills.passingIQ = pass
+        p.skills.passingAccuracy = pass
+        p.shooting.threePointShooting = three
+        p.shooting.midrangeShot = mid
+        p.shooting.closeShot = close
+        p.shooting.layups = close
+        p.defense.perimeterDefense = perimeterDefense
+        p.defense.lateralQuickness = lateral
+        p.condition.energy = 100
+        return p
+    }
+
+    let star = makePlayer(
+        name: "Star Guard",
+        position: .pg,
+        stamina: 88,
+        shotIQ: 94,
+        handle: 95,
+        three: 96,
+        mid: 93,
+        close: 90,
+        pass: 90,
+        perimeterDefense: 70,
+        lateral: 72
+    )
+    let support1 = makePlayer(name: "Support 1", position: .sg, stamina: 70, shotIQ: 58, handle: 56, three: 52, mid: 54, close: 57, pass: 55, perimeterDefense: 64, lateral: 63)
+    let support2 = makePlayer(name: "Support 2", position: .sf, stamina: 72, shotIQ: 56, handle: 54, three: 50, mid: 53, close: 59, pass: 54, perimeterDefense: 63, lateral: 62)
+    let support3 = makePlayer(name: "Support 3", position: .pf, stamina: 75, shotIQ: 57, handle: 50, three: 45, mid: 50, close: 62, pass: 52, perimeterDefense: 61, lateral: 58)
+    let support4 = makePlayer(name: "Support 4", position: .c, stamina: 78, shotIQ: 58, handle: 48, three: 42, mid: 48, close: 66, pass: 50, perimeterDefense: 60, lateral: 56)
+
+    let weak1 = makePlayer(name: "Weak 1", position: .pg, stamina: 72, shotIQ: 58, handle: 55, three: 53, mid: 54, close: 56, pass: 56, perimeterDefense: 48, lateral: 47)
+    let weak2 = makePlayer(name: "Weak 2", position: .sg, stamina: 74, shotIQ: 57, handle: 54, three: 52, mid: 53, close: 55, pass: 54, perimeterDefense: 47, lateral: 46)
+    let weak3 = makePlayer(name: "Weak 3", position: .sf, stamina: 75, shotIQ: 57, handle: 53, three: 50, mid: 52, close: 56, pass: 53, perimeterDefense: 46, lateral: 45)
+    let weak4 = makePlayer(name: "Weak 4", position: .pf, stamina: 76, shotIQ: 56, handle: 50, three: 45, mid: 49, close: 60, pass: 50, perimeterDefense: 45, lateral: 44)
+    let weak5 = makePlayer(name: "Weak 5", position: .c, stamina: 78, shotIQ: 55, handle: 48, three: 42, mid: 47, close: 62, pass: 49, perimeterDefense: 44, lateral: 42)
+
+    let sampleGames = 20
+    var totalStarPoints = 0
+    var maxSingleGame = 0
+
+    for game in 0..<sampleGames {
+        var random = SeededRandom(seed: UInt64(8000 + game))
+        let home = createTeam(options: CreateTeamOptions(name: "Star U", players: [star, support1, support2, support3, support4]), random: &random)
+        let away = createTeam(options: CreateTeamOptions(name: "Weak State", players: [weak1, weak2, weak3, weak4, weak5]), random: &random)
+        let result = simulateGame(homeTeam: home, awayTeam: away, random: &random)
+        let starPoints = result.home.boxScore?.players.first(where: { $0.playerName == "Star Guard" })?.points ?? 0
+        totalStarPoints += starPoints
+        maxSingleGame = max(maxSingleGame, starPoints)
+    }
+
+    let average = Double(totalStarPoints) / Double(sampleGames)
+    #expect(average < 45)
+    #expect(maxSingleGame < 60)
+}
+
 @Test("User roster summary includes full player rating payload")
 func userRosterIncludesFullAttributeSet() throws {
     let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "roster-attributes"))
