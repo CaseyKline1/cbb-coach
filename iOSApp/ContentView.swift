@@ -654,7 +654,7 @@ private struct CollegeLeagueHomeView: View {
                 case .roster:
                     RosterRatingsView(
                         roster: roster,
-                        schedule: schedule,
+                        games: completedLeagueGames,
                         userTeamName: summary?.userTeamName ?? teamName
                     )
                 case .schedule:
@@ -670,6 +670,7 @@ private struct CollegeLeagueHomeView: View {
                 case .playerStats:
                     PlayerStatsView(
                         schedule: schedule,
+                        games: completedLeagueGames,
                         userTeamName: summary?.userTeamName ?? teamName,
                         roster: roster
                     )
@@ -683,7 +684,6 @@ private struct CollegeLeagueHomeView: View {
                 case .statLeaders:
                     StatLeadersView(
                         games: completedLeagueGames,
-                        schedule: schedule,
                         userTeamName: summary?.userTeamName ?? teamName,
                         roster: roster
                     )
@@ -1682,7 +1682,7 @@ private struct RotationMinuteControl: View {
 
 private struct RosterRatingsView: View {
     let roster: [UserRosterPlayerSummary]
-    let schedule: [UserGameSummary]
+    let games: [LeagueGameSummary]
     let userTeamName: String
     @State private var sortColumn: String = "overall"
     @State private var isAscending: Bool = false
@@ -1753,8 +1753,8 @@ private struct RosterRatingsView: View {
                     NavigationLink {
                         PlayerCardDetailView(
                             player: player,
-                            schedule: schedule,
-                            userTeamName: userTeamName
+                            games: games,
+                            teamName: userTeamName
                         )
                     } label: {
                         AppTableTextCell(
@@ -1959,8 +1959,8 @@ private struct PlayerCareerTotals: Hashable {
 
 private struct PlayerCardDetailView: View {
     let player: UserRosterPlayerSummary
-    let schedule: [UserGameSummary]
-    let userTeamName: String
+    let games: [LeagueGameSummary]
+    let teamName: String
     private let combinedThreePointKey = "combinedThreePointShooting"
     private let threePointComponentKeys: Set<String> = ["threePointShooting", "cornerThrees", "upTopThrees"]
 
@@ -2100,7 +2100,7 @@ private struct PlayerCardDetailView: View {
         var totalsByYear: [String: PlayerCareerTotals] = [:]
         let playerYear = player.year.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "N/A" : player.year
 
-        for game in schedule where game.completed == true {
+        for game in games where game.completed == true {
             guard let line = findPlayerLine(in: game) else { continue }
             let current = totalsByYear[playerYear] ?? .zero
             totalsByYear[playerYear] = PlayerCareerTotals(
@@ -2143,7 +2143,7 @@ private struct PlayerCardDetailView: View {
                         Text(player.name)
                             .font(.title3.weight(.bold))
                             .foregroundStyle(.primary)
-                        Text("\(player.position) • \(player.year) • OVR \(player.overall)\(player.isStarter ? " • Starter" : "")")
+                        Text(headerSubtitle)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -2168,23 +2168,29 @@ private struct PlayerCardDetailView: View {
 
                 GameCard {
                     GameSectionHeader(title: "Ratings")
-                    let columns: [AppTableColumn<String>] = [
-                        .init(id: "rating", title: "RATING", width: 180, alignment: .leading),
-                        .init(id: "value", title: "VALUE", width: 60),
-                    ]
-                    AppTable(columns: columns, rows: ratingRows) { row in
-                        HStack(spacing: 0) {
-                            AppTableTextCell(
-                                text: row.label,
-                                width: 180,
-                                alignment: .leading,
-                                font: .caption.monospacedDigit()
-                            )
-                            AppTableTextCell(
-                                text: "\(row.value)",
-                                width: 60,
-                                font: .caption.monospacedDigit().weight(.semibold)
-                            )
+                    if ratingRows.isEmpty {
+                        Text("No ratings available for this player yet.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        let columns: [AppTableColumn<String>] = [
+                            .init(id: "rating", title: "RATING", width: 180, alignment: .leading),
+                            .init(id: "value", title: "VALUE", width: 60),
+                        ]
+                        AppTable(columns: columns, rows: ratingRows) { row in
+                            HStack(spacing: 0) {
+                                AppTableTextCell(
+                                    text: row.label,
+                                    width: 180,
+                                    alignment: .leading,
+                                    font: .caption.monospacedDigit()
+                                )
+                                AppTableTextCell(
+                                    text: "\(row.value)",
+                                    width: 60,
+                                    font: .caption.monospacedDigit().weight(.semibold)
+                                )
+                            }
                         }
                     }
                 }
@@ -2235,22 +2241,54 @@ private struct PlayerCardDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func findPlayerLine(in game: UserGameSummary) -> ParsedPlayerBoxScore? {
+    private var headerSubtitle: String {
+        var parts: [String] = [teamName]
+
+        let trimmedPosition = player.position.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedPosition.isEmpty {
+            parts.append(trimmedPosition)
+        }
+
+        let trimmedYear = player.year.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedYear.isEmpty, trimmedYear.caseInsensitiveCompare("N/A") != .orderedSame {
+            parts.append(trimmedYear)
+        }
+
+        if player.overall > 0 {
+            parts.append("OVR \(player.overall)")
+        }
+        if player.isStarter {
+            parts.append("Starter")
+        }
+
+        return parts.joined(separator: " • ")
+    }
+
+    private func findPlayerLine(in game: LeagueGameSummary) -> ParsedPlayerBoxScore? {
         guard
             let resultObj = game.result?.objectDictionary,
             let teamBoxes = resultObj["boxScore"]?.arrayValues
         else { return nil }
 
-        guard let userTeamBox = teamBoxes.first(where: { box in
-            box.objectDictionary?["name"]?.stringValue == userTeamName
+        guard let targetTeamBox = teamBoxes.first(where: { box in
+            box.objectDictionary?["name"]?.stringValue == teamName
         }) else { return nil }
 
-        let players = userTeamBox.objectDictionary?["players"]?.arrayValues ?? []
-        return players
-            .compactMap(ParsedPlayerBoxScore.init(value:))
-            .first(where: { line in
-                line.playerName == player.name && line.position == player.position
-            })
+        let players = targetTeamBox.objectDictionary?["players"]?.arrayValues ?? []
+        let parsedPlayers = players.compactMap(ParsedPlayerBoxScore.init(value:))
+        let sameName = parsedPlayers.filter { $0.playerName == player.name }
+        guard !sameName.isEmpty else { return nil }
+
+        let trimmedPosition = player.position.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedPosition.isEmpty {
+            return sameName.first
+        }
+
+        if let exact = sameName.first(where: { $0.position == trimmedPosition }) {
+            return exact
+        }
+
+        return sameName.first
     }
 
     private func ratingLabel(_ key: String) -> String {
@@ -2576,6 +2614,7 @@ private struct PlayerStatsRow: Hashable {
 
 private struct PlayerStatsView: View {
     let schedule: [UserGameSummary]
+    let games: [LeagueGameSummary]
     let userTeamName: String
     let roster: [UserRosterPlayerSummary]
     @State private var sortColumn: String = "points"
@@ -2657,26 +2696,16 @@ private struct PlayerStatsView: View {
                 onSort: toggleSort
             ) { row in
                 HStack(spacing: 0) {
-                    if let player = playerForRow(named: row.name) {
-                        NavigationLink {
-                            PlayerCardDetailView(
-                                player: player,
-                                schedule: schedule,
-                                userTeamName: userTeamName
-                            )
-                        } label: {
-                            AppTableTextCell(
-                                text: row.name,
-                                width: 170,
-                                alignment: .leading,
-                                font: .caption.monospacedDigit().weight(.semibold),
-                                foreground: AppTheme.accent
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    } else {
+                    NavigationLink {
+                        PlayerCardDetailView(
+                            player: playerForRow(named: row.name),
+                            games: games,
+                            teamName: userTeamName
+                        )
+                    } label: {
                         AppTableTextCell(text: row.name, width: 170, alignment: .leading)
                     }
+                    .buttonStyle(.plain)
                     AppTableTextCell(text: "\(row.games)", width: 42)
                     AppTableTextCell(text: format(row.minutesPerGame), width: 48)
                     AppTableTextCell(text: format(row.pointsPerGame), width: 48)
@@ -2696,8 +2725,45 @@ private struct PlayerStatsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func playerForRow(named playerName: String) -> UserRosterPlayerSummary? {
-        roster.first(where: { $0.name == playerName })
+    private func playerForRow(named playerName: String) -> UserRosterPlayerSummary {
+        if let rosterPlayer = roster.first(where: { $0.name == playerName }) {
+            return rosterPlayer
+        }
+
+        return UserRosterPlayerSummary(
+            playerIndex: -1,
+            name: playerName,
+            position: inferredPosition(for: playerName) ?? "",
+            year: "N/A",
+            home: nil,
+            height: nil,
+            weight: nil,
+            wingspan: nil,
+            overall: 0,
+            isStarter: false,
+            attributes: nil
+        )
+    }
+
+    private func inferredPosition(for playerName: String) -> String? {
+        for game in schedule where game.completed == true {
+            guard
+                let resultObj = game.result?.objectDictionary,
+                let teamBoxes = resultObj["boxScore"]?.arrayValues
+            else { continue }
+
+            guard let userTeamBox = teamBoxes.first(where: { box in
+                box.objectDictionary?["name"]?.stringValue == userTeamName
+            }) else { continue }
+
+            let players = userTeamBox.objectDictionary?["players"]?.arrayValues ?? []
+            if let line = players
+                .compactMap(ParsedPlayerBoxScore.init(value:))
+                .first(where: { $0.playerName == playerName }) {
+                return line.position
+            }
+        }
+        return nil
     }
 
     private func toggleSort(_ id: String) {
@@ -3169,7 +3235,6 @@ private struct NationalLeaderStats {
 
 private struct StatLeadersView: View {
     let games: [LeagueGameSummary]
-    let schedule: [UserGameSummary]
     let userTeamName: String
     let roster: [UserRosterPlayerSummary]
 
@@ -3418,24 +3483,18 @@ private struct StatLeadersView: View {
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    if let player = playerForEntry(entry) {
-                        NavigationLink {
-                            PlayerCardDetailView(
-                                player: player,
-                                schedule: schedule,
-                                userTeamName: userTeamName
-                            )
-                        } label: {
-                            Text(entry.playerName)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(AppTheme.accent)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
+                    NavigationLink {
+                        PlayerCardDetailView(
+                            player: playerForEntry(entry),
+                            games: games,
+                            teamName: entry.teamName
+                        )
+                    } label: {
                         Text(entry.playerName)
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(AppTheme.ink)
+                            .foregroundStyle(AppTheme.accent)
                     }
+                    .buttonStyle(.plain)
                     Text(entry.sub)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -3465,9 +3524,46 @@ private struct StatLeadersView: View {
         String(format: "%.1f", value)
     }
 
-    private func playerForEntry(_ entry: LeaderEntry) -> UserRosterPlayerSummary? {
-        guard entry.teamName == userTeamName else { return nil }
-        return roster.first(where: { $0.name == entry.playerName })
+    private func playerForEntry(_ entry: LeaderEntry) -> UserRosterPlayerSummary {
+        if entry.teamName == userTeamName,
+           let rosterPlayer = roster.first(where: { $0.name == entry.playerName }) {
+            return rosterPlayer
+        }
+
+        return UserRosterPlayerSummary(
+            playerIndex: -1,
+            name: entry.playerName,
+            position: inferredPosition(for: entry) ?? "",
+            year: "N/A",
+            home: nil,
+            height: nil,
+            weight: nil,
+            wingspan: nil,
+            overall: 0,
+            isStarter: false,
+            attributes: nil
+        )
+    }
+
+    private func inferredPosition(for entry: LeaderEntry) -> String? {
+        for game in games where game.completed == true {
+            guard
+                let resultObject = game.result?.objectDictionary,
+                let boxArray = resultObject["boxScore"]?.arrayValues
+            else { continue }
+
+            guard let teamBox = boxArray.first(where: { box in
+                box.objectDictionary?["name"]?.stringValue == entry.teamName
+            }) else { continue }
+
+            let players = teamBox.objectDictionary?["players"]?.arrayValues ?? []
+            if let line = players
+                .compactMap(ParsedPlayerBoxScore.init(value:))
+                .first(where: { $0.playerName == entry.playerName }) {
+                return line.position
+            }
+        }
+        return nil
     }
 }
 
