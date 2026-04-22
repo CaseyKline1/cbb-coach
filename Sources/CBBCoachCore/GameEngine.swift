@@ -743,6 +743,12 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                         switchedPossession = true
                     } else {
                         // Loose-ball foul: rare, called on whichever side didn't secure the rebound.
+                        let reboundLocationHints = buildHalfCourtReboundLocationHints(
+                            play: play,
+                            ballHandlerIdx: ballHandlerIdx,
+                            offenseCount: stored.teams[offenseTeamId].activeLineup.count,
+                            defenseCount: stored.teams[defenseTeamId].activeLineup.count
+                        )
                         let zone = resolveReboundLandingZone(
                             stored: &stored,
                             offenseLineup: stored.teams[offenseTeamId].activeLineup,
@@ -768,6 +774,8 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                             zone: zone,
                             offenseCrashPreference: offenseCrashPreference,
                             defenseCrashPreference: defenseCrashPreference,
+                            offenseLocationHints: reboundLocationHints.offense,
+                            defenseLocationHints: reboundLocationHints.defense,
                             random: &random
                         )
                         let offenseScrambleIdx = scramblePair.offenseIdx
@@ -801,6 +809,8 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                                 defenseCrashPreference: defenseCrashPreference,
                                 offensePositioning: 1,
                                 defensePositioning: 1,
+                                offenseLocationHints: reboundLocationHints.offense,
+                                defenseLocationHints: reboundLocationHints.defense,
                                 random: &random
                             )
                             if rebound.offensive {
@@ -1105,6 +1115,11 @@ private enum ReboundZone {
     case paint, leftBlock, rightBlock, leftPerimeter, rightPerimeter, topPerimeter
 }
 
+private struct ReboundLocationHints {
+    var offense: [OffensiveSpot?]
+    var defense: [OffensiveSpot?]
+}
+
 private struct ReboundOutcome {
     var offensive: Bool
     var lineupIndex: Int
@@ -1231,28 +1246,121 @@ private func positionProximity(_ player: Player, zone: ReboundZone) -> Double {
     }
 }
 
-private func reboundNearbyWeight(_ player: Player, zone: ReboundZone) -> Double {
-    let affinity = zonePresenceAffinity(player, zone: zone)
-    let proximity = positionProximity(player, zone: zone)
-    return max(0.12, affinity * 0.9 + proximity * 0.45)
-}
-
-private func isPostReboundRole(_ player: Player) -> Bool {
-    switch player.bio.position {
-    case .c, .pf, .big:
-        return true
-    default:
-        return false
+private func defaultReboundSpot(forLineupIndex index: Int) -> OffensiveSpot {
+    switch index % 5 {
+    case 0: return .topMiddle
+    case 1: return .topLeft
+    case 2: return .topRight
+    case 3: return .leftPost
+    default: return .rightPost
     }
 }
 
-private func isPerimeterReboundRole(_ player: Player) -> Bool {
-    switch player.bio.position {
-    case .pg, .sg, .cg:
-        return true
-    default:
-        return false
+private func locationProximityToReboundZone(spot: OffensiveSpot, zone: ReboundZone) -> Double {
+    switch zone {
+    case .paint:
+        switch spot {
+        case .middlePaint: return 1.36
+        case .leftPost, .rightPost: return 1.24
+        case .ftLine: return 1.04
+        case .leftElbow, .rightElbow: return 0.94
+        case .leftSlot, .rightSlot: return 0.82
+        case .topMiddle: return 0.74
+        case .topLeft, .topRight: return 0.66
+        case .leftCorner, .rightCorner: return 0.52
+        }
+    case .leftBlock:
+        switch spot {
+        case .leftPost: return 1.36
+        case .middlePaint: return 1.22
+        case .leftElbow: return 1.04
+        case .leftCorner: return 0.92
+        case .leftSlot: return 0.9
+        case .ftLine: return 0.86
+        case .topLeft: return 0.78
+        case .topMiddle: return 0.7
+        case .rightPost: return 0.64
+        case .rightElbow: return 0.58
+        case .topRight: return 0.52
+        case .rightSlot: return 0.48
+        case .rightCorner: return 0.42
+        }
+    case .rightBlock:
+        switch spot {
+        case .rightPost: return 1.36
+        case .middlePaint: return 1.22
+        case .rightElbow: return 1.04
+        case .rightCorner: return 0.92
+        case .rightSlot: return 0.9
+        case .ftLine: return 0.86
+        case .topRight: return 0.78
+        case .topMiddle: return 0.7
+        case .leftPost: return 0.64
+        case .leftElbow: return 0.58
+        case .topLeft: return 0.52
+        case .leftSlot: return 0.48
+        case .leftCorner: return 0.42
+        }
+    case .leftPerimeter:
+        switch spot {
+        case .leftCorner: return 1.3
+        case .topLeft: return 1.2
+        case .leftSlot: return 1.1
+        case .leftElbow: return 0.92
+        case .topMiddle: return 0.84
+        case .ftLine: return 0.8
+        case .middlePaint: return 0.72
+        case .leftPost: return 0.7
+        case .rightPost: return 0.54
+        case .topRight: return 0.52
+        case .rightSlot: return 0.46
+        case .rightElbow: return 0.44
+        case .rightCorner: return 0.38
+        }
+    case .rightPerimeter:
+        switch spot {
+        case .rightCorner: return 1.3
+        case .topRight: return 1.2
+        case .rightSlot: return 1.1
+        case .rightElbow: return 0.92
+        case .topMiddle: return 0.84
+        case .ftLine: return 0.8
+        case .middlePaint: return 0.72
+        case .rightPost: return 0.7
+        case .leftPost: return 0.54
+        case .topLeft: return 0.52
+        case .leftSlot: return 0.46
+        case .leftElbow: return 0.44
+        case .leftCorner: return 0.38
+        }
+    case .topPerimeter:
+        switch spot {
+        case .topMiddle: return 1.28
+        case .topLeft, .topRight: return 1.12
+        case .leftSlot, .rightSlot: return 1.0
+        case .ftLine: return 0.86
+        case .leftElbow, .rightElbow: return 0.8
+        case .middlePaint: return 0.7
+        case .leftCorner, .rightCorner: return 0.68
+        case .leftPost, .rightPost: return 0.62
+        }
     }
+}
+
+private func reboundNearbyWeight(
+    _ player: Player,
+    lineupIndex: Int,
+    zone: ReboundZone,
+    locationHints: [OffensiveSpot?]? = nil
+) -> Double {
+    let fallbackAffinity = zonePresenceAffinity(player, zone: zone)
+    let fallbackProximity = positionProximity(player, zone: zone)
+    let fallback = max(0.12, fallbackAffinity * 0.9 + fallbackProximity * 0.45)
+    guard let locationHints, lineupIndex >= 0, lineupIndex < locationHints.count, let spot = locationHints[lineupIndex] else {
+        return fallback
+    }
+    let location = locationProximityToReboundZone(spot: spot, zone: zone)
+    return max(0.12, location * 0.85 + fallback * 0.25)
 }
 
 private func teamReboundCrashPreference(crashBoards: Double, fastBreakBias: Double) -> Double {
@@ -1261,26 +1369,32 @@ private func teamReboundCrashPreference(crashBoards: Double, fastBreakBias: Doub
     return clamp(0.5 + (crash - leakOut) / 200, min: 0.05, max: 0.95)
 }
 
-private func reboundCrashParticipationWeight(_ player: Player, zone: ReboundZone, crashPreference: Double) -> Double {
+private func reboundCrashParticipationWeight(
+    _ player: Player,
+    lineupIndex: Int,
+    zone: ReboundZone,
+    crashPreference: Double,
+    locationHints: [OffensiveSpot?]? = nil
+) -> Double {
     let crash = clamp(crashPreference, min: 0, max: 1)
-    let perimeter = isPerimeterReboundRole(player)
-    let postRole = isPostReboundRole(player)
-    let nonPost = !postRole
-    switch zone {
-    case .paint, .leftBlock, .rightBlock:
-        if nonPost {
-            // Non-post players can now meaningfully impact interior misses when teams dial up crash tendency.
-            let baseline = perimeter ? 0.7 : 0.82
-            return baseline + crash * 0.8
+    let location: Double? = {
+        guard let locationHints, lineupIndex >= 0, lineupIndex < locationHints.count, let spot = locationHints[lineupIndex] else {
+            return nil
         }
-        return 0.9 + crash * 0.2
-    case .leftPerimeter, .rightPerimeter, .topPerimeter:
-        if nonPost {
-            let baseline = perimeter ? 0.82 : 0.88
-            return baseline + crash * 0.55
-        }
-        return 0.9 + crash * 0.12
+        return locationProximityToReboundZone(spot: spot, zone: zone)
+    }()
+    if let location {
+        // Location-first crash model: players farther from the landing zone gain more from high crash intent.
+        let base = 0.72 + location * 0.36
+        let distance = clamp(1.28 - location, min: 0, max: 0.9)
+        let crashGain = 0.24 + distance * 0.62
+        return max(0.2, base + crash * crashGain)
     }
+    let mobility = getBaseRating(player, path: "athleticism.burst") * 0.42
+        + getBaseRating(player, path: "athleticism.speed") * 0.3
+        + getBaseRating(player, path: "skills.hustle") * 0.28
+    let mobilityScale = clamp((mobility - 50) / 100, min: -0.18, max: 0.24)
+    return max(0.2, 0.84 + crash * (0.34 + mobilityScale))
 }
 
 private func reboundCandidateCount(crashPreference: Double) -> Int {
@@ -1352,13 +1466,14 @@ private func topReboundCandidateIndices(
     offensive: Bool,
     zone: ReboundZone,
     crashPreference: Double,
-    count: Int = 2
+    count: Int = 2,
+    locationHints: [OffensiveSpot?]? = nil
 ) -> [Int] {
     guard !lineup.isEmpty else { return [0] }
     let ranked = lineup.enumerated().map { idx, player in
         let base = offensive ? offensiveReboundSkillScore(player, zone: zone) : defensiveReboundSkillScore(player, zone: zone)
-        let nearby = reboundNearbyWeight(player, zone: zone)
-        let crashWeight = reboundCrashParticipationWeight(player, zone: zone, crashPreference: crashPreference)
+        let nearby = reboundNearbyWeight(player, lineupIndex: idx, zone: zone, locationHints: locationHints)
+        let crashWeight = reboundCrashParticipationWeight(player, lineupIndex: idx, zone: zone, crashPreference: crashPreference, locationHints: locationHints)
         let score = max(0.1, base * nearby * crashWeight)
         return (idx, score)
     }
@@ -1372,6 +1487,8 @@ private func selectReboundScrambleParticipants(
     zone: ReboundZone,
     offenseCrashPreference: Double,
     defenseCrashPreference: Double,
+    offenseLocationHints: [OffensiveSpot?]? = nil,
+    defenseLocationHints: [OffensiveSpot?]? = nil,
     random: inout SeededRandom
 ) -> (offenseIdx: Int, defenseIdx: Int) {
     guard !offenseLineup.isEmpty, !defenseLineup.isEmpty else { return (0, 0) }
@@ -1380,14 +1497,16 @@ private func selectReboundScrambleParticipants(
         offensive: true,
         zone: zone,
         crashPreference: offenseCrashPreference,
-        count: reboundCandidateCount(crashPreference: offenseCrashPreference)
+        count: reboundCandidateCount(crashPreference: offenseCrashPreference),
+        locationHints: offenseLocationHints
     )
     let defenseCandidates = topReboundCandidateIndices(
         lineup: defenseLineup,
         offensive: false,
         zone: zone,
         crashPreference: defenseCrashPreference,
-        count: reboundCandidateCount(crashPreference: defenseCrashPreference)
+        count: reboundCandidateCount(crashPreference: defenseCrashPreference),
+        locationHints: defenseLocationHints
     )
 
     var bestPair: (Int, Int)?
@@ -1427,6 +1546,8 @@ private func resolveReboundOutcome(
     defenseCrashPreference: Double,
     offensePositioning: Double,
     defensePositioning: Double,
+    offenseLocationHints: [OffensiveSpot?]? = nil,
+    defenseLocationHints: [OffensiveSpot?]? = nil,
     random: inout SeededRandom
 ) -> ReboundOutcome {
     guard !offenseLineup.isEmpty else { return ReboundOutcome(offensive: false, lineupIndex: 0) }
@@ -1446,14 +1567,16 @@ private func resolveReboundOutcome(
         offensive: true,
         zone: zone,
         crashPreference: offenseCrashPreference,
-        count: reboundCandidateCount(crashPreference: offenseCrashPreference)
+        count: reboundCandidateCount(crashPreference: offenseCrashPreference),
+        locationHints: offenseLocationHints
     )
     let defenseCandidates = topReboundCandidateIndices(
         lineup: defenseLineup,
         offensive: false,
         zone: zone,
         crashPreference: defenseCrashPreference,
-        count: reboundCandidateCount(crashPreference: defenseCrashPreference)
+        count: reboundCandidateCount(crashPreference: defenseCrashPreference),
+        locationHints: defenseLocationHints
     )
 
     var bestOffenseIdx = offenseCandidates[0]
@@ -2578,6 +2701,64 @@ private struct PlayOutcome {
     var passInterceptionRiskShift: Double = 0
     var isDrive: Bool = false
     var forcedTurnoverStealerLineupIndex: Int? = nil
+}
+
+private func isPerimeterSpot(_ spot: OffensiveSpot) -> Bool {
+    switch spot {
+    case .topMiddle, .topLeft, .topRight, .leftCorner, .rightCorner, .leftSlot, .rightSlot:
+        return true
+    default:
+        return false
+    }
+}
+
+private func buildHalfCourtReboundLocationHints(
+    play: PlayOutcome,
+    ballHandlerIdx: Int,
+    offenseCount: Int,
+    defenseCount: Int
+) -> ReboundLocationHints {
+    var offense = (0..<offenseCount).map { Optional(defaultReboundSpot(forLineupIndex: $0)) }
+    if ballHandlerIdx >= 0, ballHandlerIdx < offense.count {
+        offense[ballHandlerIdx] = play.isDrive ? .middlePaint : .topMiddle
+    }
+    if let passers = play.assistCandidateIndices {
+        for idx in passers where idx >= 0 && idx < offense.count && idx != play.shooterLineupIndex {
+            if play.isDrive {
+                offense[idx] = .middlePaint
+            } else {
+                offense[idx] = isPerimeterSpot(play.spot) ? .ftLine : .topMiddle
+            }
+        }
+    }
+    if play.shooterLineupIndex >= 0, play.shooterLineupIndex < offense.count {
+        offense[play.shooterLineupIndex] = play.spot
+    }
+
+    var defense = (0..<defenseCount).map { idx -> OffensiveSpot? in
+        idx < offense.count ? offense[idx] : defaultReboundSpot(forLineupIndex: idx)
+    }
+    if play.defenderLineupIndex >= 0, play.defenderLineupIndex < defense.count {
+        defense[play.defenderLineupIndex] = play.spot
+    }
+    return ReboundLocationHints(offense: offense, defense: defense)
+}
+
+private func buildTransitionReboundLocationHints(
+    offenseCount: Int,
+    defenseCount: Int,
+    shooterIdx: Int,
+    shotDefenderIdx: Int
+) -> ReboundLocationHints {
+    var offense = (0..<offenseCount).map { Optional(defaultReboundSpot(forLineupIndex: $0)) }
+    var defense = (0..<defenseCount).map { Optional(defaultReboundSpot(forLineupIndex: $0)) }
+    if shooterIdx >= 0, shooterIdx < offense.count {
+        offense[shooterIdx] = .middlePaint
+    }
+    if shotDefenderIdx >= 0, shotDefenderIdx < defense.count {
+        defense[shotDefenderIdx] = .middlePaint
+    }
+    return ReboundLocationHints(offense: offense, defense: defense)
 }
 
 private func choosePlayType(
@@ -4318,6 +4499,12 @@ private func maybeResolveFastBreak(
         crashBoards: stored.teams[defenseTeamId].team.tendencies.crashBoardsDefense,
         fastBreakBias: stored.teams[defenseTeamId].team.tendencies.attemptFastBreakDefense
     )
+    let reboundLocationHints = buildTransitionReboundLocationHints(
+        offenseCount: offenseLineup.count,
+        defenseCount: defenseLineup.count,
+        shooterIdx: runnerIdx,
+        shotDefenderIdx: leadDefIdx
+    )
     let rebound = resolveReboundOutcome(
         stored: &stored,
         offenseLineup: offenseLineup,
@@ -4330,6 +4517,8 @@ private func maybeResolveFastBreak(
         defenseCrashPreference: defenseCrashPreference,
         offensePositioning: 0.88,
         defensePositioning: 1.12,
+        offenseLocationHints: reboundLocationHints.offense,
+        defenseLocationHints: reboundLocationHints.defense,
         random: &random
     )
     if rebound.offensive {
