@@ -956,7 +956,7 @@ private func pickLineupIndexForBallHandler(
         let energy = clamp(player.condition.energy, min: 0, max: 100)
         let fatigue = clamp((100 - energy) / 100, min: 0, max: 0.9)
         let staminaProtection = clamp((stamina - 50) / 100, min: -0.2, max: 0.45)
-        let fatigueTax = clamp(1 - fatigue * (0.45 - staminaProtection * 0.25), min: 0.54, max: 1)
+        let fatigueTax = clamp(1 - fatigue * (0.72 - staminaProtection * 0.32), min: 0.32, max: 1)
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
@@ -1008,7 +1008,7 @@ private func pickLineupIndexForPickActionBallHandler(
         let energy = clamp(player.condition.energy, min: 0, max: 100)
         let fatigue = clamp((100 - energy) / 100, min: 0, max: 0.9)
         let staminaProtection = clamp((stamina - 50) / 100, min: -0.2, max: 0.45)
-        let fatigueTax = clamp(1 - fatigue * (0.5 - staminaProtection * 0.25), min: 0.5, max: 1)
+        let fatigueTax = clamp(1 - fatigue * (0.78 - staminaProtection * 0.32), min: 0.3, max: 1)
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
@@ -1515,7 +1515,7 @@ private func weightedChoiceIndex(weights: [Double], random: inout SeededRandom) 
 
 private func applyChunkMinutesAndEnergy(stored: inout NativeGameStateStore.StoredState, possessionSeconds: Int) {
     let minuteDelta = Double(possessionSeconds) / 60
-    let energyDelta = Double(possessionSeconds) * 0.034
+    let energyDelta = Double(possessionSeconds) * 0.04
     for teamId in stored.teams.indices {
         for lineupIndex in stored.teams[teamId].activeLineup.indices {
             addPlayerStat(stored: &stored, teamId: teamId, lineupIndex: lineupIndex) { line in
@@ -2210,8 +2210,8 @@ private func getRating(_ player: Player, path: String, fallback: Double = 50) ->
     let impact: Double
     switch group {
     case "athleticism": impact = 0.33
-    case "shooting": impact = 0.27
-    case "skills": impact = 0.35
+    case "shooting": impact = 0.3
+    case "skills": impact = 0.39
     case "defense": impact = 0.24
     case "rebounding", "postGame": impact = 0.22
     default: impact = 0.22
@@ -2223,8 +2223,8 @@ private func getRating(_ player: Player, path: String, fallback: Double = 50) ->
         || path == "tendencies.drive"
         || path == "tendencies.pickAndRoll"
         || path == "tendencies.pickAndPop"
-    let creatorPenalty = creatorPath ? clamp(0.1 + fatigue * 0.16 - staminaRecovery * 0.05, min: 0.04, max: 0.24) : 0
-    let effectiveImpact = clamp(impact - staminaRecovery * 0.05 + creatorPenalty, min: 0.14, max: 0.62)
+    let creatorPenalty = creatorPath ? clamp(0.11 + fatigue * 0.22 - staminaRecovery * 0.05, min: 0.05, max: 0.3) : 0
+    let effectiveImpact = clamp(impact - staminaRecovery * 0.05 + creatorPenalty, min: 0.16, max: 0.72)
 
     let fatigueAdjusted = applyClutchModifier(player, rating: raw * (1 - fatigue * effectiveImpact))
     let role = player.condition.possessionRole
@@ -3220,7 +3220,7 @@ private func evaluatePassTarget(
         let passRisk = clamp((getRating(defender, path: "defense.passPerception") - 55) / 220, min: 0, max: 0.15)
         let fatigue = clamp((100 - player.condition.energy) / 100, min: 0, max: 0.92)
         let stamina = getBaseRating(player, path: "athleticism.stamina")
-        let fatigueTax = fatigue * clamp(5.2 - (stamina - 50) / 18, min: 3.8, max: 6.6)
+        let fatigueTax = fatigue * clamp(8.8 - (stamina - 50) / 14, min: 6.5, max: 11.5)
         let score = shotUtility * 12 + openness * 18 - passRisk * 8 - fatigueTax + random.nextUnit() * 2
         if score > bestScore {
             bestScore = score
@@ -3788,7 +3788,7 @@ private func recoverAllPlayersForHalftime(stored: inout NativeGameStateStore.Sto
     for teamId in stored.teams.indices {
         for boxIndex in stored.teams[teamId].boxPlayers.indices {
             let current = stored.teams[teamId].boxPlayers[boxIndex].energy ?? 100
-            let next = min(100, current + 30)
+            let next = min(100, current + 26)
             stored.teams[teamId].boxPlayers[boxIndex].energy = next
             if boxIndex < stored.teams[teamId].team.players.count {
                 stored.teams[teamId].team.players[boxIndex].condition.energy = next

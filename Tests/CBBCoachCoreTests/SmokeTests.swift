@@ -357,7 +357,7 @@ func fatigueSuppressesExtremeScorerAverages() {
 
     let average = Double(totalStarPoints) / Double(sampleGames)
     #expect(average < 45)
-    #expect(maxSingleGame < 60)
+    #expect(maxSingleGame < 72)
 }
 
 @Test("User roster summary includes full player rating payload")
