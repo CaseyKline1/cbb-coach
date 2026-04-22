@@ -816,8 +816,8 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
                                 offenseCrashPreference: offenseCrashPreference,
                                 defenseCrashPreference: defenseCrashPreference,
                                 // In half-court misses, defenders usually hold inside boxout position.
-                                offensePositioning: 0.95,
-                                defensePositioning: 1.05,
+                                offensePositioning: 0.8,
+                                defensePositioning: 1.2,
                                 offenseLocationHints: reboundLocationHints.offense,
                                 defenseLocationHints: reboundLocationHints.defense,
                                 random: &random
