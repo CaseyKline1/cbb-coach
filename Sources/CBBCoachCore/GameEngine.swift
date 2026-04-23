@@ -2831,12 +2831,12 @@ private func shotProfile(for shotType: ShotType) -> ShotProfile {
 private func baseMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
     case .three: return 0.31
-    case .midrange: return 0.343
-    case .close: return 0.406
-    case .layup: return 0.498
-    case .dunk: return 0.662
-    case .hook: return 0.376
-    case .fadeaway: return 0.347
+    case .midrange: return 0.388
+    case .close: return 0.468
+    case .layup: return 0.564
+    case .dunk: return 0.728
+    case .hook: return 0.431
+    case .fadeaway: return 0.395
     }
 }
 
@@ -2851,37 +2851,37 @@ private func makeScale(for shotType: ShotType) -> Double {
 
 private func shotTypeEdge(for shotType: ShotType) -> Double {
     switch shotType {
-    case .layup: return 0.005
-    case .dunk: return 0.01
-    case .midrange: return -0.06
-    case .fadeaway: return -0.04
+    case .layup: return 0.02
+    case .dunk: return 0.03
+    case .midrange: return -0.03
+    case .fadeaway: return -0.02
     case .three: return -0.05
-    case .hook: return -0.01
-    case .close: return -0.02
+    case .hook: return 0.0
+    case .close: return 0.0
     }
 }
 
 private func minMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
     case .three: return 0.24
-    case .midrange: return 0.31
-    case .close: return 0.36
-    case .layup: return 0.46
-    case .dunk: return 0.62
-    case .hook: return 0.34
-    case .fadeaway: return 0.30
+    case .midrange: return 0.35
+    case .close: return 0.42
+    case .layup: return 0.52
+    case .dunk: return 0.675
+    case .hook: return 0.385
+    case .fadeaway: return 0.34
     }
 }
 
 private func maxMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
     case .three: return 0.485
-    case .midrange: return 0.525
-    case .close: return 0.595
-    case .layup: return 0.715
-    case .dunk: return 0.825
-    case .hook: return 0.555
-    case .fadeaway: return 0.515
+    case .midrange: return 0.58
+    case .close: return 0.66
+    case .layup: return 0.79
+    case .dunk: return 0.905
+    case .hook: return 0.62
+    case .fadeaway: return 0.57
     }
 }
 
