@@ -134,7 +134,7 @@ private let mobilityInteractionRatings: Set<String> = [
 
 private let clutchRatingImpact = 0.08
 private let interactionVarianceJitter = 0.17
-private let ballHandlerShareTarget = 0.40
+private let ballHandlerShareTarget = 0.34
 private let ballHandlerWarmupActions = 8
 
 private enum BlowoutRotationMode {
@@ -440,13 +440,13 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
         let shooterTendency = getBaseRating(ballHandler, path: "tendencies.shootVsPass")
         let intentBias = clamp((shooterTendency - 55) / 280, min: -0.14, max: 0.16)
         let attemptShotChance = clamp(
-            0.035
-                + Foundation.pow(shotClockPressure, 1.35) * 0.5
-                + (possessionControl - 0.5) * 0.34
+            0.024
+                + Foundation.pow(shotClockPressure, 1.35) * 0.42
+                + (possessionControl - 0.5) * 0.3
                 + intentBias
                 + paceBias,
-            min: 0.06,
-            max: 0.75
+            min: 0.05,
+            max: 0.68
         )
         let forcedShot = stored.shotClockRemaining <= CHUNK_SECONDS
         let willAttemptAction = forcedShot || random.nextUnit() < attemptShotChance
@@ -987,17 +987,22 @@ private func blowoutRotationMode(stored: NativeGameStateStore.StoredState, teamI
     let inFinalFiveRegulation = stored.currentHalf == 2 && stored.gameClockRemaining <= 300
     let inOvertime = stored.currentHalf > 2
 
-    if lead >= 50 {
+    if lead >= 42 {
         return .deepBench
     }
-    if inFinalFiveRegulation && lead >= 20 {
+    if inFinalFiveRegulation && lead >= 14 {
         return .deepBench
     }
-    // Existing deep-bench behavior for 30+ in final 10 and all overtime.
-    if (inFinalTenRegulation && lead >= 30) || (inOvertime && lead >= 30) {
+    if inFinalTenRegulation && lead >= 18 {
         return .deepBench
     }
-    guard lead >= 30 else { return .none }
+    if inOvertime && lead >= 20 {
+        return .deepBench
+    }
+    if inFinalTenRegulation && lead >= 12 {
+        return .bench
+    }
+    guard lead >= 24 else { return .none }
     return .bench
 }
 
@@ -1142,9 +1147,9 @@ private func ballHandlerUsageMultiplier(
     let overEven = max(0, share - evenShare)
     let underEven = max(0, evenShare - share)
 
-    let capPenalty = clamp(1 - overTarget * 9.2, min: 0.05, max: 1)
-    let spreadPenalty = clamp(1 - overEven * 1.45, min: 0.48, max: 1)
-    let underuseBoost = clamp(1 + underEven * 1.55, min: 1, max: 1.42)
+    let capPenalty = clamp(1 - overTarget * 11.5, min: 0.04, max: 1)
+    let spreadPenalty = clamp(1 - overEven * 1.8, min: 0.4, max: 1)
+    let underuseBoost = clamp(1 + underEven * 1.45, min: 1, max: 1.36)
     return capPenalty * spreadPenalty * underuseBoost
 }
 
@@ -1205,17 +1210,17 @@ private func resolveAssistLineupIndex(
         let shotContextBonus: Double = {
             switch shotType {
             case .three:
-                return 0.08
+                return 0.12
             case .midrange, .fadeaway:
-                return 0.04
+                return 0.06
             case .hook:
-                return 0.01
+                return 0.03
             case .layup, .dunk, .close:
-                return 0
+                return 0.02
             }
         }()
-        let biasBonus = ((creationBias ?? 0.5) - 0.5) * 0.16
-        let score = (passControl - 0.5) * 0.9 + (timingControl - 0.5) * 0.7 + shotContextBonus + biasBonus
+        let biasBonus = ((creationBias ?? 0.5) - 0.5) * 0.22
+        let score = (passControl - 0.5) * 1.0 + (timingControl - 0.5) * 0.82 + shotContextBonus + biasBonus
         if score > bestScore {
             bestScore = score
             bestIndex = candidateIdx
@@ -1223,7 +1228,7 @@ private func resolveAssistLineupIndex(
     }
 
     guard let assistIdx = bestIndex else { return nil }
-    let threshold = 0.06
+    let threshold = -0.02
     return bestScore >= threshold ? assistIdx : nil
 }
 
@@ -1986,7 +1991,7 @@ private func computeTargetMinutesMap(tracker: NativeGameStateStore.TeamTracker) 
         }
     }
 
-    // Default CPU-style pattern: 10-man rotation (5 starters ~28, 5 backups ~12).
+    // Default CPU-style pattern: 10-man rotation (5 starters ~32, 5 backups ~8).
     // If roster size differs, preserve this shape and scale to 200 team minutes.
     let listedStarters = Array((tracker.team.lineup.isEmpty ? roster : tracker.team.lineup).prefix(5))
     var used: Set<Int> = []
@@ -2012,8 +2017,8 @@ private func computeTargetMinutesMap(tracker: NativeGameStateStore.TeamTracker) 
     let benchIndices = roster.indices.filter { !used.contains($0) }.prefix(5)
 
     var rawTargets: [Int: Double] = [:]
-    for idx in starterIndices { rawTargets[idx] = 28 }
-    for idx in benchIndices { rawTargets[idx] = 12 }
+    for idx in starterIndices { rawTargets[idx] = 32 }
+    for idx in benchIndices { rawTargets[idx] = 8 }
 
     let rawTotal = rawTargets.values.reduce(0, +)
     guard rawTotal > 0 else {
@@ -2758,13 +2763,13 @@ private func shotProfile(for shotType: ShotType) -> ShotProfile {
 
 private func baseMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.322
-    case .midrange: return 0.38
-    case .close: return 0.45
-    case .layup: return 0.56
-    case .dunk: return 0.74
-    case .hook: return 0.44
-    case .fadeaway: return 0.40
+    case .three: return 0.312
+    case .midrange: return 0.355
+    case .close: return 0.425
+    case .layup: return 0.525
+    case .dunk: return 0.70
+    case .hook: return 0.405
+    case .fadeaway: return 0.365
     }
 }
 
@@ -2779,13 +2784,13 @@ private func makeScale(for shotType: ShotType) -> Double {
 
 private func shotTypeEdge(for shotType: ShotType) -> Double {
     switch shotType {
-    case .layup: return 0.02
-    case .dunk: return 0.04
-    case .midrange: return -0.04
-    case .fadeaway: return -0.02
-    case .three: return -0.04
-    case .hook: return 0.01
-    case .close: return 0
+    case .layup: return 0.01
+    case .dunk: return 0.02
+    case .midrange: return -0.05
+    case .fadeaway: return -0.03
+    case .three: return -0.045
+    case .hook: return 0
+    case .close: return -0.005
     }
 }
 
@@ -2803,13 +2808,13 @@ private func minMakeProbability(for shotType: ShotType) -> Double {
 
 private func maxMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.52
-    case .midrange: return 0.56
-    case .close: return 0.66
-    case .layup: return 0.80
-    case .dunk: return 0.92
-    case .hook: return 0.64
-    case .fadeaway: return 0.58
+    case .three: return 0.50
+    case .midrange: return 0.53
+    case .close: return 0.62
+    case .layup: return 0.75
+    case .dunk: return 0.87
+    case .hook: return 0.58
+    case .fadeaway: return 0.53
     }
 }
 
@@ -3079,8 +3084,8 @@ private func choosePlayType(
         (.dribbleDrive, max(1, drive) * 1.42 * clamp(1 - wearFactor * 0.55, min: 0.55, max: 1.05)),
         (.postUp, max(1, post) * 1.12 * clamp(1 - wearFactor * 0.32, min: 0.68, max: 1.03)),
         (.pickAndRoll, max(1, pickAndRoll * 0.62 + drive * 0.22 + (100 - shootVsPass) * 0.16) * pickFormationBoost * 0.9 * clamp(1 - wearFactor * 0.38, min: 0.62, max: 1.04)),
-        (.pickAndPop, max(1, pickAndPop * 0.62 + passAroundProfile * 0.2 + (100 - shootVsPass) * 0.18) * pickFormationBoost * 0.42 * clamp(1 - wearFactor * 0.3, min: 0.7, max: 1.04)),
-        (.passAroundForShot, max(1, passAround) * passAroundFormationBoost * 0.68 * clamp(1 + wearFactor * 0.85, min: 0.96, max: 1.58)),
+        (.pickAndPop, max(1, pickAndPop * 0.62 + passAroundProfile * 0.2 + (100 - shootVsPass) * 0.18) * pickFormationBoost * 0.56 * clamp(1 - wearFactor * 0.3, min: 0.7, max: 1.04)),
+        (.passAroundForShot, max(1, passAround) * passAroundFormationBoost * 0.88 * clamp(1 + wearFactor * 0.85, min: 0.96, max: 1.58)),
     ]
     var adjusted: [(PlayType, Double)] = []
     for (type, baseWeight) in weights {
@@ -3160,7 +3165,7 @@ private func resolvePlay(
     team: Team,
     random: inout SeededRandom
 ) -> PlayOutcome {
-    let actionPassDecisionBias = 0.03
+    let actionPassDecisionBias = 0.07
     let ballHandler = offenseLineup[ballHandlerIdx]
     let primaryDefender = defenseLineup[min(defenderIdx, defenseLineup.count - 1)]
     let playType = choosePlayType(
@@ -3606,8 +3611,8 @@ private func resolvePlay(
             edgeBonus: 0.06 + (creationControl - 0.5) * 0.2,
             makeBonus: 0.02,
             foulBonus: 0,
-            assistCandidateIndices: nil,
-            assistForceChance: 0.75,
+            assistCandidateIndices: [ballHandlerIdx],
+            assistForceChance: 0.82,
             passInterceptionRiskShift: -0.22
         )
     }
@@ -4714,7 +4719,7 @@ private func maybeResolveFastBreak(
         defenseRatings: ["defense.offballDefense", "defense.lateralQuickness", "defense.passPerception"],
         random: &random
     )
-    let pushChance = clamp(0.04 + logistic(pushInteraction.edge) * 0.5 + sourceBoost * 0.25, min: 0.03, max: 0.72)
+    let pushChance = clamp(0.025 + logistic(pushInteraction.edge) * 0.34 + sourceBoost * 0.22, min: 0.02, max: 0.54)
     guard random.nextUnit() < pushChance else { return nil }
 
     let runScore = getRating(runner, path: "athleticism.burst") * 0.38
@@ -4735,7 +4740,7 @@ private func maybeResolveFastBreak(
         random: &random
     )
     let raceEdge = (runScore - recoveryScore) / 100 + sourceBoost + raceInteraction.edge * 0.28
-    let beatDefenseChance = clamp(0.1 + logistic(raceEdge) * 0.74, min: 0.06, max: 0.88)
+    let beatDefenseChance = clamp(0.08 + logistic(raceEdge) * 0.62, min: 0.05, max: 0.8)
     guard random.nextUnit() < beatDefenseChance else { return nil }
 
     let shotType = chooseFastBreakFinish(player: runner, random: &random)
@@ -4760,9 +4765,9 @@ private func maybeResolveFastBreak(
     )
     let madeProb = clamp(
         baseMakeProbability(for: shotType)
-            + (logistic(shotInteraction.edge + 0.3) - 0.5) * makeScale(for: shotType) * 0.58
-            + (logistic(finishQuality.edge) - 0.5) * 0.42
-            + 0.06,
+            + (logistic(shotInteraction.edge + 0.3) - 0.5) * makeScale(for: shotType) * 0.46
+            + (logistic(finishQuality.edge) - 0.5) * 0.32
+            + 0.03,
         min: minMakeProbability(for: shotType),
         max: maxMakeProbability(for: shotType)
     )
