@@ -3169,7 +3169,7 @@ private func resolvePlay(
     team: Team,
     random: inout SeededRandom
 ) -> PlayOutcome {
-    let actionPassDecisionBias = 0.13
+    let actionPassDecisionBias = 0.2
     let ballHandler = offenseLineup[ballHandlerIdx]
     let primaryDefender = defenseLineup[min(defenderIdx, defenseLineup.count - 1)]
     let playType = choosePlayType(
@@ -3283,9 +3283,9 @@ private func resolvePlay(
             sagBonus = helpDefenseControl * 0.05
         }
         let kickChance = clamp(
-            0.26 + helpDefenseControl * 0.62 + max(0, driveControl - 0.5) * 0.18 + actionPassDecisionBias,
-            min: driveTier == 2 ? 0.42 + actionPassDecisionBias : (driveTier == 1 ? 0.32 + actionPassDecisionBias : 0.2 + actionPassDecisionBias),
-            max: driveTier == 2 ? 0.95 : 0.82 + actionPassDecisionBias
+            0.62 + helpDefenseControl * 0.5 + max(0, driveControl - 0.5) * 0.12 + actionPassDecisionBias,
+            min: driveTier == 2 ? 0.8 + actionPassDecisionBias : (driveTier == 1 ? 0.74 + actionPassDecisionBias : 0.64 + actionPassDecisionBias),
+            max: 0.99
         )
         if random.nextUnit() < kickChance && offenseLineup.count > 1 {
             let receiverIdx = evaluatePassTarget(
@@ -3374,9 +3374,9 @@ private func resolvePlay(
         )
         let postControl = logistic(postAdvantage.edge)
         let postKickChance = clamp(
-            0.34 + (1 - postControl) * 0.46 + actionPassDecisionBias,
-            min: 0.3 + actionPassDecisionBias,
-            max: 0.84 + actionPassDecisionBias
+            0.62 + (1 - postControl) * 0.32 + actionPassDecisionBias,
+            min: 0.7 + actionPassDecisionBias,
+            max: 0.97
         )
         if offenseLineup.count > 1 && random.nextUnit() < postKickChance {
             let outletIdx = evaluatePassTarget(
@@ -3506,9 +3506,9 @@ private func resolvePlay(
             max: 0.82
         )
         let offBallKickChance = clamp(
-            0.32 + popReadControl * 0.42 + ballHandlerPassLean * 0.16 + max(0, screenEdge) * 0.1 + actionPassDecisionBias,
-            min: 0.28 + actionPassDecisionBias,
-            max: 0.86 + actionPassDecisionBias
+            0.55 + popReadControl * 0.32 + ballHandlerPassLean * 0.14 + max(0, screenEdge) * 0.08 + actionPassDecisionBias,
+            min: 0.62 + actionPassDecisionBias,
+            max: 0.97
         )
         let alternateShooterIdx: Int? = {
             guard offenseLineup.count > 2 && random.nextUnit() < offBallKickChance else { return nil }
@@ -3870,7 +3870,7 @@ private func resolvePickAndRollOutcome(
                 isDrive: false
             )
         }
-        if random.nextUnit() < clamp(0.24 + passLean * 0.48 + pnrPassDecisionBias, min: 0.3 + pnrPassDecisionBias, max: 0.84 + pnrPassDecisionBias) {
+        if random.nextUnit() < clamp(0.55 + passLean * 0.34 + pnrPassDecisionBias, min: 0.64 + pnrPassDecisionBias, max: 0.98) {
             let receiverIdx = evaluatePassTarget(
                 offenseLineup: offenseLineup,
                 defenseLineup: defenseLineup,
@@ -3919,7 +3919,7 @@ private func resolvePickAndRollOutcome(
         let shootsThree = threeRating >= midRating - 4
         let shotType: ShotType = shootsThree ? .three : .midrange
         let spot: OffensiveSpot = shootsThree ? .topMiddle : .rightElbow
-        if offenseLineup.count > 1 && random.nextUnit() < clamp(0.34 + passLean * 0.54 + pnrPassDecisionBias, min: 0.4 + pnrPassDecisionBias, max: 0.9) {
+        if offenseLineup.count > 1 && random.nextUnit() < clamp(0.6 + passLean * 0.3 + pnrPassDecisionBias, min: 0.7 + pnrPassDecisionBias, max: 0.98) {
             let receiverIdx = evaluatePassTarget(
                 offenseLineup: offenseLineup,
                 defenseLineup: defenseLineup,
@@ -3964,7 +3964,7 @@ private func resolvePickAndRollOutcome(
         let handlerBurst = getRating(ballHandler, path: "athleticism.burst")
         let bigBurst = getRating(defenseLineup[min(screenerDefenderIdx, defenseLineup.count - 1)], path: "athleticism.burst")
         if handlerBurst > bigBurst + 8 {
-            if offenseLineup.count > 1 && random.nextUnit() < clamp(0.28 + passLean * 0.46 + pnrPassDecisionBias, min: 0.34 + pnrPassDecisionBias, max: 0.84 + pnrPassDecisionBias) {
+            if offenseLineup.count > 1 && random.nextUnit() < clamp(0.54 + passLean * 0.32 + pnrPassDecisionBias, min: 0.64 + pnrPassDecisionBias, max: 0.97) {
                 let receiverIdx = evaluatePassTarget(
                     offenseLineup: offenseLineup,
                     defenseLineup: defenseLineup,
@@ -4022,7 +4022,7 @@ private func resolvePickAndRollOutcome(
         }
     case .ice:
         // Defense cuts off the middle; ball handler forced sideline → tough midrange or reset to a passer.
-        if random.nextUnit() < clamp(0.7 + passLean * 0.22 + pnrPassDecisionBias, min: 0.58 + pnrPassDecisionBias, max: 0.9) {
+        if random.nextUnit() < clamp(0.84 + passLean * 0.14 + pnrPassDecisionBias, min: 0.78 + pnrPassDecisionBias, max: 0.99) {
             // Reset pass to best-open teammate for a shot.
             let receiverIdx = offenseLineup.indices
                 .filter { $0 != ballHandlerIdx && $0 != screenerIdx }
