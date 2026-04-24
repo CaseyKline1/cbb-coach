@@ -1559,7 +1559,7 @@ private func reboundCrashParticipationWeight(
 
 private func reboundCandidateCount(crashPreference: Double) -> Int {
     let crash = clamp(crashPreference, min: 0, max: 1)
-    if crash > 0.72 { return 2 }
+    if crash > 0.72 { return 3 }
     if crash > 0.56 { return 2 }
     if crash < 0.28 { return 1 }
     return 2
@@ -1568,11 +1568,11 @@ private func reboundCandidateCount(crashPreference: Double) -> Int {
 private func reboundChaosScale(for zone: ReboundZone) -> Double {
     switch zone {
     case .paint, .leftBlock, .rightBlock:
-        return 0.08
+        return 0.11
     case .leftPerimeter, .rightPerimeter:
-        return 0.16
+        return 0.2
     case .topPerimeter:
-        return 0.18
+        return 0.22
     }
 }
 
@@ -1589,15 +1589,15 @@ private func wingspanReboundRating(_ player: Player) -> Double {
 private func reboundCollectorRoleBonus(_ player: Player) -> Double {
     switch player.bio.position {
     case .c, .big:
-        return 0.62
+        return 0.55
     case .pf:
-        return 0.38
+        return 0.33
     case .f, .sf, .wing:
-        return 0.2
+        return 0.15
     case .sg, .cg:
-        return -0.2
+        return -0.12
     case .pg:
-        return -0.35
+        return -0.22
     }
 }
 
@@ -1874,7 +1874,7 @@ private func selectReboundCollectorViaInteractions(
                 crashPreference: offenseCrashPreference,
                 locationHints: offenseLocationHints
             )
-            let participationBoost = offensePriority.contains(offenseIdx) ? 0.12 : -0.08
+            let participationBoost = offensePriority.contains(offenseIdx) ? 0.08 : -0.05
             var interactionEdges: [Double] = []
             for defenseIdx in defenseLineup.indices {
                 let interaction = resolveInteractionWithTrace(
@@ -1900,8 +1900,8 @@ private func selectReboundCollectorViaInteractions(
         let chaosScale = reboundChaosScale(for: zone)
         let collectorWeights = collectorScores.map { candidate in
             let jitter = 0.85 + random.nextUnit() * 0.3
-            let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 1.8
-            return Foundation.exp(clamp(noisyScore * 1.1, min: -2.3, max: 2.3)) * jitter
+            let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 2.1
+            return Foundation.exp(clamp(noisyScore * 0.96, min: -2.3, max: 2.3)) * jitter
         }
         return collectorScores[weightedChoiceIndex(weights: collectorWeights, random: &random)].idx
     }
@@ -1916,7 +1916,7 @@ private func selectReboundCollectorViaInteractions(
             crashPreference: defenseCrashPreference,
             locationHints: defenseLocationHints
         )
-        let participationBoost = defensePriority.contains(defenseIdx) ? 0.12 : -0.08
+        let participationBoost = defensePriority.contains(defenseIdx) ? 0.08 : -0.05
         var interactionEdges: [Double] = []
         for offenseIdx in offenseLineup.indices {
             let interaction = resolveInteractionWithTrace(
@@ -1942,8 +1942,8 @@ private func selectReboundCollectorViaInteractions(
     let chaosScale = reboundChaosScale(for: zone)
     let collectorWeights = collectorScores.map { candidate in
         let jitter = 0.85 + random.nextUnit() * 0.3
-        let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 1.8
-        return Foundation.exp(clamp(noisyScore * 1.1, min: -2.3, max: 2.3)) * jitter
+        let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 2.1
+        return Foundation.exp(clamp(noisyScore * 0.96, min: -2.3, max: 2.3)) * jitter
     }
     return collectorScores[weightedChoiceIndex(weights: collectorWeights, random: &random)].idx
 }
