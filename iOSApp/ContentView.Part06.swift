@@ -116,22 +116,17 @@ struct PlayerCardDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 GameCard {
                     VStack(alignment: .leading, spacing: 6) {
-                        if let measurements = measurementsLine {
-                            Text(measurements)
-                                .font(.caption.monospacedDigit().weight(.semibold))
-                                .foregroundStyle(.primary)
-                        }
-                        if let home = trimmedNonEmpty(player.home) {
-                            Text("Home: \(home)")
-                                .font(.caption.monospacedDigit().weight(.semibold))
-                                .foregroundStyle(.primary)
-                        }
                         Text(player.name)
                             .font(.title3.weight(.bold))
                             .foregroundStyle(.primary)
                         Text(headerSubtitle)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                        if let measurements = measurementsLine {
+                            Text(measurements)
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(.primary)
+                        }
                     }
                 }
 
@@ -218,8 +213,8 @@ struct PlayerCardDetailView: View {
         if player.overall > 0 {
             parts.append("OVR \(player.overall)")
         }
-        if player.isStarter {
-            parts.append("Starter")
+        if let home = trimmedNonEmpty(player.home) {
+            parts.append(home)
         }
 
         return parts.joined(separator: " • ")
