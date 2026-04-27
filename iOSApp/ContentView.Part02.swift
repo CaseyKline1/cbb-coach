@@ -412,9 +412,11 @@ struct CollegeLeagueHomeView: View {
     private func runSkipAhead(from league: LeagueState, target: SkipAheadTarget) async -> SkipAheadSimulationResult {
         var currentLeague = league
         let userTeamName = getLeagueSummary(league).userTeamName
-        var completedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
+        let initialCompletedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
+        var completedGames = initialCompletedGames
         var seasonCompleted = false
-        var recaps: [String] = []
+        var progressRecaps: [String] = []
+        var completedResults: [UserGameSummary] = []
 
         while completedGames < target.completedGames {
             guard let result = advanceToNextUserGame(&currentLeague) else { break }
@@ -423,14 +425,15 @@ struct CollegeLeagueHomeView: View {
                 break
             }
             completedGames += 1
-            let recap = Self.skipAheadGameRecap(
+            completedResults.append(result)
+            let recap = Self.skipAheadGameScoreRecap(
                 for: result,
                 gameNumber: completedGames,
                 userTeamName: userTeamName
             )
-            recaps.append(recap)
-            if recaps.count % 2 == 0 {
-                let snapshot = recaps
+            progressRecaps.append(recap)
+            if progressRecaps.count % 2 == 0 {
+                let snapshot = progressRecaps
                 await MainActor.run {
                     skipAheadGameRecaps = snapshot
                 }
@@ -438,11 +441,27 @@ struct CollegeLeagueHomeView: View {
             await Task.yield()
         }
 
+        let finalRecaps = completedResults.enumerated().map { index, result in
+            Self.skipAheadGameRecap(
+                for: result,
+                gameNumber: initialCompletedGames + index + 1,
+                userTeamName: userTeamName
+            )
+        }
+
         return SkipAheadSimulationResult(
             league: currentLeague,
             seasonCompleted: seasonCompleted,
-            recaps: recaps
+            recaps: finalRecaps
         )
+    }
+
+    private static func skipAheadGameScoreRecap(for result: UserGameSummary, gameNumber: Int, userTeamName _: String) -> String {
+        let userScore = result.score?.numberValue(for: "user")?.roundedInt ?? 0
+        let oppScore = result.score?.numberValue(for: "opponent")?.roundedInt ?? 0
+        let opponent = result.opponentName ?? "Unknown"
+        let resultMarker = result.won == true ? "W" : "L"
+        return "Game \(gameNumber) vs \(opponent): \(userScore)-\(oppScore) (\(resultMarker))"
     }
 
     private static func skipAheadGameRecap(for result: UserGameSummary, gameNumber: Int, userTeamName: String) -> String {
