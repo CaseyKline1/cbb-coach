@@ -280,7 +280,8 @@ func applyPlayerUsageEnergyCost(
     guard lineupIndex >= 0, lineupIndex < stored.teams[teamId].activeLineupBoxIndices.count else { return }
     let boxIndex = stored.teams[teamId].activeLineupBoxIndices[lineupIndex]
     guard boxIndex >= 0, boxIndex < stored.teams[teamId].boxPlayers.count else { return }
-    let next = max(0, (stored.teams[teamId].boxPlayers[boxIndex].energy ?? 100) - energyCost)
+    let scaledCost = energyCost * 0.68
+    let next = max(0, (stored.teams[teamId].boxPlayers[boxIndex].energy ?? 100) - scaledCost)
     stored.teams[teamId].boxPlayers[boxIndex].energy = next
     stored.teams[teamId].activeLineup[lineupIndex].condition.energy = next
     if boxIndex < stored.teams[teamId].team.players.count {

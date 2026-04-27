@@ -67,9 +67,9 @@ func wingspanReboundRating(_ player: Player) -> Double {
 func reboundCollectorRoleBonus(_ player: Player) -> Double {
     switch player.bio.position {
     case .c, .big:
-        return 0.55
+        return 0.28
     case .pf:
-        return 0.33
+        return 0.10
     case .f, .sf, .wing:
         return 0.15
     case .sg, .cg:
@@ -352,7 +352,7 @@ func selectReboundCollectorViaInteractions(
                 crashPreference: offenseCrashPreference,
                 locationHints: offenseLocationHints
             )
-            let participationBoost = offensePriority.contains(offenseIdx) ? 0.08 : -0.05
+            let participationBoost = offensePriority.contains(offenseIdx) ? 0.04 : -0.02
             var interactionEdges: [Double] = []
             for defenseIdx in defenseLineup.indices {
                 let interaction = resolveInteractionWithTrace(
@@ -394,7 +394,7 @@ func selectReboundCollectorViaInteractions(
             crashPreference: defenseCrashPreference,
             locationHints: defenseLocationHints
         )
-        let participationBoost = defensePriority.contains(defenseIdx) ? 0.08 : -0.05
+        let participationBoost = defensePriority.contains(defenseIdx) ? 0.04 : -0.02
         var interactionEdges: [Double] = []
         for offenseIdx in offenseLineup.indices {
             let interaction = resolveInteractionWithTrace(
@@ -447,7 +447,7 @@ func weightedChoiceIndex(weights: [Double], random: inout SeededRandom) -> Int {
 
 func applyChunkMinutesAndEnergy(stored: inout NativeGameStateStore.StoredState, possessionSeconds: Int) {
     let minuteDelta = Double(possessionSeconds) / 60
-    let energyDelta = Double(possessionSeconds) * 0.04
+    let energyDelta = Double(possessionSeconds) * 0.03
     for teamId in stored.teams.indices {
         for lineupIndex in stored.teams[teamId].activeLineup.indices {
             addPlayerStat(stored: &stored, teamId: teamId, lineupIndex: lineupIndex) { line in

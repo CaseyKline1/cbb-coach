@@ -352,7 +352,7 @@ func shotProfile(for shotType: ShotType) -> ShotProfile {
 
 func baseMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.31
+    case .three: return 0.320
     case .midrange: return 0.388
     case .close: return 0.468
     case .layup: return 0.564
@@ -377,7 +377,7 @@ func shotTypeEdge(for shotType: ShotType) -> Double {
     case .dunk: return 0.03
     case .midrange: return -0.03
     case .fadeaway: return -0.02
-    case .three: return -0.05
+    case .three: return -0.038
     case .hook: return 0.0
     case .close: return 0.0
     }
@@ -385,7 +385,7 @@ func shotTypeEdge(for shotType: ShotType) -> Double {
 
 func minMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.24
+    case .three: return 0.256
     case .midrange: return 0.35
     case .close: return 0.42
     case .layup: return 0.52
@@ -397,7 +397,7 @@ func minMakeProbability(for shotType: ShotType) -> Double {
 
 func maxMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.485
+    case .three: return 0.496
     case .midrange: return 0.58
     case .close: return 0.66
     case .layup: return 0.79

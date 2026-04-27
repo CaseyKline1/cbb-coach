@@ -17,7 +17,7 @@ func resolvePlay(
     let totalInitiated = max(1, stored.teams[offenseTeamId].initiatedActionCount)
     let handlerShare = Double(handlerInitiated) / Double(totalInitiated)
     let handlerUsageOverload = clamp((handlerShare - 0.34) / 0.26, min: 0, max: 1)
-    let actionPassDecisionBias = 0.55 + handlerUsageOverload * 0.24
+    let actionPassDecisionBias = 0.12 + handlerUsageOverload * 0.06
     let ballHandler = offenseLineup[ballHandlerIdx]
     let primaryDefender = defenseLineup[min(defenderIdx, defenseLineup.count - 1)]
     let playType = choosePlayType(

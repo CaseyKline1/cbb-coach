@@ -154,9 +154,9 @@ func resolveHalfCourtAction(
                 let boxIdx = stored.teams[offenseTeamId].activeLineupBoxIndices[play.shooterLineupIndex]
                 guard boxIdx >= 0, boxIdx < stored.teams[offenseTeamId].boxPlayers.count else { return 0 }
                 let shooterBox = stored.teams[offenseTeamId].boxPlayers[boxIdx]
-                let pointTax = Double(max(0, shooterBox.points - 10)) * 0.0073
-                let attemptTax = Double(max(0, shooterBox.fgAttempts - 8)) * 0.0052
-                return clamp(pointTax + attemptTax, min: 0, max: 0.2)
+                let pointTax = Double(max(0, shooterBox.points - 11)) * 0.0044
+                let attemptTax = Double(max(0, shooterBox.fgAttempts - 9)) * 0.0029
+                return clamp(pointTax + attemptTax, min: 0, max: 0.13)
             }()
             let baseMinMake = minMakeProbability(for: shotType)
             let usageAdjustedMinMake = clamp(baseMinMake - shooterUsageTax * 0.6, min: baseMinMake - 0.11, max: baseMinMake)

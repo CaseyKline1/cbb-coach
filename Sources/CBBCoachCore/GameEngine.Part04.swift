@@ -13,7 +13,8 @@ func pickLineupIndexForBallHandler(
             + getBaseRating(player, path: "skills.passingVision") * 0.28
             + getBaseRating(player, path: "skills.passingIQ") * 0.2
             + getBaseRating(player, path: "skills.passingAccuracy") * 0.12
-            + (100 - getBaseRating(player, path: "tendencies.shootVsPass")) * 0.24
+            + getBaseRating(player, path: "tendencies.shootVsPass") * 0.16
+            + (100 - getBaseRating(player, path: "tendencies.shootVsPass")) * 0.06
             + getBaseRating(player, path: "skills.shotIQ") * 0.02
             + getBaseRating(player, path: "athleticism.burst") * 0.03
             + getBaseRating(player, path: "tendencies.drive") * 0.02
@@ -25,13 +26,13 @@ func pickLineupIndexForBallHandler(
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
-            positionMultiplier = 2.0
+            positionMultiplier = 2.25
         case .sg:
-            positionMultiplier = 0.6
+            positionMultiplier = 1.18
         case .sf, .wing, .f:
-            positionMultiplier = 0.36
+            positionMultiplier = 0.72
         case .pf, .c, .big:
-            positionMultiplier = 0.2
+            positionMultiplier = 0.36
         }
         let skillWeighted = max(1, base * positionMultiplier * fatigueTax)
         let softenedSkill = min(skillWeighted, 95) + max(0, skillWeighted - 95) * 0.35
@@ -91,13 +92,13 @@ func pickLineupIndexForPickActionBallHandler(
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
-            positionMultiplier = 1.85
+            positionMultiplier = 2.05
         case .sg:
-            positionMultiplier = 0.68
+            positionMultiplier = 0.96
         case .sf, .wing, .f:
-            positionMultiplier = 0.46
+            positionMultiplier = 0.7
         case .pf, .c, .big:
-            positionMultiplier = 0.28
+            positionMultiplier = 0.4
         }
         let skillWeighted = max(1, base * positionMultiplier * fatigueTax)
         let softenedSkill = min(skillWeighted, 95) + max(0, skillWeighted - 95) * 0.38
@@ -132,9 +133,9 @@ func ballHandlerUsageMultiplier(
     let overEven = max(0, share - evenShare)
     let underEven = max(0, evenShare - share)
 
-    let capPenalty = clamp(1 - overTarget * 0.55, min: 0.88, max: 1)
-    let spreadPenalty = clamp(1 - overEven * 0.12, min: 0.94, max: 1)
-    let underuseBoost = clamp(1 + underEven * 0.12, min: 1, max: 1.04)
+    let capPenalty = clamp(1 - overTarget * 0.26, min: 0.95, max: 1)
+    let spreadPenalty = clamp(1 - overEven * 0.04, min: 0.98, max: 1)
+    let underuseBoost = clamp(1 + underEven * 0.03, min: 1, max: 1.015)
     return capPenalty * spreadPenalty * underuseBoost
 }
 

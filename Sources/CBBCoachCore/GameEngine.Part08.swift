@@ -177,7 +177,7 @@ func choosePlayType(
         (.postUp, max(1, post) * 0.28 * clamp(1 - wearFactor * 0.32, min: 0.68, max: 1.03)),
         (.pickAndRoll, max(1, pickAndRoll * 0.62 + drive * 0.22 + (100 - shootVsPass) * 0.16) * pickFormationBoost * 1.1 * clamp(1 - wearFactor * 0.38, min: 0.62, max: 1.04)),
         (.pickAndPop, max(1, pickAndPop * 0.62 + passAroundProfile * 0.2 + (100 - shootVsPass) * 0.18) * pickFormationBoost * 1.05 * clamp(1 - wearFactor * 0.3, min: 0.7, max: 1.04)),
-        (.passAroundForShot, max(1, passAround) * passAroundFormationBoost * 10.5 * clamp(1 + wearFactor * 0.85, min: 0.96, max: 1.58)),
+        (.passAroundForShot, max(1, passAround) * passAroundFormationBoost * 5.65 * clamp(1 + wearFactor * 0.85, min: 0.96, max: 1.58)),
     ]
     var adjusted: [(PlayType, Double)] = []
     for (type, baseWeight) in weights {
