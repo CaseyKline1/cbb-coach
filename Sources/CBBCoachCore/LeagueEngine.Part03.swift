@@ -1,144 +1,192 @@
 import Foundation
 
-public func advanceToNextUserGame(_ league: inout LeagueState) -> UserGameSummary? {
-    LeagueStore.update(league.handle) { state in
-        func seasonCompleteSummary() -> UserGameSummary {
-            UserGameSummary(
-                gameId: nil,
-                day: state.currentDay,
-                type: nil,
-                siteType: nil,
-                neutralSite: nil,
-                isHome: nil,
-                opponentTeamId: nil,
-                opponentName: nil,
-                completed: true,
-                result: nil,
-                done: true,
-                message: "Season complete",
-                score: nil,
-                won: nil,
-                record: nil
-            )
-        }
+private struct LeagueAdvanceContext {
+    var userTeamId: String
+    var teamIndexById: [String: Int]
+}
 
-        func nextPendingUserGame(_ state: LeagueStore.State, userTeamId: String) -> (offset: Int, element: LeagueStore.ScheduledGame)? {
-            var bestOffset: Int?
-            var bestGame: LeagueStore.ScheduledGame?
-            for (idx, game) in state.schedule.enumerated() {
-                guard !game.completed else { continue }
-                guard game.homeTeamId == userTeamId || game.awayTeamId == userTeamId else { continue }
-                if let current = bestGame {
-                    if game.day < current.day || (game.day == current.day && game.gameId < current.gameId) {
-                        bestOffset = idx
-                        bestGame = game
-                    }
-                } else {
-                    bestOffset = idx
-                    bestGame = game
-                }
+private func seasonCompleteSummary(currentDay: Int) -> UserGameSummary {
+    UserGameSummary(
+        gameId: nil,
+        day: currentDay,
+        type: nil,
+        siteType: nil,
+        neutralSite: nil,
+        isHome: nil,
+        opponentTeamId: nil,
+        opponentName: nil,
+        completed: true,
+        result: nil,
+        done: true,
+        message: "Season complete",
+        score: nil,
+        won: nil,
+        record: nil
+    )
+}
+
+private func nextPendingUserGame(_ state: LeagueStore.State, userTeamId: String) -> (offset: Int, element: LeagueStore.ScheduledGame)? {
+    var bestOffset: Int?
+    var bestGame: LeagueStore.ScheduledGame?
+    for (idx, game) in state.schedule.enumerated() {
+        guard !game.completed else { continue }
+        guard game.homeTeamId == userTeamId || game.awayTeamId == userTeamId else { continue }
+        if let current = bestGame {
+            if game.day < current.day || (game.day == current.day && game.gameId < current.gameId) {
+                bestOffset = idx
+                bestGame = game
             }
-            guard let bestOffset, let bestGame else { return nil }
-            return (bestOffset, bestGame)
+        } else {
+            bestOffset = idx
+            bestGame = game
         }
+    }
+    guard let bestOffset, let bestGame else { return nil }
+    return (bestOffset, bestGame)
+}
 
-        func nextIncompleteDay(_ state: LeagueStore.State, upToDay: Int? = nil) -> Int? {
-            var nextDay: Int?
-            for game in state.schedule where !game.completed {
-                if let upToDay, game.day > upToDay {
-                    continue
-                }
-                if let current = nextDay {
-                    if game.day < current {
-                        nextDay = game.day
-                    }
-                } else {
-                    nextDay = game.day
-                }
+private func nextIncompleteDay(_ state: LeagueStore.State, upToDay: Int? = nil) -> Int? {
+    var nextDay: Int?
+    for game in state.schedule where !game.completed {
+        if let upToDay, game.day > upToDay {
+            continue
+        }
+        if let current = nextDay {
+            if game.day < current {
+                nextDay = game.day
             }
-            return nextDay
+        } else {
+            nextDay = game.day
+        }
+    }
+    return nextDay
+}
+
+private func pendingDayIndexes(_ state: LeagueStore.State, day: Int) -> [Int] {
+    var indexes: [Int] = []
+    for (idx, game) in state.schedule.enumerated() where !game.completed && game.day == day {
+        indexes.append(idx)
+    }
+    return indexes
+}
+
+private func prepareAdvanceContext(_ state: LeagueStore.State, cached: LeagueAdvanceContext?) -> LeagueAdvanceContext {
+    if let cached,
+       cached.userTeamId == state.userTeamId,
+       cached.teamIndexById.count == state.teams.count
+    {
+        return cached
+    }
+    return LeagueAdvanceContext(
+        userTeamId: state.userTeamId,
+        teamIndexById: Dictionary(uniqueKeysWithValues: state.teams.enumerated().map { ($0.element.teamId, $0.offset) })
+    )
+}
+
+private func advanceToNextUserGameInState(_ state: inout LeagueStore.State, cachedContext: inout LeagueAdvanceContext?) -> UserGameSummary {
+    if !state.scheduleGenerated || state.schedule.isEmpty {
+        generateSeasonScheduleInState(&state)
+    }
+    prepareConferenceTournamentsIfNeeded(&state)
+
+    let context = prepareAdvanceContext(state, cached: cachedContext)
+    cachedContext = context
+    let userTeamId = context.userTeamId
+    let teamIndexById = context.teamIndexById
+
+    var pending = nextPendingUserGame(state, userTeamId: userTeamId)
+    while pending == nil {
+        guard let nextDay = nextIncompleteDay(state) else {
+            state.status = "completed"
+            return seasonCompleteSummary(currentDay: state.currentDay)
         }
 
-        func pendingDayIndexes(_ state: LeagueStore.State, day: Int) -> [Int] {
-            var indexes: [Int] = []
-            for (idx, game) in state.schedule.enumerated() where !game.completed && game.day == day {
-                indexes.append(idx)
-            }
-            return indexes
-        }
-
-        if !state.scheduleGenerated || state.schedule.isEmpty {
-            generateSeasonScheduleInState(&state)
+        state.currentDay = nextDay
+        let dayIndexes = pendingDayIndexes(state, day: nextDay)
+        for idx in dayIndexes {
+            simulateScheduledGameInState(&state, scheduleIndex: idx, teamIndexById: teamIndexById)
         }
         prepareConferenceTournamentsIfNeeded(&state)
-
-        let userTeamId = state.userTeamId
-        let teamIndexById = Dictionary(uniqueKeysWithValues: state.teams.enumerated().map { ($0.element.teamId, $0.offset) })
-
-        var pending = nextPendingUserGame(state, userTeamId: userTeamId)
-        while pending == nil {
-            guard let nextDay = nextIncompleteDay(state) else {
-                state.status = "completed"
-                return seasonCompleteSummary()
-            }
-
-            state.currentDay = nextDay
-            let dayIndexes = pendingDayIndexes(state, day: nextDay)
-            for idx in dayIndexes {
-                simulateScheduledGameInState(&state, scheduleIndex: idx, teamIndexById: teamIndexById)
-            }
-            prepareConferenceTournamentsIfNeeded(&state)
-            pending = nextPendingUserGame(state, userTeamId: userTeamId)
-        }
-
-        guard let pending else {
-            state.status = "completed"
-            return seasonCompleteSummary()
-        }
-
-        let simDay = pending.element.day
-        let targetGameId = pending.element.gameId
-
-        var nextDayToSim = nextIncompleteDay(state, upToDay: simDay)
-        while let day = nextDayToSim {
-            state.currentDay = day
-            let dayIndexes = pendingDayIndexes(state, day: day)
-            for idx in dayIndexes {
-                simulateScheduledGameInState(&state, scheduleIndex: idx, teamIndexById: teamIndexById)
-            }
-            prepareConferenceTournamentsIfNeeded(&state)
-            nextDayToSim = nextIncompleteDay(state, upToDay: simDay)
-        }
-
-        guard let completedUserGame = state.schedule.first(where: { $0.gameId == targetGameId }) else {
-            state.status = "completed"
-            return seasonCompleteSummary()
-        }
-        let summary = userSummaryFromGame(completedUserGame, userTeamId: userTeamId)
-        state.userGameHistory.append(summary)
-
-        let user = state.teams.first(where: { $0.teamId == userTeamId })
-        let wins = user?.wins ?? 0
-        let losses = user?.losses ?? 0
-
-        var out = summary
-        out.done = false
-        out.message = "Game complete"
-        if let result = completedUserGame.result {
-            let userScore = completedUserGame.homeTeamId == userTeamId ? result.homeScore : result.awayScore
-            let oppScore = completedUserGame.homeTeamId == userTeamId ? result.awayScore : result.homeScore
-            out.score = .object([
-                "user": .number(Double(userScore)),
-                "opponent": .number(Double(oppScore)),
-            ])
-            out.won = userScore > oppScore
-        }
-        out.record = .object([
-            "wins": .number(Double(wins)),
-            "losses": .number(Double(losses)),
-        ])
-        return out
+        pending = nextPendingUserGame(state, userTeamId: userTeamId)
     }
+
+    guard let pending else {
+        state.status = "completed"
+        return seasonCompleteSummary(currentDay: state.currentDay)
+    }
+
+    let simDay = pending.element.day
+    let targetGameId = pending.element.gameId
+
+    var nextDayToSim = nextIncompleteDay(state, upToDay: simDay)
+    while let day = nextDayToSim {
+        state.currentDay = day
+        let dayIndexes = pendingDayIndexes(state, day: day)
+        for idx in dayIndexes {
+            simulateScheduledGameInState(&state, scheduleIndex: idx, teamIndexById: teamIndexById)
+        }
+        prepareConferenceTournamentsIfNeeded(&state)
+        nextDayToSim = nextIncompleteDay(state, upToDay: simDay)
+    }
+
+    guard let completedUserGame = state.schedule.first(where: { $0.gameId == targetGameId }) else {
+        state.status = "completed"
+        return seasonCompleteSummary(currentDay: state.currentDay)
+    }
+    let summary = userSummaryFromGame(completedUserGame, userTeamId: userTeamId)
+    state.userGameHistory.append(summary)
+
+    let user = state.teams.first(where: { $0.teamId == userTeamId })
+    let wins = user?.wins ?? 0
+    let losses = user?.losses ?? 0
+
+    var out = summary
+    out.done = false
+    out.message = "Game complete"
+    if let result = completedUserGame.result {
+        let userScore = completedUserGame.homeTeamId == userTeamId ? result.homeScore : result.awayScore
+        let oppScore = completedUserGame.homeTeamId == userTeamId ? result.awayScore : result.homeScore
+        out.score = .object([
+            "user": .number(Double(userScore)),
+            "opponent": .number(Double(oppScore)),
+        ])
+        out.won = userScore > oppScore
+    }
+    out.record = .object([
+        "wins": .number(Double(wins)),
+        "losses": .number(Double(losses)),
+    ])
+    return out
+}
+
+public func advanceToNextUserGame(_ league: inout LeagueState) -> UserGameSummary? {
+    LeagueStore.update(league.handle) { state in
+        var cachedContext: LeagueAdvanceContext?
+        return advanceToNextUserGameInState(&state, cachedContext: &cachedContext)
+    }
+}
+
+public func advanceUserGames(_ league: inout LeagueState, maxGames: Int) -> UserGameAdvanceBatch {
+    let safeMaxGames = max(0, maxGames)
+    guard safeMaxGames > 0 else {
+        return UserGameAdvanceBatch(results: [], seasonCompleted: false)
+    }
+    return LeagueStore.update(league.handle) { state in
+        var cachedContext: LeagueAdvanceContext?
+        var completedUserGames: [UserGameSummary] = []
+        completedUserGames.reserveCapacity(safeMaxGames)
+        var seasonCompleted = false
+
+        for _ in 0..<safeMaxGames {
+            let result = advanceToNextUserGameInState(&state, cachedContext: &cachedContext)
+            if result.done == true {
+                seasonCompleted = true
+                break
+            }
+            completedUserGames.append(result)
+        }
+        return UserGameAdvanceBatch(results: completedUserGames, seasonCompleted: seasonCompleted)
+    } ?? UserGameAdvanceBatch(results: [], seasonCompleted: false)
 }
 
 public func getUserCompletedGames(_ league: LeagueState) -> [UserGameSummary] {

@@ -407,33 +407,10 @@ struct CollegeLeagueHomeView: View {
         var currentLeague = league
         let userTeamName = getLeagueSummary(league).userTeamName
         let initialCompletedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
-        var completedGames = initialCompletedGames
-        var seasonCompleted = false
-        var progressRecaps: [String] = []
-        var completedResults: [UserGameSummary] = []
-
-        while completedGames < target.completedGames {
-            guard let result = advanceToNextUserGame(&currentLeague) else { break }
-            if result.done == true {
-                seasonCompleted = true
-                break
-            }
-            completedGames += 1
-            completedResults.append(result)
-            let recap = Self.skipAheadGameScoreRecap(
-                for: result,
-                gameNumber: completedGames,
-                userTeamName: userTeamName
-            )
-            progressRecaps.append(recap)
-            if progressRecaps.count % 2 == 0 {
-                let snapshot = progressRecaps
-                await MainActor.run {
-                    skipAheadGameRecaps = snapshot
-                }
-            }
-            await Task.yield()
-        }
+        let gamesNeeded = max(0, target.completedGames - initialCompletedGames)
+        let batch = advanceUserGames(&currentLeague, maxGames: gamesNeeded)
+        let completedResults = batch.results
+        let seasonCompleted = batch.seasonCompleted
 
         let finalRecaps = completedResults.enumerated().map { index, result in
             Self.skipAheadGameRecap(

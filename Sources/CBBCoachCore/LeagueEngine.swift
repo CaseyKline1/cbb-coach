@@ -149,6 +149,16 @@ public struct UserGameSummary: Codable, Equatable, Sendable {
     public var record: JSONValue?
 }
 
+public struct UserGameAdvanceBatch: Codable, Equatable, Sendable {
+    public var results: [UserGameSummary]
+    public var seasonCompleted: Bool
+
+    public init(results: [UserGameSummary], seasonCompleted: Bool) {
+        self.results = results
+        self.seasonCompleted = seasonCompleted
+    }
+}
+
 public struct LeagueGameSummary: Codable, Equatable, Sendable {
     public var gameId: String?
     public var day: Int?
