@@ -255,9 +255,6 @@ struct PlayerCardDetailView: View {
                         .init(id: "fg", title: "FG%", width: 64),
                         .init(id: "three", title: "3PT%", width: 64),
                         .init(id: "ft", title: "FT%", width: 64),
-                        .init(id: "ppg", title: "PPG", width: 56),
-                        .init(id: "rpg", title: "RPG", width: 56),
-                        .init(id: "apg", title: "APG", width: 56),
                     ]
                     AppTable(columns: columns, rows: careerRows) { row in
                         HStack(spacing: 0) {
@@ -273,9 +270,6 @@ struct PlayerCardDetailView: View {
                             AppTableTextCell(text: pct(row.totals.fgPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.threePct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.ftPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: format(row.totals.pointsPerGame), width: 56, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: format(row.totals.reboundsPerGame), width: 56, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: format(row.totals.assistsPerGame), width: 56, font: .caption.monospacedDigit().weight(.semibold))
                         }
                     }
                 }
