@@ -34,102 +34,6 @@ struct PlayerCardDetailView: View {
         }
     }
 
-    private var topTraits: [String] {
-        let attributes = player.attributes ?? [:]
-        let scored: [(name: String, score: Double)] = [
-            (
-                "Sharpshooter",
-                score(
-                    attributes["threePointShooting"],
-                    attributes["cornerThrees"],
-                    attributes["upTopThrees"],
-                    attributes["tendencyThreePoint"]
-                )
-            ),
-            (
-                "Playmaker",
-                score(
-                    attributes["passingVision"],
-                    attributes["passingIQ"],
-                    attributes["passingAccuracy"],
-                    attributes["shotIQ"]
-                )
-            ),
-            (
-                "Rim Protector",
-                score(
-                    attributes["shotBlocking"],
-                    attributes["shotContest"],
-                    attributes["vertical"],
-                    attributes["postDefense"]
-                )
-            ),
-            (
-                "Lockdown Defender",
-                score(
-                    attributes["perimeterDefense"],
-                    attributes["lateralQuickness"],
-                    attributes["offballDefense"],
-                    attributes["steals"]
-                )
-            ),
-            (
-                "Glass Cleaner",
-                score(
-                    attributes["offensiveRebounding"],
-                    attributes["defensiveRebound"],
-                    attributes["boxouts"],
-                    attributes["strength"]
-                )
-            ),
-            (
-                "Slasher",
-                score(
-                    attributes["layups"],
-                    attributes["burst"],
-                    attributes["ballHandling"],
-                    attributes["tendencyDrive"]
-                )
-            ),
-            (
-                "Post Scorer",
-                score(
-                    attributes["postControl"],
-                    attributes["postHooks"],
-                    attributes["postFadeaways"],
-                    attributes["tendencyPost"]
-                )
-            ),
-            (
-                "Floor General",
-                score(
-                    attributes["ballHandling"],
-                    attributes["passingVision"],
-                    attributes["passingIQ"],
-                    attributes["tendencyShootVsPass"].map { 100 - $0 }
-                )
-            ),
-        ]
-        return scored
-            .filter { $0.score >= 68 }
-            .sorted { lhs, rhs in
-                if lhs.score != rhs.score { return lhs.score > rhs.score }
-                return lhs.name < rhs.name
-            }
-            .prefix(4)
-            .map(\.name)
-    }
-
-    private var measurableTraits: [String] {
-        let potential = player.attributes?["potential"]
-        return [
-            measurementsLine,
-            traitLabel("Home", value: player.home),
-            potential.map { "Potential \($0)" },
-        ]
-        .compactMap { $0 }
-    }
-
     private var measurementsLine: String? {
         var parts: [String] = []
         if let height = formattedFeet(player.height) {
@@ -162,10 +66,6 @@ struct PlayerCardDetailView: View {
             return "\(feet)'\(inches)\""
         }
         return trimmed
-    }
-
-    private var allTraits: [String] {
-        measurableTraits + topTraits
     }
 
     private struct CareerYearRow {
@@ -216,28 +116,22 @@ struct PlayerCardDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 GameCard {
                     VStack(alignment: .leading, spacing: 6) {
+                        if let measurements = measurementsLine {
+                            Text(measurements)
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(.primary)
+                        }
+                        if let home = trimmedNonEmpty(player.home) {
+                            Text("Home: \(home)")
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(.primary)
+                        }
                         Text(player.name)
                             .font(.title3.weight(.bold))
                             .foregroundStyle(.primary)
                         Text(headerSubtitle)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                    }
-                }
-
-                GameCard {
-                    if allTraits.isEmpty {
-                        Text("No standout traits yet.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(allTraits, id: \.self) { trait in
-                                Text(trait)
-                                    .font(.caption.monospacedDigit().weight(.semibold))
-                                    .foregroundStyle(.primary)
-                            }
-                        }
                     }
                 }
 
@@ -433,19 +327,6 @@ struct PlayerCardDetailView: View {
         }
         guard totalWeight > 0 else { return nil }
         return Int((Double(weightedTotal) / Double(totalWeight)).rounded())
-    }
-
-    private func score(_ values: Int?...) -> Double {
-        let valid = values.compactMap { $0 }
-        guard !valid.isEmpty else { return 0 }
-        return Double(valid.reduce(0, +)) / Double(valid.count)
-    }
-
-    private func traitLabel(_ label: String, value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        return "\(label): \(trimmed)"
     }
 
     private func format(_ value: Double) -> String {
