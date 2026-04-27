@@ -51,22 +51,22 @@ struct CollegeLeagueHomeView: View {
     let onChooseDifferentTeam: () -> Void
     let onCreateNewCoach: () -> Void
 
-    @State private var league: LeagueState?
-    @State private var statusText: String = "Creating league..."
-    @State private var roster: [UserRosterPlayerSummary] = []
-    @State private var schedule: [UserGameSummary] = []
-    @State private var rotationSlots: [UserRotationSlot] = []
-    @State private var coachingStaff: UserCoachingStaffSummary?
-    @State private var summary: LeagueSummary?
-    @State private var conferenceStandings: [String: [ConferenceStanding]] = [:]
-    @State private var conferenceNamesById: [String: String] = [:]
-    @State private var rankings: LeagueRankings?
-    @State private var completedLeagueGames: [LeagueGameSummary] = []
-    @State private var teamRostersByName: [String: [UserRosterPlayerSummary]] = [:]
-    @State private var showingSkipAheadOptions = false
-    @State private var isSkipAheadInProgress = false
-    @State private var skipAheadTitle = ""
-    @State private var skipAheadGameRecaps: [String] = []
+    @State var league: LeagueState?
+    @State var statusText: String = "Creating league..."
+    @State var roster: [UserRosterPlayerSummary] = []
+    @State var schedule: [UserGameSummary] = []
+    @State var rotationSlots: [UserRotationSlot] = []
+    @State var coachingStaff: UserCoachingStaffSummary?
+    @State var summary: LeagueSummary?
+    @State var conferenceStandings: [String: [ConferenceStanding]] = [:]
+    @State var conferenceNamesById: [String: String] = [:]
+    @State var rankings: LeagueRankings?
+    @State var completedLeagueGames: [LeagueGameSummary] = []
+    @State var teamRostersByName: [String: [UserRosterPlayerSummary]] = [:]
+    @State var showingSkipAheadOptions = false
+    @State var isSkipAheadInProgress = false
+    @State var skipAheadTitle = ""
+    @State var skipAheadGameRecaps: [String] = []
 
     var body: some View {
         NavigationStack {

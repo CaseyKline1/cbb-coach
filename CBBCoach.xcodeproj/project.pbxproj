@@ -8,21 +8,39 @@
 
 /* Begin PBXBuildFile section */
 		02B3C00333821A59462B729C /* AppTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D7F0523C735098D20C2209 /* AppTable.swift */; };
+		04CDF40E268BA5F85550ABA4 /* ContentView.Part05.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57DB02E5416F8B532180DDC9 /* ContentView.Part05.swift */; };
+		1AFCE20BC8FF2EF453F3DB6D /* ContentView.Part08.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34D2E888E6248BB74F08B758 /* ContentView.Part08.swift */; };
+		1FC948D2053738157DE8F2E0 /* ContentView.Part02.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3225B0BC37942C6D161BAE1 /* ContentView.Part02.swift */; };
+		43D4C09A371721FEB3940163 /* ContentView.Part03.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C38770CC08E836B9D43787A /* ContentView.Part03.swift */; };
 		47D1C9316042922091F481DC /* CBBCoachCore in Frameworks */ = {isa = PBXBuildFile; productRef = EF6CB10E6DF3EA41469DAC21 /* CBBCoachCore */; };
 		4A3F436DD523E92D203DACC6 /* CBBCoachApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 723406DE4B79EAE29077EC7F /* CBBCoachApp.swift */; };
+		53BD08CA75A1F14ED6B56195 /* ContentView.Part04.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3E90F82901E39627679B11 /* ContentView.Part04.swift */; };
+		678B556D94E37A5AE35651B2 /* ContentView.Part06.swift in Sources */ = {isa = PBXBuildFile; fileRef = D88A27BBFC1DA2A32FE35C09 /* ContentView.Part06.swift */; };
+		713D916FA4B59886D3673B88 /* ContentView.Part09.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDBC1A58D490C67F542A6C2D /* ContentView.Part09.swift */; };
 		8E777E6698C0FD72023F14AD /* FilterDropdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF61AD187740290FDECD395 /* FilterDropdown.swift */; };
 		BAC5A2D4195FEBA68BD4F156 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A95D0E601B2745C92AF4D82E /* ContentView.swift */; };
+		CAC9E1B8AC93BE8573BDDEAB /* ContentView.Part10.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EFC4E759F4FE96E71200F1 /* ContentView.Part10.swift */; };
+		DE92A1D6671211BA4401D387 /* ContentView.Part07.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CB22F4F81EB7D6037AB3CC0 /* ContentView.Part07.swift */; };
 		E5122D07E12E1240BDAFAC66 /* AppComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB79331F4DDA7BE27C24E4E /* AppComponents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		039882A13BCBBBEAFE227DE5 /* cbb-coach */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "cbb-coach"; path = .; sourceTree = SOURCE_ROOT; };
+		0CB22F4F81EB7D6037AB3CC0 /* ContentView.Part07.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part07.swift; sourceTree = "<group>"; };
+		34D2E888E6248BB74F08B758 /* ContentView.Part08.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part08.swift; sourceTree = "<group>"; };
+		57DB02E5416F8B532180DDC9 /* ContentView.Part05.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part05.swift; sourceTree = "<group>"; };
 		723406DE4B79EAE29077EC7F /* CBBCoachApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CBBCoachApp.swift; sourceTree = "<group>"; };
+		7C38770CC08E836B9D43787A /* ContentView.Part03.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part03.swift; sourceTree = "<group>"; };
+		8F3E90F82901E39627679B11 /* ContentView.Part04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part04.swift; sourceTree = "<group>"; };
 		92A57274091C29C6024125B1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9FF61AD187740290FDECD395 /* FilterDropdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterDropdown.swift; sourceTree = "<group>"; };
 		A95D0E601B2745C92AF4D82E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BDBC1A58D490C67F542A6C2D /* ContentView.Part09.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part09.swift; sourceTree = "<group>"; };
+		C0EFC4E759F4FE96E71200F1 /* ContentView.Part10.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part10.swift; sourceTree = "<group>"; };
+		C3225B0BC37942C6D161BAE1 /* ContentView.Part02.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part02.swift; sourceTree = "<group>"; };
 		CAEE84DF38E8D2CAAF7CBE6A /* CBBCoachApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CBBCoachApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0D7F0523C735098D20C2209 /* AppTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTable.swift; sourceTree = "<group>"; };
+		D88A27BBFC1DA2A32FE35C09 /* ContentView.Part06.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part06.swift; sourceTree = "<group>"; };
 		FAB79331F4DDA7BE27C24E4E /* AppComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppComponents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -59,6 +77,15 @@
 			isa = PBXGroup;
 			children = (
 				723406DE4B79EAE29077EC7F /* CBBCoachApp.swift */,
+				C3225B0BC37942C6D161BAE1 /* ContentView.Part02.swift */,
+				7C38770CC08E836B9D43787A /* ContentView.Part03.swift */,
+				8F3E90F82901E39627679B11 /* ContentView.Part04.swift */,
+				57DB02E5416F8B532180DDC9 /* ContentView.Part05.swift */,
+				D88A27BBFC1DA2A32FE35C09 /* ContentView.Part06.swift */,
+				0CB22F4F81EB7D6037AB3CC0 /* ContentView.Part07.swift */,
+				34D2E888E6248BB74F08B758 /* ContentView.Part08.swift */,
+				BDBC1A58D490C67F542A6C2D /* ContentView.Part09.swift */,
+				C0EFC4E759F4FE96E71200F1 /* ContentView.Part10.swift */,
 				A95D0E601B2745C92AF4D82E /* ContentView.swift */,
 				92A57274091C29C6024125B1 /* Info.plist */,
 				BFB4F2AC81D052E6C9972E49 /* Components */,
@@ -150,6 +177,15 @@
 				E5122D07E12E1240BDAFAC66 /* AppComponents.swift in Sources */,
 				02B3C00333821A59462B729C /* AppTable.swift in Sources */,
 				4A3F436DD523E92D203DACC6 /* CBBCoachApp.swift in Sources */,
+				1FC948D2053738157DE8F2E0 /* ContentView.Part02.swift in Sources */,
+				43D4C09A371721FEB3940163 /* ContentView.Part03.swift in Sources */,
+				53BD08CA75A1F14ED6B56195 /* ContentView.Part04.swift in Sources */,
+				04CDF40E268BA5F85550ABA4 /* ContentView.Part05.swift in Sources */,
+				678B556D94E37A5AE35651B2 /* ContentView.Part06.swift in Sources */,
+				DE92A1D6671211BA4401D387 /* ContentView.Part07.swift in Sources */,
+				1AFCE20BC8FF2EF453F3DB6D /* ContentView.Part08.swift in Sources */,
+				713D916FA4B59886D3673B88 /* ContentView.Part09.swift in Sources */,
+				CAC9E1B8AC93BE8573BDDEAB /* ContentView.Part10.swift in Sources */,
 				BAC5A2D4195FEBA68BD4F156 /* ContentView.swift in Sources */,
 				8E777E6698C0FD72023F14AD /* FilterDropdown.swift in Sources */,
 			);
