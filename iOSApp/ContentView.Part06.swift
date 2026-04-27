@@ -121,10 +121,10 @@ struct PlayerCardDetailView: View {
                             .foregroundStyle(.primary)
                         Text(headerSubtitle)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary)
                         if let measurements = measurementsLine {
                             Text(measurements)
-                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .font(.subheadline)
                                 .foregroundStyle(.primary)
                         }
                     }
