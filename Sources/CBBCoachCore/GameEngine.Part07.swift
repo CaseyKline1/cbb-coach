@@ -215,23 +215,26 @@ func getRating(_ player: Player, path: String, fallback: Double = 50) -> Double 
     let fatigue = clamp((100 - energy) / 100, min: 0, max: 0.85)
     let stamina = getBaseRating(player, path: "athleticism.stamina", fallback: 50)
     let staminaRecovery = clamp((stamina - 50) / 50, min: -1, max: 1)
-    let group = String(path.split(separator: ".").first ?? "")
     let impact: Double
-    switch group {
-    case "athleticism": impact = 0.33
-    case "shooting": impact = 0.3
-    case "skills": impact = 0.39
-    case "defense": impact = 0.24
-    case "rebounding", "postGame": impact = 0.22
-    default: impact = 0.22
+    if path.hasPrefix("athleticism.") {
+        impact = 0.33
+    } else if path.hasPrefix("shooting.") {
+        impact = 0.3
+    } else if path.hasPrefix("skills.") {
+        impact = 0.39
+    } else if path.hasPrefix("defense.") {
+        impact = 0.24
+    } else {
+        impact = 0.22
     }
-    let creatorPath = path == "skills.ballHandling"
-        || path == "skills.ballSafety"
-        || path == "skills.passingIQ"
-        || path == "skills.passingVision"
-        || path == "tendencies.drive"
-        || path == "tendencies.pickAndRoll"
-        || path == "tendencies.pickAndPop"
+    let creatorPath: Bool
+    switch path {
+    case "skills.ballHandling", "skills.ballSafety", "skills.passingIQ", "skills.passingVision",
+         "tendencies.drive", "tendencies.pickAndRoll", "tendencies.pickAndPop":
+        creatorPath = true
+    default:
+        creatorPath = false
+    }
     let creatorPenalty = creatorPath ? clamp(0.11 + fatigue * 0.22 - staminaRecovery * 0.05, min: 0.05, max: 0.3) : 0
     let effectiveImpact = clamp(impact - staminaRecovery * 0.05 + creatorPenalty, min: 0.16, max: 0.72)
 
@@ -249,19 +252,33 @@ func getRating(_ player: Player, path: String, fallback: Double = 50) -> Double 
 }
 
 func weightedSkillScore(player: Player, ratingPaths: [String], random: inout SeededRandom) -> WeightedSkill {
-    let ratings = ratingPaths.map { getRating(player, path: $0) }
-    let mean = average(ratings)
-    let weighted = ratings.map { value -> (value: Double, weight: Double) in
+    guard !ratingPaths.isEmpty else {
+        return WeightedSkill(score: 50)
+    }
+    var ratings: [Double] = []
+    ratings.reserveCapacity(ratingPaths.count)
+    var ratingsSum = 0.0
+    for path in ratingPaths {
+        let value = getRating(player, path: path)
+        ratings.append(value)
+        ratingsSum += value
+    }
+    let mean = ratingsSum / Double(ratings.count)
+
+    var weightedSum = 0.0
+    var totalWeight = 0.0
+    for value in ratings {
         let excellence = clamp((value - mean) / 50, min: -1, max: 1)
         let baseline = 0.55 + random.nextUnit()
         let strengthBias = 1 + max(0, excellence) * 0.35
-        return (value: value, weight: baseline * strengthBias)
+        let weight = baseline * strengthBias
+        totalWeight += weight
+        weightedSum += value * weight
     }
-    let totalWeight = weighted.reduce(0) { $0 + $1.weight }
     if totalWeight <= 0 {
-        return WeightedSkill(score: average(ratings))
+        return WeightedSkill(score: mean)
     }
-    let score = weighted.reduce(0) { $0 + $1.value * $1.weight } / totalWeight
+    let score = weightedSum / totalWeight
     return WeightedSkill(score: score)
 }
 
