@@ -273,7 +273,21 @@ public func getLeagueSummary(_ league: LeagueState) -> LeagueSummary {
     )
 }
 
+public enum LeagueSaveStyle: Sendable {
+    case compact
+    case pretty
+}
+
 public func saveLeagueState(_ league: LeagueState, destinationPath: String, pretty: Bool = true) throws -> (filePath: String, bytes: Int, format: String, version: Int, savedAt: String) {
+    let style: LeagueSaveStyle = pretty ? .pretty : .compact
+    return try saveLeagueState(league, destinationPath: destinationPath, style: style)
+}
+
+public func saveLeagueState(
+    _ league: LeagueState,
+    destinationPath: String,
+    style: LeagueSaveStyle
+) throws -> (filePath: String, bytes: Int, format: String, version: Int, savedAt: String) {
     guard let state = LeagueStore.get(league.handle) else {
         throw NSError(domain: "CBBCoachCore", code: 1002, userInfo: [NSLocalizedDescriptionKey: "Unknown league handle"])
     }
@@ -289,16 +303,30 @@ public func saveLeagueState(_ league: LeagueState, destinationPath: String, pret
     let payload = SavePayload(format: LEAGUE_SAVE_FORMAT, version: LEAGUE_SAVE_VERSION, savedAt: savedAt, state: state)
 
     let encoder = JSONEncoder()
-    if pretty {
+    if style == .pretty {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     }
     let data = try encoder.encode(payload)
 
     let url = URL(fileURLWithPath: destinationPath)
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try data.write(to: url)
+    try data.write(to: url, options: .atomic)
 
     return (url.path, data.count, LEAGUE_SAVE_FORMAT, LEAGUE_SAVE_VERSION, savedAt)
+}
+
+public func saveLeagueStateForAutosave(
+    _ league: LeagueState,
+    destinationPath: String
+) throws -> (filePath: String, bytes: Int, format: String, version: Int, savedAt: String) {
+    try saveLeagueState(league, destinationPath: destinationPath, style: .compact)
+}
+
+public func saveLeagueStateForExport(
+    _ league: LeagueState,
+    destinationPath: String
+) throws -> (filePath: String, bytes: Int, format: String, version: Int, savedAt: String) {
+    try saveLeagueState(league, destinationPath: destinationPath, style: .pretty)
 }
 
 public func loadLeagueState(_ sourcePath: String) throws -> LeagueState {
