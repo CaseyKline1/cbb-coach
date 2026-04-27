@@ -26,7 +26,7 @@ CONFIG="${CONFIG:-Debug}"
 DEVICE_ID="${1:-}"
 
 if [[ -z "$DEVICE_ID" ]]; then
-  DEVICE_ID="$(xcrun simctl list devices booted available | rg -o '[0-9A-F-]{36}' | head -n 1)"
+  DEVICE_ID="$(xcrun simctl list devices booted available | grep -Eo '[0-9A-F-]{36}' | head -n 1)"
 fi
 
 if [[ -z "$DEVICE_ID" ]]; then
