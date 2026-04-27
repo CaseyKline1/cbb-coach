@@ -358,6 +358,7 @@ struct LeagueStore {
         var userGameHistory: [UserGameSummary]
         var scheduleGenerated: Bool
         var conferenceTournaments: [ConferenceTournamentState]?
+        var remainingRegularSeasonGames: Int?
     }
 
     static let lock = NSLock()

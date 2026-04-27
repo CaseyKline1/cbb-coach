@@ -85,14 +85,22 @@ func sortedConferenceTeamIdsForSeeding(_ state: LeagueStore.State, conferenceId:
         .map(\.teamId)
 }
 
-func isRegularSeasonComplete(_ state: LeagueStore.State) -> Bool {
-    let regularGames = state.schedule.filter { $0.type == "regular_season" }
-    guard !regularGames.isEmpty else { return false }
-    return regularGames.allSatisfy(\.completed)
+func ensureRemainingRegularSeasonGames(_ state: inout LeagueStore.State) {
+    if state.remainingRegularSeasonGames == nil {
+        state.remainingRegularSeasonGames = state.schedule.reduce(0) { total, game in
+            total + ((game.type == "regular_season" && !game.completed) ? 1 : 0)
+        }
+    }
+}
+
+func isRegularSeasonComplete(_ state: inout LeagueStore.State) -> Bool {
+    ensureRemainingRegularSeasonGames(&state)
+    guard let remaining = state.remainingRegularSeasonGames else { return false }
+    return remaining == 0
 }
 
 func prepareConferenceTournamentsIfNeeded(_ state: inout LeagueStore.State) {
-    guard isRegularSeasonComplete(state) else { return }
+    guard isRegularSeasonComplete(&state) else { return }
 
     if state.conferenceTournaments == nil {
         state.conferenceTournaments = state.conferences.compactMap { conference in
@@ -249,6 +257,7 @@ func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
     state.schedule.removeAll(keepingCapacity: true)
     state.userGameHistory.removeAll(keepingCapacity: true)
     state.conferenceTournaments = nil
+    state.remainingRegularSeasonGames = nil
     resetTeamRecords(&state)
 
     guard let user = state.teams.first(where: { $0.teamId == state.userTeamId }) else {
@@ -381,6 +390,9 @@ func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
         if $0.day != $1.day { return $0.day < $1.day }
         return $0.gameId < $1.gameId
     }
+    state.remainingRegularSeasonGames = state.schedule.reduce(0) { total, game in
+        total + ((game.type == "regular_season" && !game.completed) ? 1 : 0)
+    }
     state.scheduleGenerated = true
     state.currentDay = 0
     state.status = "in_progress"
@@ -446,6 +458,16 @@ func simulateScheduledGameInState(
         wentToOvertime: result.wentToOvertime,
         boxScore: result.boxScore
     )
+    if game.type == "regular_season" {
+        if state.remainingRegularSeasonGames == nil {
+            state.remainingRegularSeasonGames = state.schedule.reduce(0) { total, scheduledGame in
+                total + ((scheduledGame.type == "regular_season" && !scheduledGame.completed) ? 1 : 0)
+            }
+        }
+        if let remaining = state.remainingRegularSeasonGames {
+            state.remainingRegularSeasonGames = max(0, remaining - 1)
+        }
+    }
 
     state.teams[homeIndex].pointsFor += homeScore
     state.teams[homeIndex].pointsAgainst += awayScore
