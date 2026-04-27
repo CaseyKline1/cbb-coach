@@ -198,11 +198,10 @@ struct PlayerCardDetailView: View {
     }
 
     private var headerSubtitle: String {
-        var parts: [String] = [teamName]
+        var parts: [String] = []
 
-        let trimmedPosition = player.position.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedPosition.isEmpty {
-            parts.append(trimmedPosition)
+        if player.overall > 0 {
+            parts.append("OVR \(player.overall)")
         }
 
         let trimmedYear = player.year.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -210,9 +209,13 @@ struct PlayerCardDetailView: View {
             parts.append(trimmedYear)
         }
 
-        if player.overall > 0 {
-            parts.append("OVR \(player.overall)")
+        let trimmedPosition = player.position.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedPosition.isEmpty {
+            parts.append(trimmedPosition)
         }
+
+        parts.append(teamName)
+
         if let home = trimmedNonEmpty(player.home) {
             parts.append(home)
         }
