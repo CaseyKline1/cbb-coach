@@ -406,6 +406,7 @@ public func simulateGame(
         random: &random,
         includePlayByPlay: includePlayByPlay
     )
+    defer { _ = NativeGameStateStore.remove(state.handle) }
     simulateHalf(state: &state, random: &random)
 
     _ = NativeGameStateStore.withState(state.handle) { stored in

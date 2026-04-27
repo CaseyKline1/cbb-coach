@@ -231,6 +231,13 @@ struct NativeGameStateStore {
         return states[handle]
     }
 
+    @discardableResult
+    static func remove(_ handle: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return states.removeValue(forKey: handle) != nil
+    }
+
     private static func makeTeamTracker(_ team: Team) -> TeamTracker {
         let roster = team.players.isEmpty ? team.lineup : team.players
         let starters = Array((team.lineup.isEmpty ? roster : team.lineup).prefix(5))

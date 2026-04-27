@@ -2,6 +2,7 @@ import Foundation
 
 public func simulateGameWithQA(homeTeam: Team, awayTeam: Team, random: inout SeededRandom) -> SimulatedGameQAResult {
     var state = createInitialGameState(homeTeam: homeTeam, awayTeam: awayTeam, random: &random)
+    defer { _ = NativeGameStateStore.remove(state.handle) }
     _ = NativeGameStateStore.withState(state.handle) { stored in
         stored.traceEnabled = true
     }
