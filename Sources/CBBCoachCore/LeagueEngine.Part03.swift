@@ -1,0 +1,430 @@
+import Foundation
+
+public func advanceToNextUserGame(_ league: inout LeagueState) -> UserGameSummary? {
+    LeagueStore.update(league.handle) { state in
+        if !state.scheduleGenerated || state.schedule.isEmpty {
+            generateSeasonScheduleInState(&state)
+        }
+        prepareConferenceTournamentsIfNeeded(&state)
+
+        let userTeamId = state.userTeamId
+        func nextPendingUserGame(_ state: LeagueStore.State, userTeamId: String) -> (offset: Int, element: LeagueStore.ScheduledGame)? {
+            state.schedule
+                .enumerated()
+                .filter { _, game in !game.completed && (game.homeTeamId == userTeamId || game.awayTeamId == userTeamId) }
+                .min { lhs, rhs in
+                    if lhs.element.day != rhs.element.day { return lhs.element.day < rhs.element.day }
+                    return lhs.element.gameId < rhs.element.gameId
+                }
+        }
+
+        var pending = nextPendingUserGame(state, userTeamId: userTeamId)
+        while pending == nil {
+            guard let nextDay = state.schedule.filter({ !$0.completed }).map(\.day).min() else {
+                state.status = "completed"
+                return UserGameSummary(
+                    gameId: nil,
+                    day: state.currentDay,
+                    type: nil,
+                    siteType: nil,
+                    neutralSite: nil,
+                    isHome: nil,
+                    opponentTeamId: nil,
+                    opponentName: nil,
+                    completed: true,
+                    result: nil,
+                    done: true,
+                    message: "Season complete",
+                    score: nil,
+                    won: nil,
+                    record: nil
+                )
+            }
+
+            state.currentDay = nextDay
+            let dayIndexes = state.schedule.enumerated().filter { _, game in !game.completed && game.day == nextDay }.map(\.offset)
+            for idx in dayIndexes {
+                simulateScheduledGameInState(&state, scheduleIndex: idx)
+            }
+            prepareConferenceTournamentsIfNeeded(&state)
+            pending = nextPendingUserGame(state, userTeamId: userTeamId)
+        }
+
+        guard let pending else {
+            state.status = "completed"
+            return UserGameSummary(
+                gameId: nil,
+                day: state.currentDay,
+                type: nil,
+                siteType: nil,
+                neutralSite: nil,
+                isHome: nil,
+                opponentTeamId: nil,
+                opponentName: nil,
+                completed: true,
+                result: nil,
+                done: true,
+                message: "Season complete",
+                score: nil,
+                won: nil,
+                record: nil
+            )
+        }
+
+        let simDay = pending.element.day
+        let targetGameId = pending.element.gameId
+
+        var nextDayToSim = state.schedule.filter { !$0.completed && $0.day <= simDay }.map(\.day).min()
+        while let day = nextDayToSim {
+            state.currentDay = day
+            let dayIndexes = state.schedule.enumerated().filter { _, game in !game.completed && game.day == day }.map(\.offset)
+            for idx in dayIndexes {
+                simulateScheduledGameInState(&state, scheduleIndex: idx)
+            }
+            prepareConferenceTournamentsIfNeeded(&state)
+            nextDayToSim = state.schedule.filter { !$0.completed && $0.day <= simDay }.map(\.day).min()
+        }
+
+        guard let completedUserGame = state.schedule.first(where: { $0.gameId == targetGameId }) else {
+            state.status = "completed"
+            return UserGameSummary(
+                gameId: nil,
+                day: state.currentDay,
+                type: nil,
+                siteType: nil,
+                neutralSite: nil,
+                isHome: nil,
+                opponentTeamId: nil,
+                opponentName: nil,
+                completed: true,
+                result: nil,
+                done: true,
+                message: "Season complete",
+                score: nil,
+                won: nil,
+                record: nil
+            )
+        }
+        let summary = userSummaryFromGame(completedUserGame, userTeamId: userTeamId)
+        state.userGameHistory.append(summary)
+
+        let user = state.teams.first(where: { $0.teamId == userTeamId })
+        let wins = user?.wins ?? 0
+        let losses = user?.losses ?? 0
+
+        var out = summary
+        out.done = false
+        out.message = "Game complete"
+        if let result = completedUserGame.result {
+            let userScore = completedUserGame.homeTeamId == userTeamId ? result.homeScore : result.awayScore
+            let oppScore = completedUserGame.homeTeamId == userTeamId ? result.awayScore : result.homeScore
+            out.score = .object([
+                "user": .number(Double(userScore)),
+                "opponent": .number(Double(oppScore)),
+            ])
+            out.won = userScore > oppScore
+        }
+        out.record = .object([
+            "wins": .number(Double(wins)),
+            "losses": .number(Double(losses)),
+        ])
+        return out
+    }
+}
+
+public func getUserCompletedGames(_ league: LeagueState) -> [UserGameSummary] {
+    guard let state = LeagueStore.get(league.handle) else { return [] }
+    let fromSchedule = getUserSchedule(league).filter { $0.completed == true }
+    if !fromSchedule.isEmpty { return fromSchedule }
+    return state.userGameHistory
+}
+
+public func getCompletedLeagueGames(_ league: LeagueState) -> [LeagueGameSummary] {
+    guard let state = LeagueStore.get(league.handle) else { return [] }
+    return state.schedule
+        .filter(\ .completed)
+        .sorted { lhs, rhs in
+            if lhs.day != rhs.day { return lhs.day < rhs.day }
+            return lhs.gameId < rhs.gameId
+        }
+        .map(leagueSummaryFromGame)
+}
+
+public func getConferenceStandings(_ league: LeagueState, conferenceId: String? = nil) -> [ConferenceStanding] {
+    guard let state = LeagueStore.get(league.handle) else { return [] }
+
+    let rows = state.teams
+        .filter { team in
+            if let conferenceId { return team.conferenceId == conferenceId }
+            return true
+        }
+        .map { team in
+            ConferenceStanding(
+                teamId: team.teamId,
+                teamName: team.teamName,
+                conferenceId: team.conferenceId,
+                overall: "\(team.wins)-\(team.losses)",
+                conference: "\(team.conferenceWins)-\(team.conferenceLosses)",
+                wins: team.wins,
+                losses: team.losses,
+                conferenceWins: team.conferenceWins,
+                conferenceLosses: team.conferenceLosses,
+                pointsFor: team.pointsFor,
+                pointsAgainst: team.pointsAgainst
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.conferenceWins != rhs.conferenceWins { return lhs.conferenceWins > rhs.conferenceWins }
+            if lhs.conferenceLosses != rhs.conferenceLosses { return lhs.conferenceLosses < rhs.conferenceLosses }
+            if lhs.wins != rhs.wins { return lhs.wins > rhs.wins }
+            if lhs.losses != rhs.losses { return lhs.losses < rhs.losses }
+            return lhs.teamName < rhs.teamName
+        }
+
+    return rows
+}
+
+public func getRankings(_ league: LeagueState, topN: Int = 25) -> LeagueRankings {
+    guard let state = LeagueStore.get(league.handle) else {
+        return LeagueRankings(topN: topN, seasonProgress: 0, preseasonWeight: 1, inSeasonWeight: 0, rankings: [])
+    }
+
+    let maxGamesPlayed = state.teams.map { $0.wins + $0.losses }.max() ?? 0
+    let seasonTarget = max(1, state.totalRegularSeasonGames)
+    let seasonProgress = clamp(Double(maxGamesPlayed) / Double(seasonTarget), min: 0, max: 1)
+    let preseasonWeight = clamp(1 - seasonProgress * 0.9, min: 0.1, max: 1)
+    let inSeasonWeight = 1 - preseasonWeight
+
+    var ranked = state.teams.map { team -> LeagueRankingTeam in
+        let games = team.wins + team.losses
+        let pointDiffPerGame = games > 0 ? Double(team.pointsFor - team.pointsAgainst) / Double(games) : 0
+        let winRate = games > 0 ? Double(team.wins) / Double(games) : 0
+        let qualityWinRate = clamp(winRate * 0.8 + team.prestige * 0.2, min: 0, max: 1)
+        let playerSkill = teamOverall(team.teamModel) / 100
+        let coachQuality = coachingQuality(team.teamModel.coachingStaff)
+        let strengthOfSchedule = clamp(0.45 + Double(team.targetConferenceGames) / Double(max(1, team.targetGames)) * 0.35, min: 0, max: 1)
+
+        let preseasonScore = playerSkill * 0.45 + coachQuality * 0.25 + team.prestige * 0.2 + team.lastYearResult * 0.1
+        let inSeasonScore = winRate * 0.52 + qualityWinRate * 0.2 + clamp((pointDiffPerGame + 20) / 40, min: 0, max: 1) * 0.18 + strengthOfSchedule * 0.1
+        let composite = preseasonScore * preseasonWeight + inSeasonScore * inSeasonWeight
+
+        return LeagueRankingTeam(
+            rank: 0,
+            teamId: team.teamId,
+            teamName: team.teamName,
+            conferenceId: team.conferenceId,
+            record: "\(team.wins)-\(team.losses)",
+            wins: team.wins,
+            losses: team.losses,
+            gamesPlayed: games,
+            pointDifferentialPerGame: pointDiffPerGame,
+            strengthOfSchedule: strengthOfSchedule,
+            qualityWinRate: qualityWinRate,
+            playerSkill: playerSkill,
+            prestige: team.prestige,
+            lastYearResult: team.lastYearResult,
+            coachQuality: coachQuality,
+            preseasonScore: preseasonScore,
+            inSeasonScore: inSeasonScore,
+            compositeScore: composite
+        )
+    }
+
+    ranked.sort { lhs, rhs in
+        if lhs.compositeScore != rhs.compositeScore { return lhs.compositeScore > rhs.compositeScore }
+        if lhs.wins != rhs.wins { return lhs.wins > rhs.wins }
+        if lhs.losses != rhs.losses { return lhs.losses < rhs.losses }
+        return lhs.teamName < rhs.teamName
+    }
+
+    for idx in ranked.indices {
+        ranked[idx].rank = idx + 1
+    }
+
+    let top = Array(ranked.prefix(max(1, topN)))
+    return LeagueRankings(topN: max(1, topN), seasonProgress: seasonProgress, preseasonWeight: preseasonWeight, inSeasonWeight: inSeasonWeight, rankings: top)
+}
+
+public func getLeagueSummary(_ league: LeagueState) -> LeagueSummary {
+    guard let state = LeagueStore.get(league.handle), let user = state.teams.first(where: { $0.teamId == state.userTeamId }) else {
+        fatalError("getLeagueSummary failed: Unknown league state")
+    }
+
+    return LeagueSummary(
+        status: state.status,
+        currentDay: state.currentDay,
+        totalTeams: state.teams.count,
+        totalConferences: state.conferences.count,
+        userTeamId: state.userTeamId,
+        userTeamName: user.teamName,
+        requiredUserNonConferenceGames: state.requiredUserNonConferenceGames,
+        userSelectedNonConferenceGames: state.userSelectedOpponentIds.count,
+        scheduleGenerated: state.scheduleGenerated,
+        totalScheduledGames: state.schedule.count
+    )
+}
+
+public func saveLeagueState(_ league: LeagueState, destinationPath: String, pretty: Bool = true) throws -> (filePath: String, bytes: Int, format: String, version: Int, savedAt: String) {
+    guard let state = LeagueStore.get(league.handle) else {
+        throw NSError(domain: "CBBCoachCore", code: 1002, userInfo: [NSLocalizedDescriptionKey: "Unknown league handle"])
+    }
+
+    struct SavePayload: Codable {
+        let format: String
+        let version: Int
+        let savedAt: String
+        let state: LeagueStore.State
+    }
+
+    let savedAt = ISO8601DateFormatter().string(from: Date())
+    let payload = SavePayload(format: LEAGUE_SAVE_FORMAT, version: LEAGUE_SAVE_VERSION, savedAt: savedAt, state: state)
+
+    let encoder = JSONEncoder()
+    if pretty {
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    }
+    let data = try encoder.encode(payload)
+
+    let url = URL(fileURLWithPath: destinationPath)
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try data.write(to: url)
+
+    return (url.path, data.count, LEAGUE_SAVE_FORMAT, LEAGUE_SAVE_VERSION, savedAt)
+}
+
+public func loadLeagueState(_ sourcePath: String) throws -> LeagueState {
+    struct SavePayload: Codable {
+        let format: String
+        let version: Int
+        let savedAt: String
+        let state: LeagueStore.State
+    }
+
+    let url = URL(fileURLWithPath: sourcePath)
+    let data = try Data(contentsOf: url)
+    let payload = try JSONDecoder().decode(SavePayload.self, from: data)
+    guard payload.format == LEAGUE_SAVE_FORMAT else {
+        throw NSError(domain: "CBBCoachCore", code: 1003, userInfo: [NSLocalizedDescriptionKey: "Unexpected league save format"])
+    }
+
+    let handle = LeagueStore.put(payload.state)
+    return LeagueState(handle: handle)
+}
+
+func userSummaryFromGame(_ game: LeagueStore.ScheduledGame, userTeamId: String) -> UserGameSummary {
+    let isHome = game.homeTeamId == userTeamId
+    let opponentTeamId = isHome ? game.awayTeamId : game.homeTeamId
+    let opponentName = isHome ? game.awayTeamName : game.homeTeamName
+    let resultValue: JSONValue?
+    if let result = game.result {
+        var resultObject: [String: JSONValue] = [
+            "homeScore": .number(Double(result.homeScore)),
+            "awayScore": .number(Double(result.awayScore)),
+            "winnerTeamId": result.winnerTeamId.map(JSONValue.string) ?? .null,
+            "wentToOvertime": .bool(result.wentToOvertime),
+        ]
+        if let box = result.boxScore {
+            resultObject["boxScore"] = boxScoreJSONValue(box)
+        }
+        resultValue = .object(resultObject)
+    } else {
+        resultValue = nil
+    }
+
+    return UserGameSummary(
+        gameId: game.gameId,
+        day: game.day,
+        type: game.type,
+        siteType: game.siteType,
+        neutralSite: game.neutralSite,
+        isHome: isHome,
+        opponentTeamId: opponentTeamId,
+        opponentName: opponentName,
+        completed: game.completed,
+        result: resultValue,
+        done: nil,
+        message: nil,
+        score: nil,
+        won: nil,
+        record: nil
+    )
+}
+
+func leagueSummaryFromGame(_ game: LeagueStore.ScheduledGame) -> LeagueGameSummary {
+    let resultValue: JSONValue?
+    if let result = game.result {
+        var resultObject: [String: JSONValue] = [
+            "homeScore": .number(Double(result.homeScore)),
+            "awayScore": .number(Double(result.awayScore)),
+            "winnerTeamId": result.winnerTeamId.map(JSONValue.string) ?? .null,
+            "wentToOvertime": .bool(result.wentToOvertime),
+        ]
+        if let box = result.boxScore {
+            resultObject["boxScore"] = boxScoreJSONValue(box)
+        }
+        resultValue = .object(resultObject)
+    } else {
+        resultValue = nil
+    }
+
+    return LeagueGameSummary(
+        gameId: game.gameId,
+        day: game.day,
+        type: game.type,
+        siteType: game.siteType,
+        neutralSite: game.neutralSite,
+        homeTeamId: game.homeTeamId,
+        homeTeamName: game.homeTeamName,
+        awayTeamId: game.awayTeamId,
+        awayTeamName: game.awayTeamName,
+        completed: game.completed,
+        result: resultValue
+    )
+}
+
+func boxScoreJSONValue(_ boxScore: [TeamBoxScore]) -> JSONValue {
+    .array(boxScore.map(teamBoxScoreJSONValue))
+}
+
+func teamBoxScoreJSONValue(_ team: TeamBoxScore) -> JSONValue {
+    var object: [String: JSONValue] = [
+        "name": .string(team.name),
+        "players": .array(team.players.map(playerBoxScoreJSONValue)),
+    ]
+    if let teamExtras = team.teamExtras {
+        object["teamExtras"] = .object(teamExtras.mapValues { .number(Double($0)) })
+    }
+    return .object(object)
+}
+
+func playerBoxScoreJSONValue(_ player: PlayerBoxScore) -> JSONValue {
+    .object([
+        "playerName": .string(player.playerName),
+        "position": .string(player.position),
+        "minutes": .number(player.minutes),
+        "points": .number(Double(player.points)),
+        "fgMade": .number(Double(player.fgMade)),
+        "fgAttempts": .number(Double(player.fgAttempts)),
+        "threeMade": .number(Double(player.threeMade)),
+        "threeAttempts": .number(Double(player.threeAttempts)),
+        "ftMade": .number(Double(player.ftMade)),
+        "ftAttempts": .number(Double(player.ftAttempts)),
+        "rebounds": .number(Double(player.rebounds)),
+        "offensiveRebounds": .number(Double(player.offensiveRebounds)),
+        "defensiveRebounds": .number(Double(player.defensiveRebounds)),
+        "assists": .number(Double(player.assists)),
+        "steals": .number(Double(player.steals)),
+        "blocks": .number(Double(player.blocks)),
+        "turnovers": .number(Double(player.turnovers)),
+        "fouls": .number(Double(player.fouls)),
+        "plusMinus": player.plusMinus.map { .number(Double($0)) } ?? .null,
+        "energy": player.energy.map(JSONValue.number) ?? .null,
+    ])
+}
+
+func conferenceTournamentEntrantCount(for teamCount: Int) -> Int {
+    for size in [16, 12, 8, 4] where size <= teamCount {
+        return size
+    }
+    return 0
+}
