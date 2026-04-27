@@ -3,6 +3,10 @@ import Foundation
 private struct LeagueAdvanceContext {
     var userTeamId: String
     var teamIndexById: [String: Int]
+    var scheduleCount: Int
+    var pendingIndexesByDay: [Int: [Int]]
+    var pendingDays: [Int]
+    var pendingUserIndexes: [Int]
 }
 
 private func seasonCompleteSummary(currentDay: Int) -> UserGameSummary {
@@ -25,62 +29,80 @@ private func seasonCompleteSummary(currentDay: Int) -> UserGameSummary {
     )
 }
 
-private func nextPendingUserGame(_ state: LeagueStore.State, userTeamId: String) -> (offset: Int, element: LeagueStore.ScheduledGame)? {
-    var bestOffset: Int?
-    var bestGame: LeagueStore.ScheduledGame?
-    for (idx, game) in state.schedule.enumerated() {
-        guard !game.completed else { continue }
-        guard game.homeTeamId == userTeamId || game.awayTeamId == userTeamId else { continue }
-        if let current = bestGame {
-            if game.day < current.day || (game.day == current.day && game.gameId < current.gameId) {
-                bestOffset = idx
-                bestGame = game
-            }
-        } else {
-            bestOffset = idx
-            bestGame = game
+private func prepareAdvanceContext(_ state: LeagueStore.State, cached: LeagueAdvanceContext?) -> LeagueAdvanceContext {
+    if let cached,
+       cached.userTeamId == state.userTeamId,
+       cached.teamIndexById.count == state.teams.count,
+       cached.scheduleCount == state.schedule.count
+    {
+        return cached
+    }
+
+    var pendingIndexesByDay: [Int: [Int]] = [:]
+    var pendingDays: [Int] = []
+    var pendingUserIndexes: [Int] = []
+    pendingUserIndexes.reserveCapacity(32)
+
+    for (idx, game) in state.schedule.enumerated() where !game.completed {
+        if pendingIndexesByDay[game.day] == nil {
+            pendingIndexesByDay[game.day] = []
+            pendingDays.append(game.day)
+        }
+        pendingIndexesByDay[game.day]?.append(idx)
+        if game.homeTeamId == state.userTeamId || game.awayTeamId == state.userTeamId {
+            pendingUserIndexes.append(idx)
         }
     }
-    guard let bestOffset, let bestGame else { return nil }
-    return (bestOffset, bestGame)
+
+    return LeagueAdvanceContext(
+        userTeamId: state.userTeamId,
+        teamIndexById: Dictionary(uniqueKeysWithValues: state.teams.enumerated().map { ($0.element.teamId, $0.offset) }),
+        scheduleCount: state.schedule.count,
+        pendingIndexesByDay: pendingIndexesByDay,
+        pendingDays: pendingDays,
+        pendingUserIndexes: pendingUserIndexes
+    )
 }
 
-private func nextIncompleteDay(_ state: LeagueStore.State, upToDay: Int? = nil) -> Int? {
-    var nextDay: Int?
-    for game in state.schedule where !game.completed {
-        if let upToDay, game.day > upToDay {
-            continue
+private func nextPendingDay(_ context: inout LeagueAdvanceContext) -> Int? {
+    while let day = context.pendingDays.first {
+        if let indexes = context.pendingIndexesByDay[day], !indexes.isEmpty {
+            return day
         }
-        if let current = nextDay {
-            if game.day < current {
-                nextDay = game.day
-            }
-        } else {
-            nextDay = game.day
-        }
+        context.pendingIndexesByDay.removeValue(forKey: day)
+        context.pendingDays.removeFirst()
     }
-    return nextDay
+    return nil
 }
 
-private func pendingDayIndexes(_ state: LeagueStore.State, day: Int) -> [Int] {
-    var indexes: [Int] = []
-    for (idx, game) in state.schedule.enumerated() where !game.completed && game.day == day {
-        indexes.append(idx)
+private func popPendingDayIndexes(_ context: inout LeagueAdvanceContext, day: Int) -> [Int] {
+    let indexes = context.pendingIndexesByDay.removeValue(forKey: day) ?? []
+    if let dayIndex = context.pendingDays.firstIndex(of: day) {
+        context.pendingDays.remove(at: dayIndex)
     }
     return indexes
 }
 
-private func prepareAdvanceContext(_ state: LeagueStore.State, cached: LeagueAdvanceContext?) -> LeagueAdvanceContext {
-    if let cached,
-       cached.userTeamId == state.userTeamId,
-       cached.teamIndexById.count == state.teams.count
-    {
-        return cached
+private func markCompletedInAdvanceContext(_ context: inout LeagueAdvanceContext, scheduleIndexes: [Int]) {
+    guard !scheduleIndexes.isEmpty else { return }
+    let completedSet = Set(scheduleIndexes)
+    context.pendingUserIndexes.removeAll { completedSet.contains($0) }
+}
+
+private func nextPendingUserGame(_ state: LeagueStore.State, context: inout LeagueAdvanceContext) -> (offset: Int, element: LeagueStore.ScheduledGame)? {
+    while let firstPending = context.pendingUserIndexes.first {
+        guard firstPending >= 0, firstPending < state.schedule.count else {
+            context.pendingUserIndexes.removeFirst()
+            continue
+        }
+        let game = state.schedule[firstPending]
+        if game.completed || (game.homeTeamId != context.userTeamId && game.awayTeamId != context.userTeamId) {
+            context.pendingUserIndexes.removeFirst()
+            continue
+        }
+        return (firstPending, game)
     }
-    return LeagueAdvanceContext(
-        userTeamId: state.userTeamId,
-        teamIndexById: Dictionary(uniqueKeysWithValues: state.teams.enumerated().map { ($0.element.teamId, $0.offset) })
-    )
+    return nil
 }
 
 private func advanceToNextUserGameInState(_ state: inout LeagueStore.State, cachedContext: inout LeagueAdvanceContext?) -> UserGameSummary {
@@ -89,26 +111,32 @@ private func advanceToNextUserGameInState(_ state: inout LeagueStore.State, cach
     }
     prepareConferenceTournamentsIfNeeded(&state)
 
-    let context = prepareAdvanceContext(state, cached: cachedContext)
+    var context = prepareAdvanceContext(state, cached: cachedContext)
     cachedContext = context
     let userTeamId = context.userTeamId
     let teamIndexById = context.teamIndexById
 
-    var pending = nextPendingUserGame(state, userTeamId: userTeamId)
+    var pending = nextPendingUserGame(state, context: &context)
     while pending == nil {
-        guard let nextDay = nextIncompleteDay(state) else {
+        guard let nextDay = nextPendingDay(&context) else {
             state.status = "completed"
             return seasonCompleteSummary(currentDay: state.currentDay)
         }
 
         state.currentDay = nextDay
-        let dayIndexes = pendingDayIndexes(state, day: nextDay)
+        let dayIndexes = popPendingDayIndexes(&context, day: nextDay)
         for idx in dayIndexes {
             simulateScheduledGameInState(&state, scheduleIndex: idx, teamIndexById: teamIndexById)
         }
+        markCompletedInAdvanceContext(&context, scheduleIndexes: dayIndexes)
+        let scheduleCountBeforeTournamentPrep = state.schedule.count
         prepareConferenceTournamentsIfNeeded(&state)
-        pending = nextPendingUserGame(state, userTeamId: userTeamId)
+        if state.schedule.count != scheduleCountBeforeTournamentPrep {
+            context = prepareAdvanceContext(state, cached: nil)
+        }
+        pending = nextPendingUserGame(state, context: &context)
     }
+    cachedContext = context
 
     guard let pending else {
         state.status = "completed"
@@ -116,20 +144,35 @@ private func advanceToNextUserGameInState(_ state: inout LeagueStore.State, cach
     }
 
     let simDay = pending.element.day
+    let targetScheduleIndex = pending.offset
     let targetGameId = pending.element.gameId
 
-    var nextDayToSim = nextIncompleteDay(state, upToDay: simDay)
-    while let day = nextDayToSim {
+    while let day = nextPendingDay(&context), day <= simDay {
         state.currentDay = day
-        let dayIndexes = pendingDayIndexes(state, day: day)
+        let dayIndexes = popPendingDayIndexes(&context, day: day)
         for idx in dayIndexes {
             simulateScheduledGameInState(&state, scheduleIndex: idx, teamIndexById: teamIndexById)
         }
+        markCompletedInAdvanceContext(&context, scheduleIndexes: dayIndexes)
+        let scheduleCountBeforeTournamentPrep = state.schedule.count
         prepareConferenceTournamentsIfNeeded(&state)
-        nextDayToSim = nextIncompleteDay(state, upToDay: simDay)
+        if state.schedule.count != scheduleCountBeforeTournamentPrep {
+            context = prepareAdvanceContext(state, cached: nil)
+        }
+    }
+    cachedContext = context
+
+    let completedUserGame: LeagueStore.ScheduledGame?
+    if targetScheduleIndex >= 0,
+       targetScheduleIndex < state.schedule.count,
+       state.schedule[targetScheduleIndex].gameId == targetGameId
+    {
+        completedUserGame = state.schedule[targetScheduleIndex]
+    } else {
+        completedUserGame = state.schedule.first(where: { $0.gameId == targetGameId })
     }
 
-    guard let completedUserGame = state.schedule.first(where: { $0.gameId == targetGameId }) else {
+    guard let completedUserGame else {
         state.status = "completed"
         return seasonCompleteSummary(currentDay: state.currentDay)
     }
