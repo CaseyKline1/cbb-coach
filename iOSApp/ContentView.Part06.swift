@@ -183,7 +183,6 @@ struct PlayerCardDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 GameCard {
-                    GameSectionHeader(title: "Player")
                     VStack(alignment: .leading, spacing: 6) {
                         Text(player.name)
                             .font(.title3.weight(.bold))
@@ -195,7 +194,6 @@ struct PlayerCardDetailView: View {
                 }
 
                 GameCard {
-                    GameSectionHeader(title: "Traits")
                     if allTraits.isEmpty {
                         Text("No standout traits yet.")
                             .font(.caption)
@@ -212,7 +210,6 @@ struct PlayerCardDetailView: View {
                 }
 
                 GameCard {
-                    GameSectionHeader(title: "Ratings")
                     if ratingRows.isEmpty {
                         Text("No ratings available for this player yet.")
                             .font(.caption)
@@ -241,7 +238,6 @@ struct PlayerCardDetailView: View {
                 }
 
                 GameCard {
-                    GameSectionHeader(title: "Career Stats")
                     let columns: [AppTableColumn<String>] = [
                         .init(id: "year", title: "YEAR", width: 52, alignment: .leading),
                         .init(id: "games", title: "G", width: 42),
