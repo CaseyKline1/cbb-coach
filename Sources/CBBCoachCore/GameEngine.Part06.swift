@@ -389,14 +389,8 @@ public func simulateHalf(state: inout GameState, random: inout SeededRandom) {
     guard NativeGameStateStore.snapshot(state.handle) != nil else {
         fatalError("simulateHalf failed: unknown game handle \(state.handle)")
     }
-    while true {
-        guard let snapshot = NativeGameStateStore.snapshot(state.handle) else {
-            fatalError("simulateHalf failed: missing game state \(state.handle)")
-        }
-        if snapshot.gameClockRemaining <= 0 {
-            break
-        }
-        _ = resolveActionChunk(state: &state, random: &random)
+    while resolveActionChunk(state: &state, random: &random) != "period_end" {
+        // `resolveActionChunk` advances one interaction chunk and reports period end.
     }
 }
 
