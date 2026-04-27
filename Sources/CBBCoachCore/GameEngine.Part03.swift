@@ -240,7 +240,11 @@ func resolveHalfCourtAction(
                     random: &random
                 )
                 let andOneDefenseControl = 1 - logistic(andOneInteraction.edge)
-                let andOneChance = clamp(0.012 + andOneDefenseControl * 0.08 + play.foulBonus * 0.45, min: 0.012, max: 0.12)
+                let andOneChance = clamp(
+                    0.008 + andOneDefenseControl * 0.055 + play.foulBonus * 0.26,
+                    min: 0.008,
+                    max: 0.085
+                )
                 if random.nextUnit() < andOneChance {
                     registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: play.defenderLineupIndex, shooting: true)
                     let ftProb = freeThrowMakeProbability(
@@ -274,7 +278,11 @@ func resolveHalfCourtAction(
                     random: &random
                 )
                 let foulDefenseControl = 1 - logistic(shootingFoulInteraction.edge)
-                let shootingFoulChance = clamp(0.018 + foulDefenseControl * 0.14 + play.foulBonus * 0.45, min: 0.02, max: 0.2)
+                let shootingFoulChance = clamp(
+                    0.012 + foulDefenseControl * 0.105 + play.foulBonus * 0.28,
+                    min: 0.012,
+                    max: 0.14
+                )
                 if random.nextUnit() < shootingFoulChance {
                     registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: play.defenderLineupIndex, shooting: true)
                     let ftAttempts = isThree ? 3 : 2

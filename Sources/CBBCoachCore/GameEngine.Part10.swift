@@ -93,8 +93,8 @@ func evaluatePassTarget(
             let boxIdx = lineupBoxIndices[idx]
             guard boxIdx >= 0, boxIdx < currentBoxPlayers.count else { return 0 }
             let box = currentBoxPlayers[boxIdx]
-            let pointLoad = Double(max(0, box.points - 6)) * 3.2
-            let attemptLoad = Double(max(0, box.fgAttempts - 5)) * 2.4
+            let pointLoad = Double(max(0, box.points - 8)) * 1.4
+            let attemptLoad = Double(max(0, box.fgAttempts - 7)) * 1.0
             return pointLoad + attemptLoad
         }()
         let score = shotUtility * 12 + openness * 18 - passRisk * 8 - fatigueTax - inGameLoadTax + random.nextUnit() * 2

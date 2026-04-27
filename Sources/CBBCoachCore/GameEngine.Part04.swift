@@ -25,13 +25,13 @@ func pickLineupIndexForBallHandler(
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
-            positionMultiplier = 2.2
+            positionMultiplier = 2.0
         case .sg:
-            positionMultiplier = 0.45
+            positionMultiplier = 0.6
         case .sf, .wing, .f:
-            positionMultiplier = 0.25
+            positionMultiplier = 0.36
         case .pf, .c, .big:
-            positionMultiplier = 0.15
+            positionMultiplier = 0.2
         }
         let skillWeighted = max(1, base * positionMultiplier * fatigueTax)
         let softenedSkill = min(skillWeighted, 95) + max(0, skillWeighted - 95) * 0.35
@@ -91,13 +91,13 @@ func pickLineupIndexForPickActionBallHandler(
         let positionMultiplier: Double
         switch player.bio.position {
         case .pg, .cg:
-            positionMultiplier = 2.0
+            positionMultiplier = 1.85
         case .sg:
-            positionMultiplier = 0.5
+            positionMultiplier = 0.68
         case .sf, .wing, .f:
-            positionMultiplier = 0.28
+            positionMultiplier = 0.46
         case .pf, .c, .big:
-            positionMultiplier = 0.18
+            positionMultiplier = 0.28
         }
         let skillWeighted = max(1, base * positionMultiplier * fatigueTax)
         let softenedSkill = min(skillWeighted, 95) + max(0, skillWeighted - 95) * 0.38
@@ -132,9 +132,9 @@ func ballHandlerUsageMultiplier(
     let overEven = max(0, share - evenShare)
     let underEven = max(0, evenShare - share)
 
-    let capPenalty = clamp(1 - overTarget * 0.6, min: 0.92, max: 1)
-    let spreadPenalty = clamp(1 - overEven * 0.02, min: 0.99, max: 1)
-    let underuseBoost = clamp(1 + underEven * 0.06, min: 1, max: 1.01)
+    let capPenalty = clamp(1 - overTarget * 0.55, min: 0.88, max: 1)
+    let spreadPenalty = clamp(1 - overEven * 0.12, min: 0.94, max: 1)
+    let underuseBoost = clamp(1 + underEven * 0.12, min: 1, max: 1.04)
     return capPenalty * spreadPenalty * underuseBoost
 }
 

@@ -225,7 +225,7 @@ func maybeResolveFastBreak(
     stored.pendingTransition = nil
 
     let offenseLead = stored.teams[offenseTeamId].score - stored.teams[defenseTeamId].score
-    if stored.currentHalf >= 2 && offenseLead >= 24 {
+    if stored.currentHalf >= 2 && offenseLead >= 20 {
         return nil
     }
 
@@ -245,7 +245,7 @@ func maybeResolveFastBreak(
             + clamp(offenseTeam.tendencies.fastBreakOffense / 100, min: 0, max: 1) * 0.34
             + clamp(offenseTeam.tendencies.pressBreakAttack / 100, min: 0, max: 1) * 0.16,
         min: 0.05,
-        max: 0.96
+        max: 0.94
     )
     let transitionContain = clamp(
         paceTransitionEmphasis(for: defenseTeam.pace) * 0.24
@@ -254,6 +254,7 @@ func maybeResolveFastBreak(
         min: 0.12,
         max: 0.95
     )
+    let styleBurst = clamp((transitionStyle - 0.68) / 0.26, min: 0, max: 1)
 
     let pushInteraction = resolveInteractionWithTrace(
         stored: &stored,
@@ -266,12 +267,13 @@ func maybeResolveFastBreak(
     )
     let pushChance = clamp(
         0.06
-            + logistic(pushInteraction.edge) * 0.34
-            + sourceBoost * 0.20
-            + transitionStyle * 0.34
+            + logistic(pushInteraction.edge) * 0.32
+            + sourceBoost * 0.18
+            + transitionStyle * 0.28
+            + styleBurst * 0.05
             - transitionContain * 0.12,
         min: 0.04,
-        max: 0.80
+        max: 0.76
     )
     guard random.nextUnit() < pushChance else { return nil }
 
@@ -299,12 +301,13 @@ func maybeResolveFastBreak(
         - transitionContain * 0.12
     let beatDefenseChance = clamp(
         0.12
-            + logistic(raceEdge) * 0.54
-            + transitionStyle * 0.22
-            + sourceBoost * 0.07
+            + logistic(raceEdge) * 0.52
+            + transitionStyle * 0.17
+            + sourceBoost * 0.06
+            + styleBurst * 0.04
             - transitionContain * 0.07,
         min: 0.06,
-        max: 0.86
+        max: 0.82
     )
     guard random.nextUnit() < beatDefenseChance else { return nil }
 
@@ -332,8 +335,9 @@ func maybeResolveFastBreak(
         baseMakeProbability(for: shotType)
             + (logistic(shotInteraction.edge + 0.3) - 0.5) * makeScale(for: shotType) * 0.34
             + (logistic(finishQuality.edge) - 0.5) * 0.22
-            + transitionStyle * 0.07
-            + sourceBoost * 0.03
+            + transitionStyle * 0.055
+            + sourceBoost * 0.022
+            + styleBurst * 0.01
             - transitionContain * 0.03,
         min: minMakeProbability(for: shotType),
         max: maxMakeProbability(for: shotType)

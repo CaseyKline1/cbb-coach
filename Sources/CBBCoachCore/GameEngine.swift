@@ -136,7 +136,7 @@ let clutchRatingImpact = 0.08
 
 let interactionVarianceJitter = 0.17
 
-let ballHandlerShareTarget = 0.96
+let ballHandlerShareTarget = 0.62
 
 let ballHandlerWarmupActions = 8
 

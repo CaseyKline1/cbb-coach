@@ -24,7 +24,7 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
 
         let blowoutMode = blowoutRotationMode(stored: stored, teamId: offenseTeamId)
         let offenseLead = stored.teams[offenseTeamId].score - stored.teams[defenseTeamId].score
-        let lateGameBlowout = stored.currentHalf >= 2 && offenseLead >= 20
+        let lateGameBlowout = stored.currentHalf >= 2 && offenseLead >= 16
         let trailingPushPace = stored.currentHalf >= 2 && offenseLead <= -12
         let effectivePace: PaceProfile = lateGameBlowout
             ? .verySlow

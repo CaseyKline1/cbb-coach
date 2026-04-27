@@ -86,6 +86,7 @@ func maybeCallTechnicalFoul(stored: inout NativeGameStateStore.StoredState, rand
         ? (teamId: 0, lineupIdx: first.lineupIdx, chance: first.chance)
         : (teamId: 1, lineupIdx: second.lineupIdx, chance: second.chance)
     guard offender.chance >= 0.0025 else { return }
+    guard random.nextUnit() < offender.chance else { return }
     let offendingTeamId = offender.teamId
     let offendingLineupIdx = offender.lineupIdx
     let benefitingTeamId = offendingTeamId == 0 ? 1 : 0
@@ -277,13 +278,15 @@ func maybeCallNonShootingFoul(
 ) {
     // Only trigger on setup (no shot taken yet).
     guard eventType == "setup" else { return }
+    // Avoid repeated whistle loops in one possession; non-shooting fouls are mostly early-action events.
+    guard stored.shotClockRemaining >= SHOT_CLOCK_SECONDS - CHUNK_SECONDS else { return }
     // Take-foul: defense trailing late intentionally fouls to stop clock and send to FT line.
     let defenseScore = stored.teams[defenseTeamId].score
     let offenseScore = stored.teams[offenseTeamId].score
     let defenseDelta = defenseScore - offenseScore
     let isLastPeriod = stored.currentHalf >= 2
     let clockRemaining = stored.gameClockRemaining
-    let takeFoulWindow = isLastPeriod && clockRemaining <= 45 && defenseDelta <= -1 && defenseDelta >= -9
+    let takeFoulWindow = isLastPeriod && clockRemaining <= 30 && defenseDelta <= -2 && defenseDelta >= -8
     let defender = stored.teams[defenseTeamId].activeLineup[min(defenderIdx, stored.teams[defenseTeamId].activeLineup.count - 1)]
     let ballHandler = stored.teams[offenseTeamId].activeLineup[min(ballHandlerIdx, stored.teams[offenseTeamId].activeLineup.count - 1)]
     let foulPressure = resolveInteractionWithTrace(
@@ -299,11 +302,11 @@ func maybeCallNonShootingFoul(
     let discipline = getBaseRating(defender, path: "defense.defensiveControl") * 0.6
         + getBaseRating(defender, path: "skills.shotIQ") * 0.4
     let disciplineRelief = (discipline - 50) / 300
-    let baseIntent = takeFoulWindow ? (clockRemaining <= 20 ? 0.52 : 0.3) : 0.008
+    let baseIntent = takeFoulWindow ? (clockRemaining <= 12 ? 0.34 : 0.2) : 0.0008
     let foulChance = clamp(
-        baseIntent + defenseControl * 0.06 - disciplineRelief,
-        min: takeFoulWindow ? 0.2 : 0.005,
-        max: takeFoulWindow ? 0.75 : 0.08
+        baseIntent + defenseControl * 0.018 - disciplineRelief,
+        min: takeFoulWindow ? 0.12 : 0.0002,
+        max: takeFoulWindow ? 0.6 : 0.009
     )
     guard random.nextUnit() < foulChance else { return }
     registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: defenderIdx, shooting: false)
