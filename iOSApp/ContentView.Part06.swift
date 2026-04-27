@@ -193,7 +193,6 @@ struct PlayerCardDetailView: View {
             }
             .padding(16)
         }
-        .navigationTitle("Player Card")
         .navigationBarTitleDisplayMode(.inline)
     }
 
