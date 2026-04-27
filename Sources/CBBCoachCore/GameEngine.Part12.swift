@@ -382,6 +382,8 @@ func maybeResolveFastBreak(
     )
     let rebound = resolveReboundOutcome(
         stored: &stored,
+        offenseTeamId: offenseTeamId,
+        defenseTeamId: defenseTeamId,
         offenseLineup: offenseLineup,
         defenseLineup: defenseLineup,
         shotType: shotType,

@@ -67,15 +67,15 @@ func wingspanReboundRating(_ player: Player) -> Double {
 func reboundCollectorRoleBonus(_ player: Player) -> Double {
     switch player.bio.position {
     case .c, .big:
-        return 0.28
+        return 0.24
     case .pf:
-        return 0.10
+        return 0.14
     case .f, .sf, .wing:
-        return 0.15
+        return 0.12
     case .sg, .cg:
-        return -0.12
+        return -0.08
     case .pg:
-        return -0.22
+        return -0.16
     }
 }
 
@@ -185,14 +185,14 @@ func selectReboundScrambleParticipants(
                 defenseRatings: ["rebounding.boxouts", "rebounding.defensiveRebound", "skills.hustle", "athleticism.strength", "athleticism.vertical"],
                 random: &random
             )
-            let sizeEdge = (heightReboundRating(offenseLineup[offenseIdx]) - heightReboundRating(defenseLineup[defenseIdx])) * 0.011
-                + (wingspanReboundRating(offenseLineup[offenseIdx]) - wingspanReboundRating(defenseLineup[defenseIdx])) * 0.013
+            let sizeEdge = (heightReboundRating(offenseLineup[offenseIdx]) - heightReboundRating(defenseLineup[defenseIdx])) * 0.008
+                + (wingspanReboundRating(offenseLineup[offenseIdx]) - wingspanReboundRating(defenseLineup[defenseIdx])) * 0.009
             pairOptions.append((offenseIdx, defenseIdx, interaction.edge + sizeEdge))
         }
     }
     guard !pairOptions.isEmpty else { return (offenseCandidates[0], defenseCandidates[0]) }
     let pairWeights = pairOptions.map { option in
-        Foundation.exp(clamp(option.score * 0.95, min: -2.1, max: 2.1))
+        Foundation.exp(clamp(option.score * 0.82, min: -2.1, max: 2.1))
     }
     let chosen = pairOptions[weightedChoiceIndex(weights: pairWeights, random: &random)]
     return (chosen.offenseIdx, chosen.defenseIdx)
@@ -200,6 +200,8 @@ func selectReboundScrambleParticipants(
 
 func resolveReboundOutcome(
     stored: inout NativeGameStateStore.StoredState,
+    offenseTeamId: Int,
+    defenseTeamId: Int,
     offenseLineup: [Player],
     defenseLineup: [Player],
     shotType: ShotType,
@@ -264,8 +266,8 @@ func resolveReboundOutcome(
         defenseRatings: ["rebounding.boxouts", "rebounding.defensiveRebound", "athleticism.strength", "athleticism.vertical", "defense.defensiveControl"],
         random: &random
     )
-    let boxoutSizeEdge = (heightReboundRating(offenseLineup[bestOffenseIdx]) - heightReboundRating(defenseLineup[bestDefenseIdx])) * 0.012
-        + (wingspanReboundRating(offenseLineup[bestOffenseIdx]) - wingspanReboundRating(defenseLineup[bestDefenseIdx])) * 0.014
+    let boxoutSizeEdge = (heightReboundRating(offenseLineup[bestOffenseIdx]) - heightReboundRating(defenseLineup[bestDefenseIdx])) * 0.009
+        + (wingspanReboundRating(offenseLineup[bestOffenseIdx]) - wingspanReboundRating(defenseLineup[bestDefenseIdx])) * 0.010
     let boxoutPositioningEdge = (offensePositioning - defensePositioning) * 0.16
     let slipEdge = boxoutBattle.edge + boxoutSizeEdge + boxoutPositioningEdge
 
@@ -278,8 +280,8 @@ func resolveReboundOutcome(
         defenseRatings: ["rebounding.defensiveRebound", "rebounding.boxouts", "skills.hands", "skills.hustle", "athleticism.vertical"],
         random: &random
     )
-    let gatherSizeEdge = (heightReboundRating(offenseLineup[bestOffenseIdx]) - heightReboundRating(defenseLineup[bestDefenseIdx])) * 0.012
-        + (wingspanReboundRating(offenseLineup[bestOffenseIdx]) - wingspanReboundRating(defenseLineup[bestDefenseIdx])) * 0.015
+    let gatherSizeEdge = (heightReboundRating(offenseLineup[bestOffenseIdx]) - heightReboundRating(defenseLineup[bestDefenseIdx])) * 0.009
+        + (wingspanReboundRating(offenseLineup[bestOffenseIdx]) - wingspanReboundRating(defenseLineup[bestDefenseIdx])) * 0.010
     let chaosScale = reboundChaosScale(for: zone)
     let reboundChaosNoise = (random.nextUnit() + random.nextUnit() + random.nextUnit() - 1.5) * (chaosScale * 2.3)
     let finalEdge = gatherBattle.edge + gatherSizeEdge + (offensePositioning - defensePositioning) * 0.12 + slipEdge * 0.4 + reboundChaosNoise
@@ -290,6 +292,8 @@ func resolveReboundOutcome(
     if random.nextUnit() < offenseCollectProbability {
         let rebounderIdx = selectReboundCollectorViaInteractions(
             stored: &stored,
+            offenseTeamId: offenseTeamId,
+            defenseTeamId: defenseTeamId,
             offenseLineup: offenseLineup,
             defenseLineup: defenseLineup,
             offenseCollects: true,
@@ -306,6 +310,8 @@ func resolveReboundOutcome(
     }
     let rebounderIdx = selectReboundCollectorViaInteractions(
         stored: &stored,
+        offenseTeamId: offenseTeamId,
+        defenseTeamId: defenseTeamId,
         offenseLineup: offenseLineup,
         defenseLineup: defenseLineup,
         offenseCollects: false,
@@ -323,6 +329,8 @@ func resolveReboundOutcome(
 
 func selectReboundCollectorViaInteractions(
     stored: inout NativeGameStateStore.StoredState,
+    offenseTeamId: Int,
+    defenseTeamId: Int,
     offenseLineup: [Player],
     defenseLineup: [Player],
     offenseCollects: Bool,
@@ -352,7 +360,7 @@ func selectReboundCollectorViaInteractions(
                 crashPreference: offenseCrashPreference,
                 locationHints: offenseLocationHints
             )
-            let participationBoost = offensePriority.contains(offenseIdx) ? 0.04 : -0.02
+            let participationBoost = offensePriority.contains(offenseIdx) ? 0.02 : 0
             var interactionEdges: [Double] = []
             for defenseIdx in defenseLineup.indices {
                 let interaction = resolveInteractionWithTrace(
@@ -364,22 +372,32 @@ func selectReboundCollectorViaInteractions(
                     defenseRatings: ["rebounding.defensiveRebound", "rebounding.boxouts", "skills.hands", "skills.hustle", "athleticism.strength"],
                     random: &random
                 )
-                let sizeEdge = (heightReboundRating(offenseLineup[offenseIdx]) - heightReboundRating(defenseLineup[defenseIdx])) * 0.009
-                    + (wingspanReboundRating(offenseLineup[offenseIdx]) - wingspanReboundRating(defenseLineup[defenseIdx])) * 0.01
+                let sizeEdge = (heightReboundRating(offenseLineup[offenseIdx]) - heightReboundRating(defenseLineup[defenseIdx])) * 0.007
+                    + (wingspanReboundRating(offenseLineup[offenseIdx]) - wingspanReboundRating(defenseLineup[defenseIdx])) * 0.008
                 interactionEdges.append(interaction.edge + sizeEdge)
             }
             let matchupMean = average(interactionEdges)
             let matchupBest = interactionEdges.max() ?? matchupMean
             let matchupScore = matchupMean * 0.7 + matchupBest * 0.3
             let roleBonus = reboundCollectorRoleBonus(offenseLineup[offenseIdx])
-            let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost + roleBonus
+            let reboundLoadTax: Double = {
+                guard offenseTeamId >= 0, offenseTeamId < stored.teams.count else { return 0 }
+                guard offenseIdx >= 0, offenseIdx < stored.teams[offenseTeamId].activeLineupBoxIndices.count else { return 0 }
+                let boxIdx = stored.teams[offenseTeamId].activeLineupBoxIndices[offenseIdx]
+                guard boxIdx >= 0, boxIdx < stored.teams[offenseTeamId].boxPlayers.count else { return 0 }
+                let currentRebounds = stored.teams[offenseTeamId].boxPlayers[boxIdx].rebounds
+                let baselineLoad = Double(max(0, currentRebounds - 6)) * 0.16
+                let surgeLoad = Double(max(0, currentRebounds - 10)) * 0.14
+                return clamp(baselineLoad + surgeLoad, min: 0, max: 2.6)
+            }()
+            let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost + roleBonus - reboundLoadTax
             collectorScores.append((offenseIdx, score))
         }
         let chaosScale = reboundChaosScale(for: zone)
         let collectorWeights = collectorScores.map { candidate in
             let jitter = 0.85 + random.nextUnit() * 0.3
             let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 2.1
-            return Foundation.exp(clamp(noisyScore * 0.96, min: -2.3, max: 2.3)) * jitter
+            return Foundation.exp(clamp(noisyScore * 0.78, min: -2.3, max: 2.3)) * jitter
         }
         return collectorScores[weightedChoiceIndex(weights: collectorWeights, random: &random)].idx
     }
@@ -394,7 +412,7 @@ func selectReboundCollectorViaInteractions(
             crashPreference: defenseCrashPreference,
             locationHints: defenseLocationHints
         )
-        let participationBoost = defensePriority.contains(defenseIdx) ? 0.04 : -0.02
+        let participationBoost = defensePriority.contains(defenseIdx) ? 0.02 : 0
         var interactionEdges: [Double] = []
         for offenseIdx in offenseLineup.indices {
             let interaction = resolveInteractionWithTrace(
@@ -406,22 +424,32 @@ func selectReboundCollectorViaInteractions(
                 defenseRatings: ["rebounding.defensiveRebound", "rebounding.boxouts", "skills.hands", "skills.hustle", "athleticism.strength"],
                 random: &random
             )
-            let sizeEdge = (heightReboundRating(defenseLineup[defenseIdx]) - heightReboundRating(offenseLineup[offenseIdx])) * 0.009
-                + (wingspanReboundRating(defenseLineup[defenseIdx]) - wingspanReboundRating(offenseLineup[offenseIdx])) * 0.01
+            let sizeEdge = (heightReboundRating(defenseLineup[defenseIdx]) - heightReboundRating(offenseLineup[offenseIdx])) * 0.007
+                + (wingspanReboundRating(defenseLineup[defenseIdx]) - wingspanReboundRating(offenseLineup[offenseIdx])) * 0.008
             interactionEdges.append(-interaction.edge + sizeEdge)
         }
         let matchupMean = average(interactionEdges)
         let matchupBest = interactionEdges.max() ?? matchupMean
         let matchupScore = matchupMean * 0.7 + matchupBest * 0.3
         let roleBonus = reboundCollectorRoleBonus(defenseLineup[defenseIdx])
-        let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost + roleBonus
+        let reboundLoadTax: Double = {
+            guard defenseTeamId >= 0, defenseTeamId < stored.teams.count else { return 0 }
+            guard defenseIdx >= 0, defenseIdx < stored.teams[defenseTeamId].activeLineupBoxIndices.count else { return 0 }
+            let boxIdx = stored.teams[defenseTeamId].activeLineupBoxIndices[defenseIdx]
+            guard boxIdx >= 0, boxIdx < stored.teams[defenseTeamId].boxPlayers.count else { return 0 }
+            let currentRebounds = stored.teams[defenseTeamId].boxPlayers[boxIdx].rebounds
+            let baselineLoad = Double(max(0, currentRebounds - 6)) * 0.16
+            let surgeLoad = Double(max(0, currentRebounds - 10)) * 0.14
+            return clamp(baselineLoad + surgeLoad, min: 0, max: 2.6)
+        }()
+        let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost + roleBonus - reboundLoadTax
         collectorScores.append((defenseIdx, score))
     }
     let chaosScale = reboundChaosScale(for: zone)
     let collectorWeights = collectorScores.map { candidate in
         let jitter = 0.85 + random.nextUnit() * 0.3
         let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 2.1
-        return Foundation.exp(clamp(noisyScore * 0.96, min: -2.3, max: 2.3)) * jitter
+        return Foundation.exp(clamp(noisyScore * 0.78, min: -2.3, max: 2.3)) * jitter
     }
     return collectorScores[weightedChoiceIndex(weights: collectorWeights, random: &random)].idx
 }

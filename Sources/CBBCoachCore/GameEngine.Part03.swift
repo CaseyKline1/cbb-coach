@@ -369,6 +369,8 @@ func resolveHalfCourtAction(
                     } else {
                         let rebound = resolveReboundOutcome(
                             stored: &stored,
+                            offenseTeamId: offenseTeamId,
+                            defenseTeamId: defenseTeamId,
                             offenseLineup: stored.teams[offenseTeamId].activeLineup,
                             defenseLineup: stored.teams[defenseTeamId].activeLineup,
                             shotType: shotType,
