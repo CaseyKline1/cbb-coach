@@ -52,7 +52,7 @@ struct CollegeLeagueHomeView: View {
     let onCreateNewCoach: () -> Void
 
     @State var league: LeagueState?
-    @State var statusText: String = "Creating league..."
+    @State var statusText: String = ""
     @State var roster: [UserRosterPlayerSummary] = []
     @State var schedule: [UserGameSummary] = []
     @State var rotationSlots: [UserRotationSlot] = []
@@ -118,13 +118,6 @@ struct CollegeLeagueHomeView: View {
                         .disabled(isSkipAheadInProgress)
                     }
 
-                    if let summary {
-                        HStack(spacing: 14) {
-                            StatChip(title: "Game", value: "\(summary.currentDay)")
-                            StatChip(title: "Record", value: userRecordText)
-                        }
-                    }
-
                     GameCard {
                         VStack(spacing: 8) {
                             GameSectionHeader(title: "Team")
@@ -175,10 +168,12 @@ struct CollegeLeagueHomeView: View {
                         }
                     }
 
-                    GameCard {
-                        Text(statusText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    if !statusText.isEmpty {
+                        GameCard {
+                            Text(statusText)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     Button("Create New Coach") {
@@ -368,8 +363,7 @@ struct CollegeLeagueHomeView: View {
             let created = try createD1League(options: options)
             league = created
             refreshFromLeague(created)
-            let leagueSummary = summary ?? getLeagueSummary(created)
-            statusText = "\(leagueSummary.userTeamName): \(leagueSummary.totalScheduledGames) total games generated"
+            statusText = ""
         } catch {
             statusText = "League error: \(error.localizedDescription)"
         }
