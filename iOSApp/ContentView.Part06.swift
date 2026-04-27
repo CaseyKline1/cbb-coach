@@ -9,7 +9,33 @@ struct PlayerCardDetailView: View {
     private let combinedThreePointKey = "combinedThreePointShooting"
     private let threePointComponentKeys: Set<String> = ["threePointShooting", "cornerThrees", "upTopThrees"]
 
-    private var sortedRatings: [(key: String, value: Int)] {
+    private struct RatingEntry: Hashable {
+        let key: String
+        let label: String
+        let value: Int
+    }
+
+    private struct RatingSection: Identifiable {
+        let title: String
+        let entries: [RatingEntry]
+        let grade: String
+
+        var id: String { title }
+    }
+
+    private let ratingSectionDefinitions: [(title: String, keys: Set<String>)] = [
+        ("Athleticism", ["speed", "agility", "burst", "strength", "vertical", "stamina", "durability"]),
+        ("Finishing", ["layups", "dunks", "closeShot", "drawFoul", "freeThrows"]),
+        ("Shooting", ["midrangeShot", "combinedThreePointShooting"]),
+        ("Post Game", ["postControl", "postFadeaways", "postHooks"]),
+        ("Playmaking", ["ballHandling", "ballSafety", "passingAccuracy", "passingVision", "passingIQ", "shotIQ", "offballOffense"]),
+        ("Defense", ["perimeterDefense", "postDefense", "shotBlocking", "shotContest", "steals", "lateralQuickness", "offballDefense", "passPerception", "defensiveControl"]),
+        ("Rebounding", ["offensiveRebounding", "defensiveRebound", "boxouts"]),
+        ("Intangibles", ["hands", "hustle", "clutch", "potential"]),
+        ("Tendencies", ["tendencyPost", "tendencyInside", "tendencyMidrange", "tendencyThreePoint", "tendencyDrive", "tendencyPickAndRoll", "tendencyPickAndPop", "tendencyShootVsPass"]),
+    ]
+
+    private var normalizedRatings: [String: Int] {
         var ratings = player.attributes ?? [:]
         if let combinedThreePoint = combinedThreePointValue(from: ratings) {
             ratings[combinedThreePointKey] = combinedThreePoint
@@ -18,20 +44,53 @@ struct PlayerCardDetailView: View {
             ratings.removeValue(forKey: key)
         }
         return ratings
-            .map { ($0.key, $0.value) }
-            .sorted { lhs, rhs in
-                if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
-                return lhs.0 < rhs.0
-            }
     }
 
-    private var ratingRows: [(id: AnyHashable, data: (label: String, value: Int))] {
-        sortedRatings.map {
-            (
-                id: AnyHashable($0.key),
-                data: (label: ratingLabel($0.key), value: $0.value)
+    private var ratingSections: [RatingSection] {
+        let ratings = normalizedRatings
+        var usedKeys = Set<String>()
+        var sections: [RatingSection] = []
+
+        for definition in ratingSectionDefinitions {
+            let entries = definition.keys
+                .compactMap { key -> RatingEntry? in
+                    guard let value = ratings[key] else { return nil }
+                    return RatingEntry(key: key, label: ratingLabel(key), value: value)
+                }
+                .sorted { lhs, rhs in
+                    if lhs.value != rhs.value { return lhs.value > rhs.value }
+                    return lhs.label < rhs.label
+                }
+            guard !entries.isEmpty else { continue }
+            usedKeys.formUnion(entries.map(\.key))
+            sections.append(
+                RatingSection(
+                    title: definition.title,
+                    entries: entries,
+                    grade: letterGrade(for: entries.map(\.value))
+                )
             )
         }
+
+        let otherEntries = ratings
+            .filter { !usedKeys.contains($0.key) }
+            .map { RatingEntry(key: $0.key, label: ratingLabel($0.key), value: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.value != rhs.value { return lhs.value > rhs.value }
+                return lhs.label < rhs.label
+            }
+
+        if !otherEntries.isEmpty {
+            sections.append(
+                RatingSection(
+                    title: "Other",
+                    entries: otherEntries,
+                    grade: letterGrade(for: otherEntries.map(\.value))
+                )
+            )
+        }
+
+        return sections
     }
 
     private var measurementsLine: String? {
@@ -131,28 +190,34 @@ struct PlayerCardDetailView: View {
                 }
 
                 GameCard {
-                    if ratingRows.isEmpty {
+                    if ratingSections.isEmpty {
                         Text("No ratings available for this player yet.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        let columns: [AppTableColumn<String>] = [
-                            .init(id: "rating", title: "RATING", width: 180, alignment: .leading),
-                            .init(id: "value", title: "VALUE", width: 60),
-                        ]
-                        AppTable(columns: columns, rows: ratingRows) { row in
-                            HStack(spacing: 0) {
-                                AppTableTextCell(
-                                    text: row.label,
-                                    width: 180,
-                                    alignment: .leading,
-                                    font: .caption.monospacedDigit()
-                                )
-                                AppTableTextCell(
-                                    text: "\(row.value)",
-                                    width: 60,
-                                    font: .caption.monospacedDigit().weight(.semibold)
-                                )
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(Array(ratingSections.enumerated()), id: \.element.id) { index, section in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(alignment: .firstTextBaseline) {
+                                        Text(section.title.uppercased())
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                            .tracking(0.4)
+                                        Spacer()
+                                        Text(section.grade)
+                                            .font(.subheadline.monospacedDigit().weight(.bold))
+                                            .foregroundStyle(.primary)
+                                    }
+                                    ForEach(Array(twoColumnPairs(from: section.entries).enumerated()), id: \.offset) { _, pair in
+                                        HStack(spacing: 10) {
+                                            ratingCell(pair.left)
+                                            ratingCell(pair.right)
+                                        }
+                                    }
+                                }
+                                if index < ratingSections.count - 1 {
+                                    Divider()
+                                }
                             }
                         }
                     }
@@ -332,5 +397,62 @@ struct PlayerCardDetailView: View {
 
     private func pct(_ value: Double) -> String {
         String(format: "%.1f%%", value * 100)
+    }
+
+    private func twoColumnPairs(from entries: [RatingEntry]) -> [(left: RatingEntry?, right: RatingEntry?)] {
+        var pairs: [(left: RatingEntry?, right: RatingEntry?)] = []
+        var index = 0
+        while index < entries.count {
+            let left = entries[index]
+            let right = (index + 1 < entries.count) ? entries[index + 1] : nil
+            pairs.append((left: left, right: right))
+            index += 2
+        }
+        return pairs
+    }
+
+    @ViewBuilder
+    private func ratingCell(_ entry: RatingEntry?) -> some View {
+        if let entry {
+            HStack(spacing: 8) {
+                Text(entry.label)
+                    .font(.caption.monospacedDigit())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                Text("\(entry.value)")
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        } else {
+            Color.clear
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func letterGrade(for values: [Int]) -> String {
+        guard !values.isEmpty else { return "-" }
+        let average = Double(values.reduce(0, +)) / Double(values.count)
+        switch average {
+        case 97...: return "A+"
+        case 93..<97: return "A"
+        case 90..<93: return "A-"
+        case 87..<90: return "B+"
+        case 83..<87: return "B"
+        case 80..<83: return "B-"
+        case 77..<80: return "C+"
+        case 73..<77: return "C"
+        case 70..<73: return "C-"
+        case 67..<70: return "D+"
+        case 63..<67: return "D"
+        case 60..<63: return "D-"
+        default: return "F"
+        }
     }
 }
