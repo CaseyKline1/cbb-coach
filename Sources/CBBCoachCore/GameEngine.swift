@@ -1009,6 +1009,18 @@ private func paceShotBias(for pace: PaceProfile) -> Double {
     }
 }
 
+private func paceTransitionEmphasis(for pace: PaceProfile) -> Double {
+    switch pace {
+    case .verySlow: return 0.05
+    case .slow: return 0.12
+    case .slightlySlow: return 0.2
+    case .normal: return 0.32
+    case .slightlyFast: return 0.48
+    case .fast: return 0.66
+    case .veryFast: return 0.84
+    }
+}
+
 private func blowoutRotationMode(stored: NativeGameStateStore.StoredState, teamId: Int) -> BlowoutRotationMode {
     guard teamId >= 0, teamId < stored.teams.count else { return .none }
     guard stored.currentHalf >= 2 else { return .none }
@@ -4786,7 +4798,20 @@ private func pickTransitionPointDefenderIndex(lineup: [Player], random: inout Se
     }
 }
 
-private func chooseFastBreakFinish(player: Player, random: inout SeededRandom) -> ShotType {
+private func chooseFastBreakFinish(player: Player, transitionStyle: Double, random: inout SeededRandom) -> ShotType {
+    let threeSkill = getRating(player, path: "shooting.threePointShooting") * 0.58
+        + getRating(player, path: "shooting.upTopThrees") * 0.26
+        + getRating(player, path: "skills.shotIQ") * 0.16
+    let pullUpThreeChance = clamp(
+        0.02
+            + transitionStyle * 0.1
+            + max(0, threeSkill - 72) / 320,
+        min: 0.02,
+        max: 0.16
+    )
+    if random.nextUnit() < pullUpThreeChance {
+        return .three
+    }
     let dunkLean = getRating(player, path: "shooting.dunks") * 0.5
         + getRating(player, path: "athleticism.vertical") * 0.3
         + getRating(player, path: "athleticism.strength") * 0.2
@@ -4819,7 +4844,23 @@ private func maybeResolveFastBreak(
     let leadDefIdx = pickTransitionPointDefenderIndex(lineup: defenseLineup, random: &random)
     let runner = offenseLineup[runnerIdx]
     let leadDef = defenseLineup[leadDefIdx]
-    let sourceBoost: Double = transition.source == "steal" ? 0.06 : (transition.source == "press_break" ? 0.045 : 0.01)
+    let sourceBoost: Double = transition.source == "steal" ? 0.065 : (transition.source == "press_break" ? 0.05 : 0.02)
+    let offenseTeam = stored.teams[offenseTeamId].team
+    let defenseTeam = stored.teams[defenseTeamId].team
+    let transitionStyle = clamp(
+        paceTransitionEmphasis(for: offenseTeam.pace) * 0.5
+            + clamp(offenseTeam.tendencies.fastBreakOffense / 100, min: 0, max: 1) * 0.34
+            + clamp(offenseTeam.tendencies.pressBreakAttack / 100, min: 0, max: 1) * 0.16,
+        min: 0.05,
+        max: 0.96
+    )
+    let transitionContain = clamp(
+        paceTransitionEmphasis(for: defenseTeam.pace) * 0.24
+            + clamp(defenseTeam.tendencies.defendFastBreakOffense / 100, min: 0, max: 1) * 0.52
+            + clamp(defenseTeam.tendencies.press / 100, min: 0, max: 1) * 0.24,
+        min: 0.12,
+        max: 0.95
+    )
 
     let pushInteraction = resolveInteractionWithTrace(
         stored: &stored,
@@ -4830,7 +4871,15 @@ private func maybeResolveFastBreak(
         defenseRatings: ["defense.offballDefense", "defense.lateralQuickness", "defense.passPerception"],
         random: &random
     )
-    let pushChance = clamp(0.018 + logistic(pushInteraction.edge) * 0.24 + sourceBoost * 0.18, min: 0.015, max: 0.42)
+    let pushChance = clamp(
+        0.06
+            + logistic(pushInteraction.edge) * 0.34
+            + sourceBoost * 0.20
+            + transitionStyle * 0.34
+            - transitionContain * 0.12,
+        min: 0.04,
+        max: 0.80
+    )
     guard random.nextUnit() < pushChance else { return nil }
 
     let runScore = getRating(runner, path: "athleticism.burst") * 0.38
@@ -4850,11 +4899,23 @@ private func maybeResolveFastBreak(
         defenseRatings: ["athleticism.burst", "athleticism.speed", "defense.lateralQuickness", "defense.shotContest"],
         random: &random
     )
-    let raceEdge = (runScore - recoveryScore) / 100 + sourceBoost + raceInteraction.edge * 0.28
-    let beatDefenseChance = clamp(0.06 + logistic(raceEdge) * 0.48, min: 0.04, max: 0.7)
+    let raceEdge = (runScore - recoveryScore) / 100
+        + sourceBoost
+        + raceInteraction.edge * 0.34
+        + transitionStyle * 0.14
+        - transitionContain * 0.12
+    let beatDefenseChance = clamp(
+        0.12
+            + logistic(raceEdge) * 0.54
+            + transitionStyle * 0.22
+            + sourceBoost * 0.07
+            - transitionContain * 0.07,
+        min: 0.06,
+        max: 0.86
+    )
     guard random.nextUnit() < beatDefenseChance else { return nil }
 
-    let shotType = chooseFastBreakFinish(player: runner, random: &random)
+    let shotType = chooseFastBreakFinish(player: runner, transitionStyle: transitionStyle, random: &random)
     let profile = shotProfile(for: shotType)
     let shotInteraction = resolveInteractionWithTrace(
         stored: &stored,
@@ -4877,7 +4938,10 @@ private func maybeResolveFastBreak(
     let madeProb = clamp(
         baseMakeProbability(for: shotType)
             + (logistic(shotInteraction.edge + 0.3) - 0.5) * makeScale(for: shotType) * 0.34
-            + (logistic(finishQuality.edge) - 0.5) * 0.22,
+            + (logistic(finishQuality.edge) - 0.5) * 0.22
+            + transitionStyle * 0.07
+            + sourceBoost * 0.03
+            - transitionContain * 0.03,
         min: minMakeProbability(for: shotType),
         max: maxMakeProbability(for: shotType)
     )
@@ -4886,6 +4950,10 @@ private func maybeResolveFastBreak(
     addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: runnerIdx) { line in
         line.fgAttempts += 1
         if made { line.fgMade += 1 }
+        if shotType == .three {
+            line.threeAttempts += 1
+            if made { line.threeMade += 1 }
+        }
     }
 
     if made {
