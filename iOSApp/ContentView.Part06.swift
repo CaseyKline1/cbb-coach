@@ -123,13 +123,45 @@ struct PlayerCardDetailView: View {
     private var measurableTraits: [String] {
         let potential = player.attributes?["potential"]
         return [
-            traitLabel("Height", value: player.height),
-            traitLabel("Weight", value: player.weight),
-            traitLabel("Wingspan", value: player.wingspan),
+            measurementsLine,
             traitLabel("Home", value: player.home),
             potential.map { "Potential \($0)" },
         ]
         .compactMap { $0 }
+    }
+
+    private var measurementsLine: String? {
+        var parts: [String] = []
+        if let height = formattedFeet(player.height) {
+            parts.append(height)
+        }
+        if let weight = trimmedNonEmpty(player.weight) {
+            parts.append("\(weight) lbs")
+        }
+        var line = parts.joined(separator: " ")
+        if let wingspan = formattedFeet(player.wingspan) {
+            if line.isEmpty {
+                line = "wingspan: \(wingspan)"
+            } else {
+                line += ", wingspan: \(wingspan)"
+            }
+        }
+        return line.isEmpty ? nil : line
+    }
+
+    private func trimmedNonEmpty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func formattedFeet(_ value: String?) -> String? {
+        guard let trimmed = trimmedNonEmpty(value) else { return nil }
+        let parts = trimmed.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        if parts.count == 2, let feet = Int(parts[0]), let inches = Int(parts[1]) {
+            return "\(feet)'\(inches)\""
+        }
+        return trimmed
     }
 
     private var allTraits: [String] {
