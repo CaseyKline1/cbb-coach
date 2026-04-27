@@ -1,0 +1,329 @@
+import SwiftUI
+import UniformTypeIdentifiers
+import CBBCoachCore
+
+extension CollegeLeagueHomeView {
+    func refreshFromLeague(_ league: LeagueState) {
+        roster = getUserRoster(league)
+        schedule = getUserSchedule(league)
+        rotationSlots = getUserRotation(league)
+        coachingStaff = getUserCoachingStaff(league)
+        summary = getLeagueSummary(league)
+        let standingsData = fetchConferenceStandings(league)
+        conferenceStandings = standingsData.standings
+        conferenceNamesById = standingsData.conferenceNames
+        rankings = getRankings(league)
+        completedLeagueGames = getCompletedLeagueGames(league)
+        teamRostersByName = Dictionary(
+            getTeamRosters(league).map { ($0.teamName, $0.players) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    func resultSummaryText(for game: UserGameSummary) -> String {
+        guard let result = game.result else { return "No result" }
+        let home = result.intValue(for: "homeScore") ?? 0
+        let away = result.intValue(for: "awayScore") ?? 0
+        let userScore = game.isHome == true ? home : away
+        let opponentScore = game.isHome == true ? away : home
+        return "\(userScore > opponentScore ? "W" : "L") \(userScore)-\(opponentScore)"
+    }
+
+    func fetchConferenceStandings(_ league: LeagueState) -> (standings: [String: [ConferenceStanding]], conferenceNames: [String: String]) {
+        let conferenceOptions = listCareerTeamOptions()
+        let conferenceNames = Dictionary(
+            conferenceOptions.map { ($0.conferenceId, $0.conferenceName) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let conferenceIds = Array(conferenceNames.keys).sorted {
+            let lhsName = conferenceNames[$0] ?? $0
+            let rhsName = conferenceNames[$1] ?? $1
+            return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
+        }
+        var result: [String: [ConferenceStanding]] = [:]
+        for id in conferenceIds {
+            let rows = getConferenceStandings(league, conferenceId: id)
+            if !rows.isEmpty {
+                result[id] = rows
+            }
+        }
+        return (standings: result, conferenceNames: conferenceNames)
+    }
+
+    func saveRotation(_ updated: [UserRotationSlot]) {
+        guard var currentLeague = league else { return }
+        rotationSlots = setUserRotation(&currentLeague, slots: updated)
+        league = currentLeague
+        roster = getUserRoster(currentLeague)
+        teamRostersByName = Dictionary(
+            getTeamRosters(currentLeague).map { ($0.teamName, $0.players) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    func saveAssistantFocus(assistantIndex: Int, focus: AssistantFocus) {
+        guard var currentLeague = league else { return }
+        setUserAssistantFocus(&currentLeague, assistantIndex: assistantIndex, focus: focus)
+        league = currentLeague
+        coachingStaff = getUserCoachingStaff(currentLeague)
+    }
+}
+
+enum SkipAheadTarget {
+    case midseason
+    case endOfRegularSeason
+
+    var completedGames: Int {
+        switch self {
+        case .midseason: 15
+        case .endOfRegularSeason: 31
+        }
+    }
+
+    var overlayTitle: String {
+        switch self {
+        case .midseason: "Simulating to Midseason..."
+        case .endOfRegularSeason: "Simulating to End of Regular Season..."
+        }
+    }
+
+    var completionMessage: String {
+        switch self {
+        case .midseason: "Advanced to midseason (between Weeks 15 and 16)."
+        case .endOfRegularSeason: "Advanced to end of regular season (after Game 31)."
+        }
+    }
+}
+
+struct SkipAheadSimulationResult {
+    let league: LeagueState
+    let seasonCompleted: Bool
+    let recaps: [String]
+}
+
+struct SkipAheadOverlayView: View {
+    let title: String
+    let recaps: [String]
+
+    var body: some View {
+        ZStack {
+            AppTheme.background.opacity(0.95)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(title)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
+                }
+
+                Text("User game results will appear here as they finish.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if recaps.isEmpty {
+                    Text("Simulating...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(recaps.enumerated()), id: \.offset) { _, recap in
+                                Text(recap)
+                                    .font(.footnote.monospacedDigit())
+                                    .foregroundStyle(.primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .padding(18)
+            .background(AppTheme.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+            )
+            .padding(20)
+        }
+    }
+}
+
+enum LeagueMenuDestination: Hashable {
+    case roster
+    case schedule
+    case rotation
+    case playerStats
+    case teamStats
+    case statLeaders
+    case standings
+    case rankings
+    case coachingStaff
+    case boxScore(String)
+}
+
+struct StatChip: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.bold))
+                .foregroundStyle(AppTheme.ink)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+        )
+    }
+}
+
+struct MenuRow: View {
+    let title: String
+    var subtitle: String = ""
+
+    var body: some View {
+        GameCard {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+struct CoachingStaffView: View {
+    let staff: UserCoachingStaffSummary?
+    let onSetAssistantFocus: (Int, AssistantFocus) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Assistant focus affects organization priorities. Game Prep selection also marks the lead scout for opponent prep.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let staff {
+                    GameCard {
+                        GameSectionHeader(title: "Head Coach")
+                        CoachTraitRowView(
+                            title: staff.headCoach.displayName,
+                            subtitle: "Program Leader · \(staff.headCoach.bioLine)",
+                            coach: staff.headCoach
+                        )
+                    }
+
+                    GameCard {
+                        GameSectionHeader(title: "Assistants")
+                        VStack(spacing: 12) {
+                            ForEach(Array(staff.assistants.enumerated()), id: \.offset) { index, assistant in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    CoachTraitRowView(
+                                        title: assistant.displayName,
+                                        subtitle: "Assistant \(index + 1) · \(assistant.focus?.label ?? AssistantFocus.recruiting.label) · \(assistant.bioLine)",
+                                        coach: assistant
+                                    )
+                                    FilterDropdown(
+                                        label: "Focus",
+                                        selection: Binding(
+                                            get: { assistant.focus ?? .recruiting },
+                                            set: { onSetAssistantFocus(index, $0) }
+                                        ),
+                                        options: AssistantFocus.allCases,
+                                        optionLabel: \.label
+                                    )
+                                }
+
+                                if index < staff.assistants.count - 1 {
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text("No coaching staff available yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(16)
+        }
+        .navigationTitle("Coaching Staff")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct CoachTraitRowView: View {
+    let title: String
+    let subtitle: String
+    let coach: Coach
+    private let traitColumns = [
+        GridItem(.flexible(minimum: 120), spacing: 8),
+        GridItem(.flexible(minimum: 120), spacing: 8),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: traitColumns, alignment: .leading, spacing: 8) {
+                ForEach(Array(coach.allTraitValues.enumerated()), id: \.offset) { _, item in
+                    TraitPill(title: item.title, value: item.value)
+                }
+            }
+        }
+    }
+}
+
+struct TraitPill: View {
+    let title: String
+    let value: Int
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("\(value)")
+                .font(.caption.monospacedDigit().weight(.bold))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(AppTheme.cardBorder.opacity(0.8), lineWidth: 1)
+        )
+    }
+}
