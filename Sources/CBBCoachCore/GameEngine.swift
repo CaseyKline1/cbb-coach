@@ -154,6 +154,8 @@ struct NativeGameStateStore {
         var activeLineupBoxIndices: [Int]
         var boxPlayers: [PlayerBoxScore]
         var teamExtras: [String: Int]
+        var targetMinutesByRosterIndex: [Double]
+        var baseSkillByRosterIndex: [Double]
         var initiatedActionCount: Int
         var initiatedActionCountByBoxIndex: [Int: Int]
     }
@@ -302,6 +304,8 @@ struct NativeGameStateStore {
         }
 
         let lineupBoxIndices = starters.map { lookupRosterIndex(for: $0) }
+        let targetMinutesByRosterIndex = computeTargetMinutesByRosterIndex(team: team, roster: roster)
+        let baseSkillByRosterIndex = roster.map(playerOverallSkill)
         return TeamTracker(
             team: team,
             score: 0,
@@ -313,6 +317,8 @@ struct NativeGameStateStore {
                 "fastBreakPoints": 0,
                 "pointsInPaint": 0,
             ],
+            targetMinutesByRosterIndex: targetMinutesByRosterIndex,
+            baseSkillByRosterIndex: baseSkillByRosterIndex,
             initiatedActionCount: 0,
             initiatedActionCountByBoxIndex: [:]
         )
