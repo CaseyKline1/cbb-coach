@@ -398,45 +398,91 @@ func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
     state.status = "in_progress"
 }
 
-func simulateScheduledGameInState(
-    _ state: inout LeagueStore.State,
+private struct ScheduledGameSimulationInput {
+    let scheduleIndex: Int
+    let game: LeagueStore.ScheduledGame
+    let homeIndex: Int
+    let awayIndex: Int
+    let homeTeam: Team
+    let awayTeam: Team
+}
+
+private struct ScheduledGameSimulationOutcome {
+    let scheduleIndex: Int
+    let game: LeagueStore.ScheduledGame
+    let homeIndex: Int
+    let awayIndex: Int
+    let homeScore: Int
+    let awayScore: Int
+    let winnerTeamId: String?
+    let wentToOvertime: Bool
+    let boxScore: [TeamBoxScore]?
+}
+
+private final class ScheduledGameOutcomeCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var outcomes: [ScheduledGameSimulationOutcome]
+
+    init(capacity: Int) {
+        outcomes = []
+        outcomes.reserveCapacity(capacity)
+    }
+
+    func append(_ outcome: ScheduledGameSimulationOutcome) {
+        lock.lock()
+        outcomes.append(outcome)
+        lock.unlock()
+    }
+
+    func snapshotSorted() -> [ScheduledGameSimulationOutcome] {
+        lock.lock()
+        defer { lock.unlock() }
+        return outcomes.sorted { $0.scheduleIndex < $1.scheduleIndex }
+    }
+}
+
+private func makeScheduledGameSimulationInput(
+    state: LeagueStore.State,
     scheduleIndex: Int,
-    teamIndexById: [String: Int]? = nil
-) {
-    guard scheduleIndex >= 0, scheduleIndex < state.schedule.count else { return }
-    guard !state.schedule[scheduleIndex].completed else { return }
-
+    teamIndexById: [String: Int]
+) -> ScheduledGameSimulationInput? {
+    guard scheduleIndex >= 0, scheduleIndex < state.schedule.count else { return nil }
     let game = state.schedule[scheduleIndex]
-    let resolvedTeamIndexById: [String: Int]
-    if let teamIndexById {
-        resolvedTeamIndexById = teamIndexById
-    } else {
-        resolvedTeamIndexById = Dictionary(
-            uniqueKeysWithValues: state.teams.enumerated().map { ($0.element.teamId, $0.offset) }
-        )
-    }
+    guard !game.completed else { return nil }
     guard
-        let homeIndex = resolvedTeamIndexById[game.homeTeamId],
-        let awayIndex = resolvedTeamIndexById[game.awayTeamId]
+        let homeIndex = teamIndexById[game.homeTeamId],
+        let awayIndex = teamIndexById[game.awayTeamId]
     else {
-        return
+        return nil
     }
 
-    var random = SeededRandom(seed: hashString("sim:\(state.optionsSeed):\(game.gameId)"))
     var homeTeam = state.teams[homeIndex].teamModel
     var awayTeam = state.teams[awayIndex].teamModel
     applyPreGameModifiers(team: &homeTeam, isHome: !game.neutralSite)
     applyPreGameModifiers(team: &awayTeam, isHome: false)
-    let result = simulateGame(
+
+    return ScheduledGameSimulationInput(
+        scheduleIndex: scheduleIndex,
+        game: game,
+        homeIndex: homeIndex,
+        awayIndex: awayIndex,
         homeTeam: homeTeam,
-        awayTeam: awayTeam,
+        awayTeam: awayTeam
+    )
+}
+
+private func simulateScheduledGameOutcome(optionsSeed: String, input: ScheduledGameSimulationInput) -> ScheduledGameSimulationOutcome {
+    var random = SeededRandom(seed: hashString("sim:\(optionsSeed):\(input.game.gameId)"))
+    let result = simulateGame(
+        homeTeam: input.homeTeam,
+        awayTeam: input.awayTeam,
         random: &random,
         includePlayByPlay: false
     )
 
     var homeScore = result.home.score
     var awayScore = result.away.score
-    if game.type == "conference_tournament", homeScore == awayScore {
+    if input.game.type == "conference_tournament", homeScore == awayScore {
         if random.nextUnit() < 0.5 {
             homeScore += 1
         } else {
@@ -447,16 +493,41 @@ func simulateScheduledGameInState(
     if homeScore == awayScore {
         winnerTeamId = nil
     } else {
-        winnerTeamId = homeScore > awayScore ? game.homeTeamId : game.awayTeamId
+        winnerTeamId = homeScore > awayScore ? input.game.homeTeamId : input.game.awayTeamId
     }
+
+    return ScheduledGameSimulationOutcome(
+        scheduleIndex: input.scheduleIndex,
+        game: input.game,
+        homeIndex: input.homeIndex,
+        awayIndex: input.awayIndex,
+        homeScore: homeScore,
+        awayScore: awayScore,
+        winnerTeamId: winnerTeamId,
+        wentToOvertime: result.wentToOvertime,
+        boxScore: result.boxScore
+    )
+}
+
+private func applyScheduledGameOutcomeInState(_ state: inout LeagueStore.State, outcome: ScheduledGameSimulationOutcome) {
+    let scheduleIndex = outcome.scheduleIndex
+    let game = outcome.game
+    let homeIndex = outcome.homeIndex
+    let awayIndex = outcome.awayIndex
+    let homeScore = outcome.homeScore
+    let awayScore = outcome.awayScore
+    let winnerTeamId = outcome.winnerTeamId
+
+    guard scheduleIndex >= 0, scheduleIndex < state.schedule.count else { return }
+    guard !state.schedule[scheduleIndex].completed else { return }
 
     state.schedule[scheduleIndex].completed = true
     state.schedule[scheduleIndex].result = LeagueStore.GameResult(
         homeScore: homeScore,
         awayScore: awayScore,
         winnerTeamId: winnerTeamId,
-        wentToOvertime: result.wentToOvertime,
-        boxScore: result.boxScore
+        wentToOvertime: outcome.wentToOvertime,
+        boxScore: outcome.boxScore
     )
     if game.type == "regular_season" {
         if state.remainingRegularSeasonGames == nil {
@@ -505,6 +576,77 @@ func simulateScheduledGameInState(
             winnerTeamId: winnerTeamId
         )
     }
+}
+
+func simulateScheduledDayInState(
+    _ state: inout LeagueStore.State,
+    scheduleIndexes: [Int],
+    teamIndexById: [String: Int]? = nil
+) {
+    guard !scheduleIndexes.isEmpty else { return }
+    let resolvedTeamIndexById: [String: Int]
+    if let teamIndexById {
+        resolvedTeamIndexById = teamIndexById
+    } else {
+        resolvedTeamIndexById = Dictionary(
+            uniqueKeysWithValues: state.teams.enumerated().map { ($0.element.teamId, $0.offset) }
+        )
+    }
+
+    let orderedIndexes = scheduleIndexes.sorted()
+    var inputs: [ScheduledGameSimulationInput] = []
+    inputs.reserveCapacity(orderedIndexes.count)
+    for scheduleIndex in orderedIndexes {
+        guard let input = makeScheduledGameSimulationInput(
+            state: state,
+            scheduleIndex: scheduleIndex,
+            teamIndexById: resolvedTeamIndexById
+        ) else { continue }
+        inputs.append(input)
+    }
+    guard !inputs.isEmpty else { return }
+
+    var hasTeamOverlap = false
+    var seenTeamIds = Set<String>()
+    for input in inputs {
+        if seenTeamIds.contains(input.game.homeTeamId) || seenTeamIds.contains(input.game.awayTeamId) {
+            hasTeamOverlap = true
+            break
+        }
+        seenTeamIds.insert(input.game.homeTeamId)
+        seenTeamIds.insert(input.game.awayTeamId)
+    }
+
+    let canParallelize = !hasTeamOverlap
+        && inputs.count >= 4
+        && ProcessInfo.processInfo.activeProcessorCount > 1
+
+    if canParallelize {
+        let optionsSeed = state.optionsSeed
+        let dayInputs = inputs
+        let collector = ScheduledGameOutcomeCollector(capacity: dayInputs.count)
+        DispatchQueue.concurrentPerform(iterations: dayInputs.count) { index in
+            let outcome = simulateScheduledGameOutcome(optionsSeed: optionsSeed, input: dayInputs[index])
+            collector.append(outcome)
+        }
+        for outcome in collector.snapshotSorted() {
+            applyScheduledGameOutcomeInState(&state, outcome: outcome)
+        }
+        return
+    }
+
+    for input in inputs {
+        let outcome = simulateScheduledGameOutcome(optionsSeed: state.optionsSeed, input: input)
+        applyScheduledGameOutcomeInState(&state, outcome: outcome)
+    }
+}
+
+func simulateScheduledGameInState(
+    _ state: inout LeagueStore.State,
+    scheduleIndex: Int,
+    teamIndexById: [String: Int]? = nil
+) {
+    simulateScheduledDayInState(&state, scheduleIndexes: [scheduleIndex], teamIndexById: teamIndexById)
 }
 
 func resetTeamRecords(_ state: inout LeagueStore.State) {

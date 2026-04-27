@@ -125,9 +125,7 @@ private func advanceToNextUserGameInState(_ state: inout LeagueStore.State, cach
 
         state.currentDay = nextDay
         let dayIndexes = popPendingDayIndexes(&context, day: nextDay)
-        for idx in dayIndexes {
-            simulateScheduledGameInState(&state, scheduleIndex: idx, teamIndexById: teamIndexById)
-        }
+        simulateScheduledDayInState(&state, scheduleIndexes: dayIndexes, teamIndexById: teamIndexById)
         markCompletedInAdvanceContext(&context, scheduleIndexes: dayIndexes)
         let scheduleCountBeforeTournamentPrep = state.schedule.count
         prepareConferenceTournamentsIfNeeded(&state)
@@ -150,9 +148,7 @@ private func advanceToNextUserGameInState(_ state: inout LeagueStore.State, cach
     while let day = nextPendingDay(&context), day <= simDay {
         state.currentDay = day
         let dayIndexes = popPendingDayIndexes(&context, day: day)
-        for idx in dayIndexes {
-            simulateScheduledGameInState(&state, scheduleIndex: idx, teamIndexById: teamIndexById)
-        }
+        simulateScheduledDayInState(&state, scheduleIndexes: dayIndexes, teamIndexById: teamIndexById)
         markCompletedInAdvanceContext(&context, scheduleIndexes: dayIndexes)
         let scheduleCountBeforeTournamentPrep = state.schedule.count
         prepareConferenceTournamentsIfNeeded(&state)
