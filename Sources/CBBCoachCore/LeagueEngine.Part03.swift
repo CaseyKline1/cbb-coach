@@ -73,6 +73,7 @@ public func advanceToNextUserGame(_ league: inout LeagueState) -> UserGameSummar
         prepareConferenceTournamentsIfNeeded(&state)
 
         let userTeamId = state.userTeamId
+        let teamIndexById = Dictionary(uniqueKeysWithValues: state.teams.enumerated().map { ($0.element.teamId, $0.offset) })
 
         var pending = nextPendingUserGame(state, userTeamId: userTeamId)
         while pending == nil {
@@ -84,7 +85,7 @@ public func advanceToNextUserGame(_ league: inout LeagueState) -> UserGameSummar
             state.currentDay = nextDay
             let dayIndexes = pendingDayIndexes(state, day: nextDay)
             for idx in dayIndexes {
-                simulateScheduledGameInState(&state, scheduleIndex: idx)
+                simulateScheduledGameInState(&state, scheduleIndex: idx, teamIndexById: teamIndexById)
             }
             prepareConferenceTournamentsIfNeeded(&state)
             pending = nextPendingUserGame(state, userTeamId: userTeamId)
@@ -103,7 +104,7 @@ public func advanceToNextUserGame(_ league: inout LeagueState) -> UserGameSummar
             state.currentDay = day
             let dayIndexes = pendingDayIndexes(state, day: day)
             for idx in dayIndexes {
-                simulateScheduledGameInState(&state, scheduleIndex: idx)
+                simulateScheduledGameInState(&state, scheduleIndex: idx, teamIndexById: teamIndexById)
             }
             prepareConferenceTournamentsIfNeeded(&state)
             nextDayToSim = nextIncompleteDay(state, upToDay: simDay)

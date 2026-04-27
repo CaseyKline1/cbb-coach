@@ -386,14 +386,26 @@ func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
     state.status = "in_progress"
 }
 
-func simulateScheduledGameInState(_ state: inout LeagueStore.State, scheduleIndex: Int) {
+func simulateScheduledGameInState(
+    _ state: inout LeagueStore.State,
+    scheduleIndex: Int,
+    teamIndexById: [String: Int]? = nil
+) {
     guard scheduleIndex >= 0, scheduleIndex < state.schedule.count else { return }
     guard !state.schedule[scheduleIndex].completed else { return }
 
     let game = state.schedule[scheduleIndex]
+    let resolvedTeamIndexById: [String: Int]
+    if let teamIndexById {
+        resolvedTeamIndexById = teamIndexById
+    } else {
+        resolvedTeamIndexById = Dictionary(
+            uniqueKeysWithValues: state.teams.enumerated().map { ($0.element.teamId, $0.offset) }
+        )
+    }
     guard
-        let homeIndex = state.teams.firstIndex(where: { $0.teamId == game.homeTeamId }),
-        let awayIndex = state.teams.firstIndex(where: { $0.teamId == game.awayTeamId })
+        let homeIndex = resolvedTeamIndexById[game.homeTeamId],
+        let awayIndex = resolvedTeamIndexById[game.awayTeamId]
     else {
         return
     }
