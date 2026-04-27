@@ -299,9 +299,12 @@ func addPlayerStat(
     guard lineupIndex >= 0, lineupIndex < stored.teams[teamId].activeLineupBoxIndices.count else { return }
     let boxIndex = stored.teams[teamId].activeLineupBoxIndices[lineupIndex]
     guard boxIndex >= 0, boxIndex < stored.teams[teamId].boxPlayers.count else { return }
+    guard stored.traceEnabled else {
+        mutate(&stored.teams[teamId].boxPlayers[boxIndex])
+        return
+    }
     let before = stored.teams[teamId].boxPlayers[boxIndex]
     mutate(&stored.teams[teamId].boxPlayers[boxIndex])
-    guard stored.traceEnabled else { return }
     let after = stored.teams[teamId].boxPlayers[boxIndex]
     let teamName = stored.teams[teamId].team.name
     appendPlayerStatDeltaRecords(
