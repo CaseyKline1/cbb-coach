@@ -152,10 +152,12 @@ public struct UserGameSummary: Codable, Equatable, Sendable {
 public struct UserGameAdvanceBatch: Codable, Equatable, Sendable {
     public var results: [UserGameSummary]
     public var seasonCompleted: Bool
+    public var boxScoresByGameId: [String: [TeamBoxScore]]
 
-    public init(results: [UserGameSummary], seasonCompleted: Bool) {
+    public init(results: [UserGameSummary], seasonCompleted: Bool, boxScoresByGameId: [String: [TeamBoxScore]] = [:]) {
         self.results = results
         self.seasonCompleted = seasonCompleted
+        self.boxScoresByGameId = boxScoresByGameId
     }
 }
 

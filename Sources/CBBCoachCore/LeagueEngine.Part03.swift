@@ -213,6 +213,7 @@ public func advanceUserGames(_ league: inout LeagueState, maxGames: Int) -> User
     return LeagueStore.update(league.handle) { state in
         var cachedContext: LeagueAdvanceContext?
         var completedUserGames: [UserGameSummary] = []
+        var boxScoresByGameId: [String: [TeamBoxScore]] = [:]
         completedUserGames.reserveCapacity(safeMaxGames)
         var seasonCompleted = false
 
@@ -222,9 +223,13 @@ public func advanceUserGames(_ league: inout LeagueState, maxGames: Int) -> User
                 seasonCompleted = true
                 break
             }
+            if let gameId = result.gameId,
+               let boxScore = state.schedule.first(where: { $0.gameId == gameId })?.result?.boxScore {
+                boxScoresByGameId[gameId] = boxScore
+            }
             completedUserGames.append(result)
         }
-        return UserGameAdvanceBatch(results: completedUserGames, seasonCompleted: seasonCompleted)
+        return UserGameAdvanceBatch(results: completedUserGames, seasonCompleted: seasonCompleted, boxScoresByGameId: boxScoresByGameId)
     } ?? UserGameAdvanceBatch(results: [], seasonCompleted: false)
 }
 
