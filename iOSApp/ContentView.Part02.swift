@@ -217,7 +217,8 @@ struct CollegeLeagueHomeView: View {
                         teamStatsById: teamStatsById,
                         userTeamId: summary?.userTeamId,
                         userConferenceId: userConferenceId,
-                        conferenceIdByTeamId: conferenceIdByTeamId
+                        conferenceIdByTeamId: conferenceIdByTeamId,
+                        userRank: rankings?.rankings.first(where: { $0.teamId == summary?.userTeamId })?.rank
                     )
                 case .statLeaders:
                     StatLeadersView(

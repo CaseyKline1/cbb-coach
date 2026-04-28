@@ -93,6 +93,7 @@ struct TeamStatsView: View {
     let userTeamId: String?
     let userConferenceId: String?
     let conferenceIdByTeamId: [String: String]
+    let userRank: Int?
 
     private struct MetricDefinition {
         let id: String
@@ -207,17 +208,18 @@ struct TeamStatsView: View {
         }
     }
 
+    private var navigationTitleText: String {
+        let name = userStats?.teamName ?? "Team Stats"
+        if let userRank {
+            return "#\(userRank) \(name)"
+        }
+        return name
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if let userStats {
-                    GameCard {
-                        GameSectionHeader(title: "\(userStats.teamName) Team Stats")
-                        Text("Per-game values with conference and national ranking.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
+                if userStats != nil {
                     let columns: [AppTableColumn<String>] = [
                         .init(id: "stat", title: "STAT", width: 130, alignment: .leading),
                         .init(id: "value", title: "VALUE", width: 72),
@@ -247,7 +249,7 @@ struct TeamStatsView: View {
             .padding(16)
         }
         .background(AppTheme.background)
-        .navigationTitle("Team Stats")
+        .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
     }
 
