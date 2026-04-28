@@ -9,7 +9,8 @@ let package = Package(
     ],
     products: [
         .library(name: "CBBCoachCore", targets: ["CBBCoachCore"]),
-        .executable(name: "CBBCoachCLI", targets: ["CBBCoachCLI"])
+        .executable(name: "CBBCoachCLI", targets: ["CBBCoachCLI"]),
+        .executable(name: "CBBCoachBench", targets: ["CBBCoachBench"])
     ],
     targets: [
         .target(
@@ -19,6 +20,7 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "CBBCoachCLI", dependencies: ["CBBCoachCore"]),
+        .executableTarget(name: "CBBCoachBench", dependencies: ["CBBCoachCore"]),
         .testTarget(name: "CBBCoachCoreTests", dependencies: ["CBBCoachCore"])
     ]
 )
