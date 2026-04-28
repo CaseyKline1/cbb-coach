@@ -211,6 +211,10 @@ public func advanceUserGames(_ league: inout LeagueState, maxGames: Int) -> User
         return UserGameAdvanceBatch(results: [], seasonCompleted: false)
     }
     return LeagueStore.updateOutsideLock(league.handle) { state in
+        if (2...5).contains(safeMaxGames), let batch = advanceRegularSeasonUserGamesInBatch(&state, maxGames: safeMaxGames) {
+            return batch
+        }
+
         var cachedContext: LeagueAdvanceContext?
         var completedUserGames: [UserGameSummary] = []
         var boxScoresByGameId: [String: [TeamBoxScore]] = [:]
@@ -231,6 +235,89 @@ public func advanceUserGames(_ league: inout LeagueState, maxGames: Int) -> User
         }
         return UserGameAdvanceBatch(results: completedUserGames, seasonCompleted: seasonCompleted, boxScoresByGameId: boxScoresByGameId)
     } ?? UserGameAdvanceBatch(results: [], seasonCompleted: false)
+}
+
+private func advanceRegularSeasonUserGamesInBatch(_ state: inout LeagueStore.State, maxGames: Int) -> UserGameAdvanceBatch? {
+    if !state.scheduleGenerated || state.schedule.isEmpty {
+        generateSeasonScheduleInState(&state)
+    }
+    prepareConferenceTournamentsIfNeeded(&state)
+
+    var context = prepareAdvanceContext(state, cached: nil)
+    let userTeamId = context.userTeamId
+    let pendingUserGames = context.pendingUserIndexes.compactMap { scheduleIndex -> LeagueStore.ScheduledGame? in
+        guard scheduleIndex >= 0, scheduleIndex < state.schedule.count else { return nil }
+        let game = state.schedule[scheduleIndex]
+        guard !game.completed else { return nil }
+        guard game.homeTeamId == userTeamId || game.awayTeamId == userTeamId else { return nil }
+        return game
+    }.prefix(maxGames)
+
+    guard pendingUserGames.count == maxGames, let targetDay = pendingUserGames.last?.day else {
+        return nil
+    }
+    guard pendingUserGames.allSatisfy({ $0.type == "regular_season" }) else {
+        return nil
+    }
+
+    var daysToSimulate: [(day: Int, indexes: [Int])] = []
+    while let day = nextPendingDay(&context), day <= targetDay {
+        let indexes = popPendingDayIndexes(&context, day: day)
+        guard indexes.allSatisfy({ idx in
+            idx >= 0 && idx < state.schedule.count && state.schedule[idx].type == "regular_season"
+        }) else {
+            return nil
+        }
+        daysToSimulate.append((day: day, indexes: indexes))
+    }
+
+    guard !daysToSimulate.isEmpty else { return nil }
+
+    let initialUserRecord = state.teams.first(where: { $0.teamId == userTeamId }).map { (wins: $0.wins, losses: $0.losses) } ?? (wins: 0, losses: 0)
+    guard simulateScheduledRegularSeasonDaysInState(&state, dayIndexes: daysToSimulate, teamIndexById: context.teamIndexById) else {
+        return nil
+    }
+    prepareConferenceTournamentsIfNeeded(&state)
+
+    var completedUserGames: [UserGameSummary] = []
+    var boxScoresByGameId: [String: [TeamBoxScore]] = [:]
+    completedUserGames.reserveCapacity(maxGames)
+    var runningWins = initialUserRecord.wins
+    var runningLosses = initialUserRecord.losses
+
+    for pendingGame in pendingUserGames {
+        guard let completedGame = state.schedule.first(where: { $0.gameId == pendingGame.gameId }) else { continue }
+        var out = userSummaryFromGame(completedGame, userTeamId: userTeamId)
+        out.done = false
+        out.message = "Game complete"
+        if let result = completedGame.result {
+            let userScore = completedGame.homeTeamId == userTeamId ? result.homeScore : result.awayScore
+            let oppScore = completedGame.homeTeamId == userTeamId ? result.awayScore : result.homeScore
+            let won = userScore > oppScore
+            if won {
+                runningWins += 1
+            } else if userScore < oppScore {
+                runningLosses += 1
+            }
+            out.score = .object([
+                "user": .number(Double(userScore)),
+                "opponent": .number(Double(oppScore)),
+            ])
+            out.won = won
+            if let boxScore = result.boxScore {
+                boxScoresByGameId[completedGame.gameId] = boxScore
+            }
+        }
+        out.record = .object([
+            "wins": .number(Double(runningWins)),
+            "losses": .number(Double(runningLosses)),
+        ])
+        state.userGameHistory.append(out)
+        completedUserGames.append(out)
+    }
+
+    guard completedUserGames.count == maxGames else { return nil }
+    return UserGameAdvanceBatch(results: completedUserGames, seasonCompleted: false, boxScoresByGameId: boxScoresByGameId)
 }
 
 public func getUserCompletedGames(_ league: LeagueState) -> [UserGameSummary] {

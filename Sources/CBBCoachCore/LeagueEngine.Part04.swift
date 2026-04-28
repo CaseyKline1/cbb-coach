@@ -641,6 +641,58 @@ func simulateScheduledDayInState(
     }
 }
 
+func simulateScheduledRegularSeasonDaysInState(
+    _ state: inout LeagueStore.State,
+    dayIndexes: [(day: Int, indexes: [Int])],
+    teamIndexById: [String: Int]
+) -> Bool {
+    guard !dayIndexes.isEmpty else { return true }
+
+    let orderedDayIndexes = dayIndexes.sorted { lhs, rhs in lhs.day < rhs.day }
+    var inputs: [ScheduledGameSimulationInput] = []
+    inputs.reserveCapacity(orderedDayIndexes.reduce(0) { $0 + $1.indexes.count })
+
+    for day in orderedDayIndexes {
+        for scheduleIndex in day.indexes.sorted() {
+            guard let input = makeScheduledGameSimulationInput(
+                state: state,
+                scheduleIndex: scheduleIndex,
+                teamIndexById: teamIndexById
+            ) else { continue }
+            guard input.game.type == "regular_season" else { return false }
+            inputs.append(input)
+        }
+    }
+    guard !inputs.isEmpty else { return true }
+
+    let optionsSeed = state.optionsSeed
+    let collector = ScheduledGameOutcomeCollector(capacity: inputs.count)
+    let simulationInputs = inputs
+    if simulationInputs.count >= 4, ProcessInfo.processInfo.activeProcessorCount > 1 {
+        DispatchQueue.concurrentPerform(iterations: simulationInputs.count) { index in
+            let outcome = simulateScheduledGameOutcome(optionsSeed: optionsSeed, input: simulationInputs[index])
+            collector.append(outcome)
+        }
+    } else {
+        for input in simulationInputs {
+            collector.append(simulateScheduledGameOutcome(optionsSeed: optionsSeed, input: input))
+        }
+    }
+
+    let dayByScheduleIndex = Dictionary(uniqueKeysWithValues: simulationInputs.map { ($0.scheduleIndex, $0.game.day) })
+    let outcomes = collector.snapshotSorted().sorted { lhs, rhs in
+        let lhsDay = dayByScheduleIndex[lhs.scheduleIndex] ?? lhs.game.day
+        let rhsDay = dayByScheduleIndex[rhs.scheduleIndex] ?? rhs.game.day
+        if lhsDay != rhsDay { return lhsDay < rhsDay }
+        return lhs.scheduleIndex < rhs.scheduleIndex
+    }
+    for outcome in outcomes {
+        applyScheduledGameOutcomeInState(&state, outcome: outcome)
+    }
+    state.currentDay = orderedDayIndexes.last?.day ?? state.currentDay
+    return true
+}
+
 func simulateScheduledGameInState(
     _ state: inout LeagueStore.State,
     scheduleIndex: Int,

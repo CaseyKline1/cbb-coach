@@ -159,6 +159,44 @@ func advancingUserGameSimulatesLeagueDay() throws {
     #expect(!cpuOnlyCompleted.isEmpty)
 }
 
+@Test("Batched user advancement matches repeated single-game advancement")
+func batchedUserAdvanceMatchesSequentialAdvance() throws {
+    let options = CreateLeagueOptions(userTeamName: "Duke", seed: "batch-vs-sequential", totalRegularSeasonGames: 4)
+    var batchedLeague = try createD1League(options: options)
+    var sequentialLeague = try createD1League(options: options)
+
+    let batched = advanceUserGames(&batchedLeague, maxGames: 3)
+    var sequentialResults: [UserGameSummary] = []
+    for _ in 0..<3 {
+        if let result = advanceToNextUserGame(&sequentialLeague), result.done != true {
+            sequentialResults.append(result)
+        }
+    }
+
+    func scoreSignature(_ games: [LeagueGameSummary]) -> [String] {
+        games.map { game in
+            let object: [String: JSONValue]
+            if case let .object(resultObject) = game.result {
+                object = resultObject
+            } else {
+                object = [:]
+            }
+            let home: Int
+            if case let .number(value) = object["homeScore"] { home = Int(value) } else { home = -1 }
+            let away: Int
+            if case let .number(value) = object["awayScore"] { away = Int(value) } else { away = -1 }
+            let winner: String
+            if case let .string(value) = object["winnerTeamId"] { winner = value } else { winner = "tie" }
+            return "\(game.gameId ?? "unknown"):\(home)-\(away):\(winner)"
+        }
+    }
+
+    #expect(batched.results.map(\.gameId) == sequentialResults.map(\.gameId))
+    #expect(batched.results.map(\.score) == sequentialResults.map(\.score))
+    #expect(batched.results.map(\.record) == sequentialResults.map(\.record))
+    #expect(scoreSignature(getCompletedLeagueGames(batchedLeague)) == scoreSignature(getCompletedLeagueGames(sequentialLeague)))
+}
+
 @Test("Completed league games include box score payload for stat views")
 func completedLeagueGamesCarryBoxScore() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "box-score-tests"))
