@@ -154,6 +154,8 @@ struct NativeGameStateStore {
         var activeLineupBoxIndices: [Int]
         var boxPlayers: [PlayerBoxScore]
         var teamExtras: [String: Int]
+        var targetMinutesByRosterIndex: [Double]
+        var baseSkillByRosterIndex: [Double]
         var initiatedActionCount: Int
         var initiatedActionCountByBoxIndex: [Int: Int]
     }
@@ -181,54 +183,79 @@ struct NativeGameStateStore {
         var actionTraces: [QAActionTrace]
     }
 
-    private static let lock = NSLock()
+    final class StoredBox: @unchecked Sendable {
+        let lock = NSLock()
+        var state: StoredState
+
+        init(state: StoredState) {
+            self.state = state
+        }
+    }
+
+    private static let mapLock = NSLock()
     private static nonisolated(unsafe) var nextId = 1
-    private static nonisolated(unsafe) var states: [String: StoredState] = [:]
+    private static nonisolated(unsafe) var states: [String: StoredBox] = [:]
 
     static func create(home: Team, away: Team, random: inout SeededRandom, includePlayByPlay: Bool) -> String {
-        lock.lock()
-        defer { lock.unlock() }
+        mapLock.lock()
+        defer { mapLock.unlock() }
         let handle = "swift_g_\(nextId)"
         nextId += 1
 
         let initialPossession = random.nextUnit() < 0.5 ? 0 : 1
-        states[handle] = StoredState(
-            teams: [
-                makeTeamTracker(home),
-                makeTeamTracker(away),
-            ],
-            currentHalf: 1,
-            gameClockRemaining: HALF_SECONDS,
-            shotClockRemaining: SHOT_CLOCK_SECONDS,
-            possessionTeamId: initialPossession,
-            playByPlayEnabled: includePlayByPlay,
-            playByPlay: [],
-            teamFoulsInHalf: [0, 0],
-            formationCycleIndex: [0, 0],
-            pendingTransition: nil,
-            lastSubElapsedGameSeconds: [-9999, -9999],
-            traceEnabled: false,
-            actionCounter: 0,
-            currentActionInteractions: [],
-            currentActionStatRecords: [],
-            actionTraces: []
+        states[handle] = StoredBox(
+            state: StoredState(
+                teams: [
+                    makeTeamTracker(home),
+                    makeTeamTracker(away),
+                ],
+                currentHalf: 1,
+                gameClockRemaining: HALF_SECONDS,
+                shotClockRemaining: SHOT_CLOCK_SECONDS,
+                possessionTeamId: initialPossession,
+                playByPlayEnabled: includePlayByPlay,
+                playByPlay: [],
+                teamFoulsInHalf: [0, 0],
+                formationCycleIndex: [0, 0],
+                pendingTransition: nil,
+                lastSubElapsedGameSeconds: [-9999, -9999],
+                traceEnabled: false,
+                actionCounter: 0,
+                currentActionInteractions: [],
+                currentActionStatRecords: [],
+                actionTraces: []
+            )
         )
         return handle
     }
 
     static func withState<T>(_ handle: String, _ body: (inout StoredState) -> T) -> T? {
-        lock.lock()
-        defer { lock.unlock() }
-        guard var state = states[handle] else { return nil }
-        let result = body(&state)
-        states[handle] = state
-        return result
+        mapLock.lock()
+        let box = states[handle]
+        mapLock.unlock()
+        guard let box else { return nil }
+
+        box.lock.lock()
+        defer { box.lock.unlock() }
+        return body(&box.state)
     }
 
     static func snapshot(_ handle: String) -> StoredState? {
-        lock.lock()
-        defer { lock.unlock() }
-        return states[handle]
+        mapLock.lock()
+        let box = states[handle]
+        mapLock.unlock()
+        guard let box else { return nil }
+
+        box.lock.lock()
+        defer { box.lock.unlock() }
+        return box.state
+    }
+
+    @discardableResult
+    static func remove(_ handle: String) -> Bool {
+        mapLock.lock()
+        defer { mapLock.unlock() }
+        return states.removeValue(forKey: handle) != nil
     }
 
     private static func makeTeamTracker(_ team: Team) -> TeamTracker {
@@ -277,6 +304,8 @@ struct NativeGameStateStore {
         }
 
         let lineupBoxIndices = starters.map { lookupRosterIndex(for: $0) }
+        let targetMinutesByRosterIndex = computeTargetMinutesByRosterIndex(team: team, roster: roster)
+        let baseSkillByRosterIndex = roster.map(playerOverallSkill)
         return TeamTracker(
             team: team,
             score: 0,
@@ -288,6 +317,8 @@ struct NativeGameStateStore {
                 "fastBreakPoints": 0,
                 "pointsInPaint": 0,
             ],
+            targetMinutesByRosterIndex: targetMinutesByRosterIndex,
+            baseSkillByRosterIndex: baseSkillByRosterIndex,
             initiatedActionCount: 0,
             initiatedActionCountByBoxIndex: [:]
         )

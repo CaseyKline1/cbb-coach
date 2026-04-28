@@ -1,36 +1,29 @@
 import Foundation
 
-func computeTargetMinutesMap(tracker: NativeGameStateStore.TeamTracker) -> [Int: Double] {
-    let roster = tracker.team.players
-    guard !roster.isEmpty else { return [:] }
+func computeTargetMinutesByRosterIndex(team: Team, roster: [Player]) -> [Double] {
+    guard !roster.isEmpty else { return [] }
     let totalTeamMinutes: Double = 200
 
-    if let namedTargets = tracker.team.rotation?.minuteTargets {
-        var raw: [Int: Double] = [:]
+    if let namedTargets = team.rotation?.minuteTargets {
+        var raw = Array(repeating: 0.0, count: roster.count)
+        var hasNamedTarget = false
         for (idx, player) in roster.enumerated() {
             if let value = namedTargets[player.bio.name], value.isFinite, value >= 0 {
                 raw[idx] = value
+                hasNamedTarget = true
             }
         }
-        if !raw.isEmpty {
-            let sum = raw.values.reduce(0, +)
-            var map: [Int: Double] = [:]
-            if sum > 0 {
-                let scale = totalTeamMinutes / sum
-                for (idx, value) in raw {
-                    map[idx] = clamp(value * scale, min: 0, max: 40)
-                }
-            }
-            for idx in roster.indices where map[idx] == nil {
-                map[idx] = 0
-            }
-            return map
+        if hasNamedTarget {
+            let sum = raw.reduce(0, +)
+            guard sum > 0 else { return raw.map { _ in 0 } }
+            let scale = totalTeamMinutes / sum
+            return raw.map { clamp($0 * scale, min: 0, max: 40) }
         }
     }
 
     // Default CPU-style pattern: 10-man rotation (5 starters ~40, 5 backups ~0).
     // If roster size differs, preserve this shape and scale to 200 team minutes.
-    let listedStarters = Array((tracker.team.lineup.isEmpty ? roster : tracker.team.lineup).prefix(5))
+    let listedStarters = Array((team.lineup.isEmpty ? roster : team.lineup).prefix(5))
     var used: Set<Int> = []
     var starterIndices: [Int] = []
     for starter in listedStarters {
@@ -52,34 +45,29 @@ func computeTargetMinutesMap(tracker: NativeGameStateStore.TeamTracker) -> [Int:
     }
 
     let benchIndices = roster.indices.filter { !used.contains($0) }.prefix(5)
-
-    var rawTargets: [Int: Double] = [:]
+    var rawTargets = Array(repeating: 0.0, count: roster.count)
     for idx in starterIndices { rawTargets[idx] = 40 }
     for idx in benchIndices { rawTargets[idx] = 0 }
 
-    let rawTotal = rawTargets.values.reduce(0, +)
-    guard rawTotal > 0 else {
-        return Dictionary(uniqueKeysWithValues: roster.indices.map { ($0, 0) })
-    }
+    let rawTotal = rawTargets.reduce(0, +)
+    guard rawTotal > 0 else { return rawTargets }
 
     let scale = totalTeamMinutes / rawTotal
-    var map: [Int: Double] = [:]
-    for idx in roster.indices {
-        let raw = rawTargets[idx] ?? 0
-        map[idx] = clamp(raw * scale, min: 0, max: 40)
-    }
-    return map
+    return rawTargets.map { clamp($0 * scale, min: 0, max: 40) }
+}
+
+func computeTargetMinutesMap(tracker: NativeGameStateStore.TeamTracker) -> [Int: Double] {
+    Dictionary(uniqueKeysWithValues: tracker.targetMinutesByRosterIndex.enumerated().map { ($0.offset, $0.element) })
 }
 
 func rankSubCandidates(tracker: NativeGameStateStore.TeamTracker, blowoutMode: BlowoutRotationMode) -> [SubCandidate] {
-    let targetMap = computeTargetMinutesMap(tracker: tracker)
     let roster = tracker.team.players
     return roster.indices.map { idx in
         let box = idx < tracker.boxPlayers.count ? tracker.boxPlayers[idx] : PlayerBoxScore(playerName: "", position: "", minutes: 0, points: 0, fgMade: 0, fgAttempts: 0, threeMade: 0, threeAttempts: 0, ftMade: 0, ftAttempts: 0, rebounds: 0, offensiveRebounds: 0, defensiveRebounds: 0, assists: 0, steals: 0, blocks: 0, turnovers: 0, fouls: 0, plusMinus: 0, energy: 100)
         let energy = box.energy ?? 100
-        let skill = playerOverallSkill(roster[idx])
+        let skill = idx < tracker.baseSkillByRosterIndex.count ? tracker.baseSkillByRosterIndex[idx] : playerOverallSkill(roster[idx])
         let minutesPlayed = box.minutes
-        let target = targetMap[idx] ?? 0
+        let target = idx < tracker.targetMinutesByRosterIndex.count ? tracker.targetMinutesByRosterIndex[idx] : 0
         let rotationNeed = clamp(target - minutesPlayed, min: -12, max: 20)
         var score = skill * 0.62 + energy * 0.3 + rotationNeed * 1.9
         if blowoutMode != .none {
@@ -406,6 +394,7 @@ public func simulateGame(
         random: &random,
         includePlayByPlay: includePlayByPlay
     )
+    defer { _ = NativeGameStateStore.remove(state.handle) }
     simulateHalf(state: &state, random: &random)
 
     _ = NativeGameStateStore.withState(state.handle) { stored in

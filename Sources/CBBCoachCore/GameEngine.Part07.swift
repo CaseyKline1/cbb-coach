@@ -1,7 +1,19 @@
 import Foundation
 
+private final class LengthParseCacheStorage: @unchecked Sendable {
+    let lock = NSLock()
+    var parsedInchesByRaw: [String: Double] = [:]
+    let hyphenRegex = try! NSRegularExpression(pattern: #"^\s*(\d+)\s*-\s*(\d+)\s*$"#)
+    let apostropheRegex = try! NSRegularExpression(pattern: #"^\s*(\d+)\s*'\s*(\d+)"#)
+}
+
+private enum LengthParseCache {
+    static let shared = LengthParseCacheStorage()
+}
+
 public func simulateGameWithQA(homeTeam: Team, awayTeam: Team, random: inout SeededRandom) -> SimulatedGameQAResult {
     var state = createInitialGameState(homeTeam: homeTeam, awayTeam: awayTeam, random: &random)
+    defer { _ = NativeGameStateStore.remove(state.handle) }
     _ = NativeGameStateStore.withState(state.handle) { stored in
         stored.traceEnabled = true
     }
@@ -71,27 +83,38 @@ func average(_ values: [Double]) -> Double {
 }
 
 func parseLengthToInches(_ value: String?, fallback: Double) -> Double {
-    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
-        return fallback
-    }
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return fallback }
 
-    if let numeric = Double(trimmed), numeric.isFinite {
-        return numeric
+    let cache = LengthParseCache.shared
+    cache.lock.lock()
+    if let cached = cache.parsedInchesByRaw[trimmed] {
+        cache.lock.unlock()
+        return cached
     }
+    cache.lock.unlock()
 
-    if let (feet, inches) = extractFeetInches(trimmed, pattern: #"^\s*(\d+)\s*-\s*(\d+)\s*$"#) {
-        return Double(feet * 12 + inches)
-    }
+    let parsedValue: Double? = {
+        if let numeric = Double(trimmed), numeric.isFinite {
+            return numeric
+        }
+        if let (feet, inches) = extractFeetInches(trimmed, regex: cache.hyphenRegex) {
+            return Double(feet * 12 + inches)
+        }
+        if let (feet, inches) = extractFeetInches(trimmed, regex: cache.apostropheRegex) {
+            return Double(feet * 12 + inches)
+        }
+        return nil
+    }()
 
-    if let (feet, inches) = extractFeetInches(trimmed, pattern: #"^\s*(\d+)\s*'\s*(\d+)"#) {
-        return Double(feet * 12 + inches)
-    }
+    guard let parsedValue else { return fallback }
 
-    return fallback
+    cache.lock.lock()
+    cache.parsedInchesByRaw[trimmed] = parsedValue
+    cache.lock.unlock()
+    return parsedValue
 }
 
-func extractFeetInches(_ text: String, pattern: String) -> (Int, Int)? {
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+func extractFeetInches(_ text: String, regex: NSRegularExpression) -> (Int, Int)? {
     let nsrange = NSRange(text.startIndex..<text.endIndex, in: text)
     guard let match = regex.firstMatch(in: text, options: [], range: nsrange), match.numberOfRanges >= 3 else {
         return nil
