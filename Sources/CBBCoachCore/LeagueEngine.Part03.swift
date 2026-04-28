@@ -382,18 +382,53 @@ public func getRankings(_ league: LeagueState, topN: Int = 25) -> LeagueRankings
     let seasonProgress = clamp(Double(maxGamesPlayed) / Double(seasonTarget), min: 0, max: 1)
     let preseasonWeight = clamp(1 - seasonProgress * 0.9, min: 0.1, max: 1)
     let inSeasonWeight = 1 - preseasonWeight
+    let teamPowerById = Dictionary(uniqueKeysWithValues: state.teams.map { team in
+        let games = team.wins + team.losses
+        let winRate = games > 0 ? Double(team.wins) / Double(games) : team.lastYearResult
+        let playerSkill = teamOverall(team.teamModel) / 100
+        let power = winRate * 0.34 + playerSkill * 0.28 + team.prestige * 0.2 + team.lastYearResult * 0.18
+        return (team.teamId, clamp(power, min: 0, max: 1))
+    })
+    var opponentPowersByTeamId: [String: [Double]] = [:]
+    var qualityWinsByTeamId: [String: Int] = [:]
+    for game in state.schedule where game.completed {
+        guard
+            let result = game.result,
+            let homePower = teamPowerById[game.homeTeamId],
+            let awayPower = teamPowerById[game.awayTeamId]
+        else {
+            continue
+        }
+        opponentPowersByTeamId[game.homeTeamId, default: []].append(awayPower)
+        opponentPowersByTeamId[game.awayTeamId, default: []].append(homePower)
+        if result.winnerTeamId == game.homeTeamId, awayPower >= 0.58 {
+            qualityWinsByTeamId[game.homeTeamId, default: 0] += 1
+        } else if result.winnerTeamId == game.awayTeamId, homePower >= 0.58 {
+            qualityWinsByTeamId[game.awayTeamId, default: 0] += 1
+        }
+    }
 
     var ranked = state.teams.map { team -> LeagueRankingTeam in
         let games = team.wins + team.losses
         let pointDiffPerGame = games > 0 ? Double(team.pointsFor - team.pointsAgainst) / Double(games) : 0
         let winRate = games > 0 ? Double(team.wins) / Double(games) : 0
-        let qualityWinRate = clamp(winRate * 0.8 + team.prestige * 0.2, min: 0, max: 1)
         let playerSkill = teamOverall(team.teamModel) / 100
         let coachQuality = coachingQuality(team.teamModel.coachingStaff)
-        let strengthOfSchedule = clamp(0.45 + Double(team.targetConferenceGames) / Double(max(1, team.targetGames)) * 0.35, min: 0, max: 1)
+        let opponentPowers = opponentPowersByTeamId[team.teamId] ?? []
+        let opponentStrength = opponentPowers.isEmpty ? historicalConferenceBaseline(for: team.conferenceId) : average(opponentPowers)
+        let conferenceStrength = historicalConferenceBaseline(for: team.conferenceId)
+        let strengthOfSchedule = clamp(opponentStrength * 0.68 + conferenceStrength * 0.32, min: 0, max: 1)
+        let qualityWins = qualityWinsByTeamId[team.teamId] ?? 0
+        let qualityWinShare = clamp(Double(qualityWins) / Double(max(1, games)), min: 0, max: 1)
+        let scheduleAdjustedWinRate = clamp(winRate * (0.38 + strengthOfSchedule * 0.92), min: 0, max: 1)
+        let qualityWinRate = clamp(scheduleAdjustedWinRate * 0.58 + qualityWinShare * 0.28 + team.prestige * 0.14, min: 0, max: 1)
 
         let preseasonScore = playerSkill * 0.45 + coachQuality * 0.25 + team.prestige * 0.2 + team.lastYearResult * 0.1
-        let inSeasonScore = winRate * 0.52 + qualityWinRate * 0.2 + clamp((pointDiffPerGame + 20) / 40, min: 0, max: 1) * 0.18 + strengthOfSchedule * 0.1
+        let inSeasonScore = scheduleAdjustedWinRate * 0.3
+            + qualityWinRate * 0.18
+            + clamp((pointDiffPerGame + 20) / 40, min: 0, max: 1) * 0.1
+            + strengthOfSchedule * 0.32
+            + qualityWinShare * 0.1
         let composite = preseasonScore * preseasonWeight + inSeasonScore * inSeasonWeight
 
         return LeagueRankingTeam(

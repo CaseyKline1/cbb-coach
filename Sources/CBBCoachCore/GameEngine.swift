@@ -136,6 +136,8 @@ let clutchRatingImpact = 0.08
 
 let interactionVarianceJitter = 0.17
 
+let gameFormInteractionImpact = 0.42
+
 let ballHandlerShareTarget = 0.89
 
 let ballHandlerWarmupActions = 8
@@ -154,6 +156,9 @@ struct NativeGameStateStore {
         var activeLineupBoxIndices: [Int]
         var boxPlayers: [PlayerBoxScore]
         var teamExtras: [String: Int]
+        var gameForm: Double
+        var reboundFocusBoxIndex: Int?
+        var reboundFocusBoost: Double
         var targetMinutesByRosterIndex: [Double]
         var baseSkillByRosterIndex: [Double]
         var initiatedActionCount: Int
@@ -198,10 +203,11 @@ struct NativeGameStateStore {
 
     static func makeInitialState(home: Team, away: Team, random: inout SeededRandom, includePlayByPlay: Bool) -> StoredState {
         let initialPossession = random.nextUnit() < 0.5 ? 0 : 1
+        var formRandom = random
         return StoredState(
             teams: [
-                makeTeamTracker(home),
-                makeTeamTracker(away),
+                makeTeamTracker(home, random: &formRandom),
+                makeTeamTracker(away, random: &formRandom),
             ],
             currentHalf: 1,
             gameClockRemaining: HALF_SECONDS,
@@ -259,7 +265,7 @@ struct NativeGameStateStore {
         return states.removeValue(forKey: handle) != nil
     }
 
-    private static func makeTeamTracker(_ team: Team) -> TeamTracker {
+    private static func makeTeamTracker(_ team: Team, random: inout SeededRandom) -> TeamTracker {
         let roster = team.players.isEmpty ? team.lineup : team.players
         let starters = Array((team.lineup.isEmpty ? roster : team.lineup).prefix(5))
         var usedRosterIndexes: Set<Int> = []
@@ -307,6 +313,18 @@ struct NativeGameStateStore {
         let lineupBoxIndices = starters.map { lookupRosterIndex(for: $0) }
         let targetMinutesByRosterIndex = computeTargetMinutesByRosterIndex(team: team, roster: roster)
         let baseSkillByRosterIndex = roster.map(playerOverallSkill)
+        let reboundFocusBoxIndex: Int?
+        if lineupBoxIndices.isEmpty {
+            reboundFocusBoxIndex = nil
+        } else {
+            let focusWeights = lineupBoxIndices.map { idx -> Double in
+                guard idx >= 0, idx < roster.count else { return 1 }
+                let player = roster[idx]
+                let reboundCore = Double(player.rebounding.offensiveRebounding + player.rebounding.defensiveRebound + player.rebounding.boxouts)
+                return max(1, Foundation.pow(reboundCore / 3, 1.35))
+            }
+            reboundFocusBoxIndex = lineupBoxIndices[weightedChoiceIndex(weights: focusWeights, random: &random)]
+        }
         return TeamTracker(
             team: team,
             score: 0,
@@ -318,6 +336,9 @@ struct NativeGameStateStore {
                 "fastBreakPoints": 0,
                 "pointsInPaint": 0,
             ],
+            gameForm: sampleGameForm(random: &random),
+            reboundFocusBoxIndex: reboundFocusBoxIndex,
+            reboundFocusBoost: 1.7 + random.nextUnit() * 0.85,
             targetMinutesByRosterIndex: targetMinutesByRosterIndex,
             baseSkillByRosterIndex: baseSkillByRosterIndex,
             initiatedActionCount: 0,
@@ -350,7 +371,8 @@ public func resolveInteraction(
     defensePlayer: Player,
     offenseRatings: [String],
     defenseRatings: [String],
-    random: inout SeededRandom
+    random: inout SeededRandom,
+    edgeShift: Double = 0
 ) -> InteractionResult {
     let offense = weightedSkillScore(player: offensePlayer, ratingPaths: offenseRatings, random: &random)
     let defense = weightedSkillScore(player: defensePlayer, ratingPaths: defenseRatings, random: &random)
@@ -363,7 +385,7 @@ public func resolveInteraction(
         defenseUsesMobility: defenseUsesMobility
     )
     let interactionJitter = (random.nextUnit() + random.nextUnit() + random.nextUnit() - 1.5) * interactionVarianceJitter
-    let edge = (offense.score - defense.score) / 14 + mobilitySizeEdge + interactionJitter
+    let edge = (offense.score - defense.score) / 14 + mobilitySizeEdge + interactionJitter + edgeShift
     let successProbability = clamp(logistic(edge), min: 0.03, max: 0.97)
     let offenseWon = random.nextUnit() < successProbability
 
@@ -375,6 +397,66 @@ public func resolveInteraction(
     )
 }
 
+func sampleGameForm(random: inout SeededRandom) -> Double {
+    let centered = random.nextUnit() + random.nextUnit() + random.nextUnit() + random.nextUnit() - 2
+    let tail = random.nextUnit() < 0.14 ? (random.nextUnit() - 0.5) * 1.6 : 0
+    return clamp((centered * 0.46 + tail) * gameFormInteractionImpact, min: -0.62, max: 0.62)
+}
+
+func playerMatches(_ lhs: Player, _ rhs: Player) -> Bool {
+    lhs.bio.name == rhs.bio.name && lhs.bio.position == rhs.bio.position
+}
+
+func teamIndex(for player: Player, in stored: NativeGameStateStore.StoredState) -> Int? {
+    for teamId in stored.teams.indices {
+        let tracker = stored.teams[teamId]
+        if tracker.activeLineup.contains(where: { playerMatches($0, player) }) {
+            return teamId
+        }
+        if tracker.team.players.contains(where: { playerMatches($0, player) }) {
+            return teamId
+        }
+    }
+    return nil
+}
+
+func gameFormWeight(for label: String) -> Double {
+    switch label {
+    case "rotation_swap":
+        return 0
+    case let value where value.hasPrefix("free_throw"):
+        return 0.28
+    case "technical_composure", "timeout_composure":
+        return 0.35
+    case let value where value.hasPrefix("rebound_"):
+        return 0
+    case let value where value.contains("shot") || value.contains("finish"):
+        return 1.0
+    case let value where value.contains("turnover") || value.contains("press") || value.contains("trap"):
+        return 0.78
+    default:
+        return 0.62
+    }
+}
+
+func gameFormEdgeShift(
+    stored: NativeGameStateStore.StoredState,
+    label: String,
+    offensePlayer: Player,
+    defensePlayer: Player
+) -> Double {
+    guard
+        let offenseTeamId = teamIndex(for: offensePlayer, in: stored),
+        let defenseTeamId = teamIndex(for: defensePlayer, in: stored),
+        offenseTeamId != defenseTeamId
+    else {
+        return 0
+    }
+
+    let formDelta = stored.teams[offenseTeamId].gameForm - stored.teams[defenseTeamId].gameForm
+    return clamp(formDelta * gameFormWeight(for: label), min: -0.5, max: 0.5)
+}
+
 func resolveInteractionWithTrace(
     stored: inout NativeGameStateStore.StoredState,
     label: String,
@@ -384,12 +466,19 @@ func resolveInteractionWithTrace(
     defenseRatings: [String],
     random: inout SeededRandom
 ) -> InteractionResult {
+    let edgeShift = gameFormEdgeShift(
+        stored: stored,
+        label: label,
+        offensePlayer: offensePlayer,
+        defensePlayer: defensePlayer
+    )
     let result = resolveInteraction(
         offensePlayer: offensePlayer,
         defensePlayer: defensePlayer,
         offenseRatings: offenseRatings,
         defenseRatings: defenseRatings,
-        random: &random
+        random: &random,
+        edgeShift: edgeShift
     )
     guard stored.traceEnabled else { return result }
     let offenseRatingValues = offenseRatings.reduce(into: [String: Double]()) { values, path in

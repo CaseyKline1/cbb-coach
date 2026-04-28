@@ -291,8 +291,8 @@ func resolveReboundOutcome(
     let finalEdge = gatherBattle.edge + gatherSizeEdge + (offensePositioning - defensePositioning) * 0.12 + slipEdge * 0.4 + reboundChaosNoise
     let crashEdge = (offenseCrashPreference - defenseCrashPreference) * 0.22
     // Defensive teams convert more misses by default; offense needs a real edge to sustain OREBs.
-    let defensiveAdvantage = 0.93 + clamp((defensePositioning - offensePositioning) * 0.09, min: -0.08, max: 0.14)
-    let offenseCollectProbability = clamp(logistic(finalEdge + crashEdge - defensiveAdvantage), min: 0.05, max: 0.66)
+    let defensiveAdvantage = 1.05 + clamp((defensePositioning - offensePositioning) * 0.09, min: -0.08, max: 0.14)
+    let offenseCollectProbability = clamp(logistic(finalEdge + crashEdge - defensiveAdvantage), min: 0.05, max: 0.62)
     if random.nextUnit() < offenseCollectProbability {
         let rebounderIdx = selectReboundCollectorViaInteractions(
             stored: &stored,
@@ -390,18 +390,24 @@ func selectReboundCollectorViaInteractions(
                 let boxIdx = stored.teams[offenseTeamId].activeLineupBoxIndices[offenseIdx]
                 guard boxIdx >= 0, boxIdx < stored.teams[offenseTeamId].boxPlayers.count else { return 0 }
                 let currentRebounds = stored.teams[offenseTeamId].boxPlayers[boxIdx].rebounds
-                let baselineLoad = Double(max(0, currentRebounds - 6)) * 0.16
-                let surgeLoad = Double(max(0, currentRebounds - 10)) * 0.14
-                return clamp(baselineLoad + surgeLoad, min: 0, max: 2.6)
+                let baselineLoad = Double(max(0, currentRebounds - 6)) * 0.1
+                let surgeLoad = Double(max(0, currentRebounds - 10)) * 0.08
+                return clamp(baselineLoad + surgeLoad, min: 0, max: 1.8)
             }()
-            let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost + roleBonus - reboundLoadTax
+            let focusBoost: Double = {
+                guard offenseTeamId >= 0, offenseTeamId < stored.teams.count else { return 0 }
+                guard offenseIdx >= 0, offenseIdx < stored.teams[offenseTeamId].activeLineupBoxIndices.count else { return 0 }
+                let boxIdx = stored.teams[offenseTeamId].activeLineupBoxIndices[offenseIdx]
+                return boxIdx == stored.teams[offenseTeamId].reboundFocusBoxIndex ? stored.teams[offenseTeamId].reboundFocusBoost : 0
+            }()
+            let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost + roleBonus + focusBoost - reboundLoadTax
             collectorScores.append((offenseIdx, score))
         }
         let chaosScale = reboundChaosScale(for: zone)
         let collectorWeights = collectorScores.map { candidate in
-            let jitter = 0.85 + random.nextUnit() * 0.3
-            let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 2.1
-            return Foundation.exp(clamp(noisyScore * 0.78, min: -2.3, max: 2.3)) * jitter
+            let jitter = 0.78 + random.nextUnit() * 0.44
+            let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 2.8
+            return Foundation.exp(clamp(noisyScore * 1.05, min: -2.7, max: 2.7)) * jitter
         }
         return collectorScores[weightedChoiceIndex(weights: collectorWeights, random: &random)].idx
     }
@@ -442,18 +448,24 @@ func selectReboundCollectorViaInteractions(
             let boxIdx = stored.teams[defenseTeamId].activeLineupBoxIndices[defenseIdx]
             guard boxIdx >= 0, boxIdx < stored.teams[defenseTeamId].boxPlayers.count else { return 0 }
             let currentRebounds = stored.teams[defenseTeamId].boxPlayers[boxIdx].rebounds
-            let baselineLoad = Double(max(0, currentRebounds - 6)) * 0.16
-            let surgeLoad = Double(max(0, currentRebounds - 10)) * 0.14
-            return clamp(baselineLoad + surgeLoad, min: 0, max: 2.6)
+            let baselineLoad = Double(max(0, currentRebounds - 6)) * 0.1
+            let surgeLoad = Double(max(0, currentRebounds - 10)) * 0.08
+            return clamp(baselineLoad + surgeLoad, min: 0, max: 1.8)
         }()
-        let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost + roleBonus - reboundLoadTax
+        let focusBoost: Double = {
+            guard defenseTeamId >= 0, defenseTeamId < stored.teams.count else { return 0 }
+            guard defenseIdx >= 0, defenseIdx < stored.teams[defenseTeamId].activeLineupBoxIndices.count else { return 0 }
+            let boxIdx = stored.teams[defenseTeamId].activeLineupBoxIndices[defenseIdx]
+            return boxIdx == stored.teams[defenseTeamId].reboundFocusBoxIndex ? stored.teams[defenseTeamId].reboundFocusBoost : 0
+        }()
+        let score = matchupScore + (nearby - 1) * 0.26 + (crashWeight - 1) * 0.22 + participationBoost + roleBonus + focusBoost - reboundLoadTax
         collectorScores.append((defenseIdx, score))
     }
     let chaosScale = reboundChaosScale(for: zone)
     let collectorWeights = collectorScores.map { candidate in
-        let jitter = 0.85 + random.nextUnit() * 0.3
-        let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 2.1
-        return Foundation.exp(clamp(noisyScore * 0.78, min: -2.3, max: 2.3)) * jitter
+        let jitter = 0.78 + random.nextUnit() * 0.44
+        let noisyScore = candidate.score + (random.nextUnit() + random.nextUnit() - 1.0) * chaosScale * 2.8
+        return Foundation.exp(clamp(noisyScore * 1.05, min: -2.7, max: 2.7)) * jitter
     }
     return collectorScores[weightedChoiceIndex(weights: collectorWeights, random: &random)].idx
 }
