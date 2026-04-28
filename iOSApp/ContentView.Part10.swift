@@ -11,29 +11,6 @@ struct RankingsView: View {
             VStack(alignment: .leading, spacing: 14) {
                 if let rankings {
                     GameCard {
-                        VStack(alignment: .leading, spacing: 6) {
-                            GameSectionHeader(title: "Ranking Model")
-                            Text("Preseason influence fades gradually to avoid jerky early-season jumps.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            HStack(spacing: 10) {
-                                StatChip(
-                                    title: "Preseason",
-                                    value: "\(Int((rankings.preseasonWeight * 100).rounded()))%"
-                                )
-                                StatChip(
-                                    title: "In-Season",
-                                    value: "\(Int((rankings.inSeasonWeight * 100).rounded()))%"
-                                )
-                                StatChip(
-                                    title: "Progress",
-                                    value: "\(Int((rankings.seasonProgress * 100).rounded()))%"
-                                )
-                            }
-                        }
-                    }
-
-                    GameCard {
                         VStack(spacing: 0) {
                             HStack(spacing: 0) {
                                 AppTableTextCell(text: "RANK", width: 54, font: .caption2.weight(.bold), foreground: .secondary)
