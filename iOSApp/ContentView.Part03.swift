@@ -141,6 +141,7 @@ struct SkipAheadSimulationResult {
     let league: LeagueState
     let seasonCompleted: Bool
     let recaps: [String]
+    let deferredData: DeferredLeagueRefreshData
 }
 
 struct SkipAheadOverlayView: View {

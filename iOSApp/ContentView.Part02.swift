@@ -389,10 +389,10 @@ struct CollegeLeagueHomeView: View {
             await MainActor.run {
                 league = result.league
                 refreshFromLeague(result.league, includeDeferredData: false)
+                applyDeferredRefresh(result.deferredData)
                 skipAheadGameRecaps = result.recaps
                 statusText = result.seasonCompleted ? "Season complete." : target.completionMessage
                 isSkipAheadInProgress = false
-                refreshDeferredDataFromLeague(result.league)
             }
         }
     }
@@ -446,7 +446,8 @@ struct CollegeLeagueHomeView: View {
         return SkipAheadSimulationResult(
             league: currentLeague,
             seasonCompleted: seasonCompleted,
-            recaps: liveRecaps
+            recaps: liveRecaps,
+            deferredData: Self.buildDeferredRefreshData(for: currentLeague)
         )
     }
 
