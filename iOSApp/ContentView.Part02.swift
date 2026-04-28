@@ -69,6 +69,7 @@ struct CollegeLeagueHomeView: View {
     @State var isSkipAheadInProgress = false
     @State var skipAheadTitle = ""
     @State var skipAheadGameRecaps: [String] = []
+    @State var showingSeasonRecap = false
 
     var body: some View {
         NavigationStack {
@@ -102,8 +103,12 @@ struct CollegeLeagueHomeView: View {
                     }
 
                     HStack(spacing: 10) {
-                        Button("Sim Next User Game") {
-                            playNextGame()
+                        Button(primaryAdvanceButtonTitle) {
+                            if seasonIsComplete {
+                                showingSeasonRecap = true
+                            } else {
+                                playNextGame()
+                            }
                         }
                         .buttonStyle(GameButtonStyle(variant: .primary))
                         .disabled(isSkipAheadInProgress)
@@ -253,6 +258,20 @@ struct CollegeLeagueHomeView: View {
                     }
                 }
             }
+            .navigationDestination(isPresented: $showingSeasonRecap) {
+                SeasonRecapView(
+                    games: completedLeagueGames,
+                    schedule: schedule,
+                    userTeamId: summary?.userTeamId,
+                    userTeamName: summary?.userTeamName ?? teamName,
+                    userConferenceId: userConferenceId,
+                    standingsByConference: conferenceStandings,
+                    conferenceNamesById: conferenceNamesById,
+                    bracket: nationalBracket,
+                    roster: roster,
+                    teamRostersByName: teamRostersByName
+                )
+            }
             .onAppear {
                 if league == nil {
                     createLeague()
@@ -293,6 +312,14 @@ struct CollegeLeagueHomeView: View {
             return $0.isHome == true ? home > away : away > home
         }.count
         return "\(wins)-\(max(0, completedGames.count - wins))"
+    }
+
+    private var seasonIsComplete: Bool {
+        summary?.status == "completed"
+    }
+
+    private var primaryAdvanceButtonTitle: String {
+        seasonIsComplete ? "Advance to Offseason" : "Sim Next User Game"
     }
 
     private var userRanking: Int? {
