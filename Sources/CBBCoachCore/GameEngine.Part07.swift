@@ -145,66 +145,90 @@ func getWeightPounds(_ player: Player) -> Double {
     return 220
 }
 
-func getRawRating(_ player: Player, path: String) -> Double? {
+enum RatingFatigueCategory {
+    case athleticism
+    case shooting
+    case skills
+    case defense
+    case other
+}
+
+struct RatingLookup {
+    var raw: Double
+    var category: RatingFatigueCategory
+    var ignoresFatigue: Bool
+    var isCreatorPath: Bool
+}
+
+func ratingLookup(_ player: Player, path: String) -> RatingLookup? {
     switch path {
-    case "athleticism.speed": return Double(player.athleticism.speed)
-    case "athleticism.agility": return Double(player.athleticism.agility)
-    case "athleticism.burst": return Double(player.athleticism.burst)
-    case "athleticism.strength": return Double(player.athleticism.strength)
-    case "athleticism.vertical": return Double(player.athleticism.vertical)
-    case "athleticism.stamina": return Double(player.athleticism.stamina)
-    case "athleticism.durability": return Double(player.athleticism.durability)
-    case "shooting.layups": return Double(player.shooting.layups)
-    case "shooting.dunks": return Double(player.shooting.dunks)
-    case "shooting.closeShot": return Double(player.shooting.closeShot)
-    case "shooting.midrangeShot": return Double(player.shooting.midrangeShot)
-    case "shooting.threePointShooting": return Double(player.shooting.threePointShooting)
-    case "shooting.cornerThrees": return Double(player.shooting.cornerThrees)
-    case "shooting.upTopThrees": return Double(player.shooting.upTopThrees)
-    case "shooting.drawFoul": return Double(player.shooting.drawFoul)
-    case "shooting.freeThrows": return Double(player.shooting.freeThrows)
-    case "postGame.postControl": return Double(player.postGame.postControl)
-    case "postGame.postFadeaways": return Double(player.postGame.postFadeaways)
-    case "postGame.postHooks": return Double(player.postGame.postHooks)
-    case "skills.ballHandling": return Double(player.skills.ballHandling)
-    case "skills.ballSafety": return Double(player.skills.ballSafety)
-    case "skills.passingAccuracy": return Double(player.skills.passingAccuracy)
-    case "skills.passingVision": return Double(player.skills.passingVision)
-    case "skills.passingIQ": return Double(player.skills.passingIQ)
-    case "skills.shotIQ": return Double(player.skills.shotIQ)
-    case "skills.offballOffense": return Double(player.skills.offballOffense)
-    case "skills.hands": return Double(player.skills.hands)
-    case "skills.hustle": return Double(player.skills.hustle)
-    case "skills.clutch": return Double(player.skills.clutch)
-    case "defense.perimeterDefense": return Double(player.defense.perimeterDefense)
-    case "defense.postDefense": return Double(player.defense.postDefense)
-    case "defense.shotBlocking": return Double(player.defense.shotBlocking)
-    case "defense.shotContest": return Double(player.defense.shotContest)
-    case "defense.steals": return Double(player.defense.steals)
-    case "defense.lateralQuickness": return Double(player.defense.lateralQuickness)
-    case "defense.offballDefense": return Double(player.defense.offballDefense)
-    case "defense.passPerception": return Double(player.defense.passPerception)
-    case "defense.defensiveControl": return Double(player.defense.defensiveControl)
-    case "rebounding.offensiveRebounding": return Double(player.rebounding.offensiveRebounding)
-    case "rebounding.defensiveRebound": return Double(player.rebounding.defensiveRebound)
-    case "rebounding.boxouts": return Double(player.rebounding.boxouts)
-    case "tendencies.post": return Double(player.tendencies.post)
-    case "tendencies.inside": return Double(player.tendencies.inside)
-    case "tendencies.midrange": return Double(player.tendencies.midrange)
-    case "tendencies.threePoint": return Double(player.tendencies.threePoint)
-    case "tendencies.drive": return Double(player.tendencies.drive)
-    case "tendencies.pickAndRoll": return Double(player.tendencies.pickAndRoll)
-    case "tendencies.pickAndPop": return Double(player.tendencies.pickAndPop)
-    case "tendencies.shootVsPass": return Double(player.tendencies.shootVsPass)
+    case "athleticism.speed": return RatingLookup(raw: Double(player.athleticism.speed), category: .athleticism, ignoresFatigue: false, isCreatorPath: false)
+    case "athleticism.agility": return RatingLookup(raw: Double(player.athleticism.agility), category: .athleticism, ignoresFatigue: false, isCreatorPath: false)
+    case "athleticism.burst": return RatingLookup(raw: Double(player.athleticism.burst), category: .athleticism, ignoresFatigue: false, isCreatorPath: false)
+    case "athleticism.strength": return RatingLookup(raw: Double(player.athleticism.strength), category: .athleticism, ignoresFatigue: false, isCreatorPath: false)
+    case "athleticism.vertical": return RatingLookup(raw: Double(player.athleticism.vertical), category: .athleticism, ignoresFatigue: false, isCreatorPath: false)
+    case "athleticism.stamina": return RatingLookup(raw: Double(player.athleticism.stamina), category: .athleticism, ignoresFatigue: true, isCreatorPath: false)
+    case "athleticism.durability": return RatingLookup(raw: Double(player.athleticism.durability), category: .athleticism, ignoresFatigue: true, isCreatorPath: false)
+    case "shooting.layups": return RatingLookup(raw: Double(player.shooting.layups), category: .shooting, ignoresFatigue: false, isCreatorPath: false)
+    case "shooting.dunks": return RatingLookup(raw: Double(player.shooting.dunks), category: .shooting, ignoresFatigue: false, isCreatorPath: false)
+    case "shooting.closeShot": return RatingLookup(raw: Double(player.shooting.closeShot), category: .shooting, ignoresFatigue: false, isCreatorPath: false)
+    case "shooting.midrangeShot": return RatingLookup(raw: Double(player.shooting.midrangeShot), category: .shooting, ignoresFatigue: false, isCreatorPath: false)
+    case "shooting.threePointShooting": return RatingLookup(raw: Double(player.shooting.threePointShooting), category: .shooting, ignoresFatigue: false, isCreatorPath: false)
+    case "shooting.cornerThrees": return RatingLookup(raw: Double(player.shooting.cornerThrees), category: .shooting, ignoresFatigue: false, isCreatorPath: false)
+    case "shooting.upTopThrees": return RatingLookup(raw: Double(player.shooting.upTopThrees), category: .shooting, ignoresFatigue: false, isCreatorPath: false)
+    case "shooting.drawFoul": return RatingLookup(raw: Double(player.shooting.drawFoul), category: .shooting, ignoresFatigue: false, isCreatorPath: false)
+    case "shooting.freeThrows": return RatingLookup(raw: Double(player.shooting.freeThrows), category: .shooting, ignoresFatigue: false, isCreatorPath: false)
+    case "postGame.postControl": return RatingLookup(raw: Double(player.postGame.postControl), category: .other, ignoresFatigue: false, isCreatorPath: false)
+    case "postGame.postFadeaways": return RatingLookup(raw: Double(player.postGame.postFadeaways), category: .other, ignoresFatigue: false, isCreatorPath: false)
+    case "postGame.postHooks": return RatingLookup(raw: Double(player.postGame.postHooks), category: .other, ignoresFatigue: false, isCreatorPath: false)
+    case "skills.ballHandling": return RatingLookup(raw: Double(player.skills.ballHandling), category: .skills, ignoresFatigue: false, isCreatorPath: true)
+    case "skills.ballSafety": return RatingLookup(raw: Double(player.skills.ballSafety), category: .skills, ignoresFatigue: false, isCreatorPath: true)
+    case "skills.passingAccuracy": return RatingLookup(raw: Double(player.skills.passingAccuracy), category: .skills, ignoresFatigue: false, isCreatorPath: false)
+    case "skills.passingVision": return RatingLookup(raw: Double(player.skills.passingVision), category: .skills, ignoresFatigue: false, isCreatorPath: true)
+    case "skills.passingIQ": return RatingLookup(raw: Double(player.skills.passingIQ), category: .skills, ignoresFatigue: false, isCreatorPath: true)
+    case "skills.shotIQ": return RatingLookup(raw: Double(player.skills.shotIQ), category: .skills, ignoresFatigue: false, isCreatorPath: false)
+    case "skills.offballOffense": return RatingLookup(raw: Double(player.skills.offballOffense), category: .skills, ignoresFatigue: false, isCreatorPath: false)
+    case "skills.hands": return RatingLookup(raw: Double(player.skills.hands), category: .skills, ignoresFatigue: false, isCreatorPath: false)
+    case "skills.hustle": return RatingLookup(raw: Double(player.skills.hustle), category: .skills, ignoresFatigue: false, isCreatorPath: false)
+    case "skills.clutch": return RatingLookup(raw: Double(player.skills.clutch), category: .skills, ignoresFatigue: false, isCreatorPath: false)
+    case "defense.perimeterDefense": return RatingLookup(raw: Double(player.defense.perimeterDefense), category: .defense, ignoresFatigue: false, isCreatorPath: false)
+    case "defense.postDefense": return RatingLookup(raw: Double(player.defense.postDefense), category: .defense, ignoresFatigue: false, isCreatorPath: false)
+    case "defense.shotBlocking": return RatingLookup(raw: Double(player.defense.shotBlocking), category: .defense, ignoresFatigue: false, isCreatorPath: false)
+    case "defense.shotContest": return RatingLookup(raw: Double(player.defense.shotContest), category: .defense, ignoresFatigue: false, isCreatorPath: false)
+    case "defense.steals": return RatingLookup(raw: Double(player.defense.steals), category: .defense, ignoresFatigue: false, isCreatorPath: false)
+    case "defense.lateralQuickness": return RatingLookup(raw: Double(player.defense.lateralQuickness), category: .defense, ignoresFatigue: false, isCreatorPath: false)
+    case "defense.offballDefense": return RatingLookup(raw: Double(player.defense.offballDefense), category: .defense, ignoresFatigue: false, isCreatorPath: false)
+    case "defense.passPerception": return RatingLookup(raw: Double(player.defense.passPerception), category: .defense, ignoresFatigue: false, isCreatorPath: false)
+    case "defense.defensiveControl": return RatingLookup(raw: Double(player.defense.defensiveControl), category: .defense, ignoresFatigue: false, isCreatorPath: false)
+    case "rebounding.offensiveRebounding": return RatingLookup(raw: Double(player.rebounding.offensiveRebounding), category: .other, ignoresFatigue: false, isCreatorPath: false)
+    case "rebounding.defensiveRebound": return RatingLookup(raw: Double(player.rebounding.defensiveRebound), category: .other, ignoresFatigue: false, isCreatorPath: false)
+    case "rebounding.boxouts": return RatingLookup(raw: Double(player.rebounding.boxouts), category: .other, ignoresFatigue: false, isCreatorPath: false)
+    case "tendencies.post": return RatingLookup(raw: Double(player.tendencies.post), category: .other, ignoresFatigue: false, isCreatorPath: false)
+    case "tendencies.inside": return RatingLookup(raw: Double(player.tendencies.inside), category: .other, ignoresFatigue: false, isCreatorPath: false)
+    case "tendencies.midrange": return RatingLookup(raw: Double(player.tendencies.midrange), category: .other, ignoresFatigue: false, isCreatorPath: false)
+    case "tendencies.threePoint": return RatingLookup(raw: Double(player.tendencies.threePoint), category: .other, ignoresFatigue: false, isCreatorPath: false)
+    case "tendencies.drive": return RatingLookup(raw: Double(player.tendencies.drive), category: .other, ignoresFatigue: false, isCreatorPath: true)
+    case "tendencies.pickAndRoll": return RatingLookup(raw: Double(player.tendencies.pickAndRoll), category: .other, ignoresFatigue: false, isCreatorPath: true)
+    case "tendencies.pickAndPop": return RatingLookup(raw: Double(player.tendencies.pickAndPop), category: .other, ignoresFatigue: false, isCreatorPath: true)
+    case "tendencies.shootVsPass": return RatingLookup(raw: Double(player.tendencies.shootVsPass), category: .other, ignoresFatigue: false, isCreatorPath: false)
     default: return nil
     }
 }
 
-func getBaseRating(_ player: Player, path: String, fallback: Double = 50) -> Double {
-    guard let raw = getRawRating(player, path: path), raw.isFinite else { return fallback }
+func normalizedBaseRating(_ raw: Double, fallback: Double) -> Double {
+    guard raw.isFinite else { return fallback }
     if raw <= 1 { return fallback }
     if raw <= 10 { return raw * 10 }
     return raw
+}
+
+func getRawRating(_ player: Player, path: String) -> Double? {
+    ratingLookup(player, path: path)?.raw
+}
+
+func getBaseRating(_ player: Player, path: String, fallback: Double = 50) -> Double {
+    guard let lookup = ratingLookup(player, path: path) else { return fallback }
+    return normalizedBaseRating(lookup.raw, fallback: fallback)
 }
 
 func applyClutchModifier(_ player: Player, rating: Double) -> Double {
@@ -213,55 +237,47 @@ func applyClutchModifier(_ player: Player, rating: Double) -> Double {
     if !player.condition.clutchTime {
         return clamp(rating * baseMultiplier, min: 1, max: 100)
     }
-    let clutch = getBaseRating(player, path: "skills.clutch", fallback: 50)
+    let clutch = normalizedBaseRating(Double(player.skills.clutch), fallback: 50)
     let clutchEdge = clamp((clutch - 50) / 50, min: -1, max: 1)
     let clutchMultiplier = 1 + clutchEdge * clutchRatingImpact
     return clamp(rating * baseMultiplier * clutchMultiplier, min: 1, max: 100)
 }
 
 func getRating(_ player: Player, path: String, fallback: Double = 50) -> Double {
-    guard let raw = getRawRating(player, path: path), raw.isFinite else { return fallback }
+    guard let lookup = ratingLookup(player, path: path), lookup.raw.isFinite else { return fallback }
 
-    if raw <= 1 { return fallback }
-    if raw <= 10 { return applyClutchModifier(player, rating: raw * 10) }
+    if lookup.raw <= 1 { return fallback }
+    if lookup.raw <= 10 { return applyClutchModifier(player, rating: lookup.raw * 10) }
 
-    let isAthleticStaminaOrDurability = path == "athleticism.stamina" || path == "athleticism.durability"
-    if isAthleticStaminaOrDurability {
-        return applyClutchModifier(player, rating: raw)
+    if lookup.ignoresFatigue {
+        return applyClutchModifier(player, rating: lookup.raw)
     }
 
     let energy = player.condition.energy
     if !energy.isFinite {
-        return applyClutchModifier(player, rating: raw)
+        return applyClutchModifier(player, rating: lookup.raw)
     }
 
     let fatigue = clamp((100 - energy) / 100, min: 0, max: 0.85)
-    let stamina = getBaseRating(player, path: "athleticism.stamina", fallback: 50)
+    let stamina = normalizedBaseRating(Double(player.athleticism.stamina), fallback: 50)
     let staminaRecovery = clamp((stamina - 50) / 50, min: -1, max: 1)
     let impact: Double
-    if path.hasPrefix("athleticism.") {
+    switch lookup.category {
+    case .athleticism:
         impact = 0.33
-    } else if path.hasPrefix("shooting.") {
+    case .shooting:
         impact = 0.3
-    } else if path.hasPrefix("skills.") {
+    case .skills:
         impact = 0.39
-    } else if path.hasPrefix("defense.") {
+    case .defense:
         impact = 0.24
-    } else {
+    case .other:
         impact = 0.22
     }
-    let creatorPath: Bool
-    switch path {
-    case "skills.ballHandling", "skills.ballSafety", "skills.passingIQ", "skills.passingVision",
-         "tendencies.drive", "tendencies.pickAndRoll", "tendencies.pickAndPop":
-        creatorPath = true
-    default:
-        creatorPath = false
-    }
-    let creatorPenalty = creatorPath ? clamp(0.11 + fatigue * 0.22 - staminaRecovery * 0.05, min: 0.05, max: 0.3) : 0
+    let creatorPenalty = lookup.isCreatorPath ? clamp(0.11 + fatigue * 0.22 - staminaRecovery * 0.05, min: 0.05, max: 0.3) : 0
     let effectiveImpact = clamp(impact - staminaRecovery * 0.05 + creatorPenalty, min: 0.16, max: 0.72)
 
-    let fatigueAdjusted = applyClutchModifier(player, rating: raw * (1 - fatigue * effectiveImpact))
+    let fatigueAdjusted = applyClutchModifier(player, rating: lookup.raw * (1 - fatigue * effectiveImpact))
     let role = player.condition.possessionRole
     let offensiveModifier = player.condition.offensiveCoachingModifier
     let defensiveModifier = player.condition.defensiveCoachingModifier
@@ -278,31 +294,33 @@ func weightedSkillScore(player: Player, ratingPaths: [String], random: inout See
     guard !ratingPaths.isEmpty else {
         return WeightedSkill(score: 50)
     }
-    var ratings: [Double] = []
-    ratings.reserveCapacity(ratingPaths.count)
-    var ratingsSum = 0.0
-    for path in ratingPaths {
-        let value = getRating(player, path: path)
-        ratings.append(value)
-        ratingsSum += value
-    }
-    let mean = ratingsSum / Double(ratings.count)
 
-    var weightedSum = 0.0
-    var totalWeight = 0.0
-    for value in ratings {
-        let excellence = clamp((value - mean) / 50, min: -1, max: 1)
-        let baseline = 0.55 + random.nextUnit()
-        let strengthBias = 1 + max(0, excellence) * 0.35
-        let weight = baseline * strengthBias
-        totalWeight += weight
-        weightedSum += value * weight
+    return withUnsafeTemporaryAllocation(of: Double.self, capacity: ratingPaths.count) { ratings in
+        var ratingsSum = 0.0
+        for index in ratingPaths.indices {
+            let value = getRating(player, path: ratingPaths[index])
+            ratings[index] = value
+            ratingsSum += value
+        }
+        let mean = ratingsSum / Double(ratingPaths.count)
+
+        var weightedSum = 0.0
+        var totalWeight = 0.0
+        for index in ratingPaths.indices {
+            let value = ratings[index]
+            let excellence = clamp((value - mean) / 50, min: -1, max: 1)
+            let baseline = 0.55 + random.nextUnit()
+            let strengthBias = 1 + max(0, excellence) * 0.35
+            let weight = baseline * strengthBias
+            totalWeight += weight
+            weightedSum += value * weight
+        }
+        if totalWeight <= 0 {
+            return WeightedSkill(score: mean)
+        }
+        let score = weightedSum / totalWeight
+        return WeightedSkill(score: score)
     }
-    if totalWeight <= 0 {
-        return WeightedSkill(score: mean)
-    }
-    let score = weightedSum / totalWeight
-    return WeightedSkill(score: score)
 }
 
 func getMobilitySizePenalty(_ player: Player) -> Double {
