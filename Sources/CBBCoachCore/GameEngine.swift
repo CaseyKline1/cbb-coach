@@ -134,9 +134,9 @@ let mobilityInteractionRatings: Set<String> = [
 
 let clutchRatingImpact = 0.08
 
-let interactionVarianceJitter = 0.17
+let interactionVarianceJitter = 0.28
 
-let gameFormInteractionImpact = 0.42
+let gameFormInteractionImpact = 1.18
 
 let ballHandlerShareTarget = 0.89
 
@@ -385,7 +385,7 @@ public func resolveInteraction(
         defenseUsesMobility: defenseUsesMobility
     )
     let interactionJitter = (random.nextUnit() + random.nextUnit() + random.nextUnit() - 1.5) * interactionVarianceJitter
-    let edge = (offense.score - defense.score) / 14 + mobilitySizeEdge + interactionJitter + edgeShift
+    let edge = (offense.score - defense.score) / 34 + mobilitySizeEdge + interactionJitter + edgeShift
     let successProbability = clamp(logistic(edge), min: 0.03, max: 0.97)
     let offenseWon = random.nextUnit() < successProbability
 
@@ -399,8 +399,8 @@ public func resolveInteraction(
 
 func sampleGameForm(random: inout SeededRandom) -> Double {
     let centered = random.nextUnit() + random.nextUnit() + random.nextUnit() + random.nextUnit() - 2
-    let tail = random.nextUnit() < 0.14 ? (random.nextUnit() - 0.5) * 1.6 : 0
-    return clamp((centered * 0.46 + tail) * gameFormInteractionImpact, min: -0.62, max: 0.62)
+    let tail = random.nextUnit() < 0.22 ? (random.nextUnit() - 0.5) * 2.1 : 0
+    return clamp((centered * 0.56 + tail) * gameFormInteractionImpact, min: -1.55, max: 1.55)
 }
 
 func playerMatches(_ lhs: Player, _ rhs: Player) -> Bool {
@@ -427,15 +427,15 @@ func gameFormWeight(for label: String) -> Double {
     case let value where value.hasPrefix("free_throw"):
         return 0.28
     case "technical_composure", "timeout_composure":
-        return 0.35
+        return 0.42
     case let value where value.hasPrefix("rebound_"):
         return 0
     case let value where value.contains("shot") || value.contains("finish"):
-        return 1.0
+        return 1.15
     case let value where value.contains("turnover") || value.contains("press") || value.contains("trap"):
-        return 0.78
+        return 0.92
     default:
-        return 0.62
+        return 0.76
     }
 }
 
@@ -454,7 +454,7 @@ func gameFormEdgeShift(
     }
 
     let formDelta = stored.teams[offenseTeamId].gameForm - stored.teams[defenseTeamId].gameForm
-    return clamp(formDelta * gameFormWeight(for: label), min: -0.5, max: 0.5)
+    return clamp(formDelta * gameFormWeight(for: label), min: -1.65, max: 1.65)
 }
 
 func resolveInteractionWithTrace(
