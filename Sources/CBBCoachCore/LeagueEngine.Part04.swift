@@ -409,6 +409,10 @@ private struct ScheduledGameSimulationInput {
     let awayPower: Double
     let homeConferenceBaseline: Double
     let awayConferenceBaseline: Double
+    let homeWins: Int
+    let homeLosses: Int
+    let awayWins: Int
+    let awayLosses: Int
 }
 
 private struct ScheduledGameSimulationOutcome {
@@ -478,16 +482,26 @@ private func makeScheduledGameSimulationInput(
         homePower: matchupPower(for: homeState),
         awayPower: matchupPower(for: awayState),
         homeConferenceBaseline: historicalConferenceBaseline(for: homeState.conferenceId),
-        awayConferenceBaseline: historicalConferenceBaseline(for: awayState.conferenceId)
+        awayConferenceBaseline: historicalConferenceBaseline(for: awayState.conferenceId),
+        homeWins: homeState.wins,
+        homeLosses: homeState.losses,
+        awayWins: awayState.wins,
+        awayLosses: awayState.losses
     )
 }
 
 private func matchupPower(for team: LeagueStore.TeamState) -> Double {
+    let games = team.wins + team.losses
+    let winRate = games > 0 ? Double(team.wins) / Double(games) : team.lastYearResult
+    let pointDiff = games > 0 ? Double(team.pointsFor - team.pointsAgainst) / Double(games) : 0
+    let pointStrength = clamp((pointDiff + 16) / 32, min: 0, max: 1)
     let playerSkill = teamOverall(team.teamModel) / 100
     return clamp(
-        playerSkill * 0.48
-            + team.prestige * 0.26
-            + team.lastYearResult * 0.26,
+        winRate * 0.18
+            + pointStrength * 0.1
+            + playerSkill * 0.34
+            + team.prestige * 0.18
+            + team.lastYearResult * 0.2,
         min: 0,
         max: 1
     )
@@ -505,6 +519,27 @@ private func applyTeamExecutionModifier(team: inout Team, multiplier: Double) {
     }
 }
 
+private func eliteRecordPressure(
+    wins: Int,
+    losses: Int,
+    ownPower: Double,
+    opponentPower: Double,
+    isAway: Bool
+) -> Double {
+    let games = wins + losses
+    guard games >= 12 else { return 0 }
+
+    let winRate = Double(wins) / Double(max(1, games))
+    let eliteRecord = clamp((winRate - 0.78) / 0.22, min: 0, max: 1)
+    let lowLossRecord = clamp(Double(5 - losses) / 5, min: 0, max: 1)
+    let notGenerationalGap = clamp((0.38 - (ownPower - opponentPower)) / 0.38, min: 0.32, max: 1)
+    let nearlyPerfectHeat = clamp(Double(games - 14) / 12, min: 0, max: 1)
+        * clamp(Double(3 - losses) / 3, min: 0, max: 1)
+    let roadLift = isAway ? 1.18 : 1.0
+    let lateSeasonLift = clamp(Double(games - 12) / 14, min: 0, max: 1)
+    return eliteRecord * lowLossRecord * notGenerationalGap * roadLift * (0.96 + lateSeasonLift * 0.62 + nearlyPerfectHeat * 0.84)
+}
+
 private func applyScheduledGameVolatility(
     homeTeam: inout Team,
     awayTeam: inout Team,
@@ -515,6 +550,20 @@ private func applyScheduledGameVolatility(
 
     let powerGap = input.homePower - input.awayPower
     let homeScheduleEdge = input.homeConferenceBaseline - input.awayConferenceBaseline
+    let homePressure = eliteRecordPressure(
+        wins: input.homeWins,
+        losses: input.homeLosses,
+        ownPower: input.homePower,
+        opponentPower: input.awayPower,
+        isAway: false
+    )
+    let awayPressure = eliteRecordPressure(
+        wins: input.awayWins,
+        losses: input.awayLosses,
+        ownPower: input.awayPower,
+        opponentPower: input.homePower,
+        isAway: !input.game.neutralSite
+    )
     let gameNoise = random.nextUnit() + random.nextUnit() + random.nextUnit() - 1.5
     let tailNoise = random.nextUnit() < 0.26 ? (random.nextUnit() - 0.5) * 1.7 : 0
     let underdogSurge = clamp(-(powerGap + homeScheduleEdge * 0.24), min: 0, max: 0.36)
@@ -524,6 +573,7 @@ private func applyScheduledGameVolatility(
         + tailNoise * 0.022
         + underdogSurge * 0.105
         - favoriteDrag * 0.046
+        - homePressure * 0.155
     let awayNoise = random.nextUnit() + random.nextUnit() + random.nextUnit() - 1.5
     let awayTailNoise = random.nextUnit() < 0.32 ? (random.nextUnit() - 0.5) * 2.0 : 0
     let awayUnderdogSurge = clamp(powerGap - homeScheduleEdge * 0.12, min: 0, max: 0.42)
@@ -533,6 +583,7 @@ private func applyScheduledGameVolatility(
         + awayTailNoise * 0.027
         + awayUnderdogSurge * 0.14
         - awayFavoriteDrag * 0.044
+        - awayPressure * 0.19
         - (input.game.neutralSite ? 0 : 0.016)
 
     applyTeamExecutionModifier(team: &homeTeam, multiplier: homeExecution)
@@ -725,47 +776,16 @@ func simulateScheduledRegularSeasonDaysInState(
     guard !dayIndexes.isEmpty else { return true }
 
     let orderedDayIndexes = dayIndexes.sorted { lhs, rhs in lhs.day < rhs.day }
-    var inputs: [ScheduledGameSimulationInput] = []
-    inputs.reserveCapacity(orderedDayIndexes.reduce(0) { $0 + $1.indexes.count })
-
     for day in orderedDayIndexes {
-        for scheduleIndex in day.indexes.sorted() {
-            guard let input = makeScheduledGameSimulationInput(
-                state: state,
-                scheduleIndex: scheduleIndex,
-                teamIndexById: teamIndexById
-            ) else { continue }
-            guard input.game.type == "regular_season" else { return false }
-            inputs.append(input)
+        let indexes = day.indexes.sorted()
+        guard indexes.allSatisfy({ idx in
+            idx >= 0 && idx < state.schedule.count && state.schedule[idx].type == "regular_season"
+        }) else {
+            return false
         }
+        simulateScheduledDayInState(&state, scheduleIndexes: indexes, teamIndexById: teamIndexById)
+        state.currentDay = day.day
     }
-    guard !inputs.isEmpty else { return true }
-
-    let optionsSeed = state.optionsSeed
-    let collector = ScheduledGameOutcomeCollector(capacity: inputs.count)
-    let simulationInputs = inputs
-    if simulationInputs.count >= 4, ProcessInfo.processInfo.activeProcessorCount > 1 {
-        DispatchQueue.concurrentPerform(iterations: simulationInputs.count) { index in
-            let outcome = simulateScheduledGameOutcome(optionsSeed: optionsSeed, input: simulationInputs[index])
-            collector.append(outcome)
-        }
-    } else {
-        for input in simulationInputs {
-            collector.append(simulateScheduledGameOutcome(optionsSeed: optionsSeed, input: input))
-        }
-    }
-
-    let dayByScheduleIndex = Dictionary(uniqueKeysWithValues: simulationInputs.map { ($0.scheduleIndex, $0.game.day) })
-    let outcomes = collector.snapshotSorted().sorted { lhs, rhs in
-        let lhsDay = dayByScheduleIndex[lhs.scheduleIndex] ?? lhs.game.day
-        let rhsDay = dayByScheduleIndex[rhs.scheduleIndex] ?? rhs.game.day
-        if lhsDay != rhsDay { return lhsDay < rhsDay }
-        return lhs.scheduleIndex < rhs.scheduleIndex
-    }
-    for outcome in outcomes {
-        applyScheduledGameOutcomeInState(&state, outcome: outcome)
-    }
-    state.currentDay = orderedDayIndexes.last?.day ?? state.currentDay
     return true
 }
 
