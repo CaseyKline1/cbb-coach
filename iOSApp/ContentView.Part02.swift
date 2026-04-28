@@ -409,23 +409,51 @@ struct CollegeLeagueHomeView: View {
         let userTeamName = getLeagueSummary(league).userTeamName
         let initialCompletedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
         let gamesNeeded = max(0, target.completedGames - initialCompletedGames)
-        let batch = advanceUserGames(&currentLeague, maxGames: gamesNeeded)
-        let completedResults = batch.results
-        let seasonCompleted = batch.seasonCompleted
 
-        let finalRecaps = completedResults.enumerated().map { index, result in
-            Self.skipAheadGameRecap(
-                for: result,
-                gameNumber: initialCompletedGames + index + 1,
-                userTeamName: userTeamName,
-                boxScore: result.gameId.flatMap { batch.boxScoresByGameId[$0] }
-            )
+        var completedResults: [UserGameSummary] = []
+        var allBoxScoresByGameId: [String: [TeamBoxScore]] = [:]
+        var liveRecaps: [String] = []
+        var seasonCompleted = false
+        var remaining = gamesNeeded
+        let chunkSize = 5
+
+        while remaining > 0 {
+            let request = min(chunkSize, remaining)
+            let batch = advanceUserGames(&currentLeague, maxGames: request)
+            if batch.results.isEmpty {
+                seasonCompleted = seasonCompleted || batch.seasonCompleted
+                break
+            }
+            for (offset, result) in batch.results.enumerated() {
+                let gameNumber = initialCompletedGames + completedResults.count + offset + 1
+                let boxScore = result.gameId.flatMap { batch.boxScoresByGameId[$0] }
+                liveRecaps.append(
+                    Self.skipAheadGameRecap(
+                        for: result,
+                        gameNumber: gameNumber,
+                        userTeamName: userTeamName,
+                        boxScore: boxScore
+                    )
+                )
+            }
+            completedResults.append(contentsOf: batch.results)
+            allBoxScoresByGameId.merge(batch.boxScoresByGameId, uniquingKeysWith: { _, new in new })
+            remaining -= batch.results.count
+            if batch.seasonCompleted {
+                seasonCompleted = true
+                break
+            }
+            let snapshot = liveRecaps
+            await MainActor.run {
+                skipAheadGameRecaps = snapshot
+            }
+            await Task.yield()
         }
 
         return SkipAheadSimulationResult(
             league: currentLeague,
             seasonCompleted: seasonCompleted,
-            recaps: finalRecaps
+            recaps: liveRecaps
         )
     }
 
