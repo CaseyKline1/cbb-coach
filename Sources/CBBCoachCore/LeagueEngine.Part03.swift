@@ -377,6 +377,10 @@ public func getRankings(_ league: LeagueState, topN: Int = 25) -> LeagueRankings
         return LeagueRankings(topN: topN, seasonProgress: 0, preseasonWeight: 1, inSeasonWeight: 0, rankings: [])
     }
 
+    return calculateRankings(state, topN: topN)
+}
+
+func calculateRankings(_ state: LeagueStore.State, topN: Int) -> LeagueRankings {
     let maxGamesPlayed = state.teams.map { $0.wins + $0.losses }.max() ?? 0
     let seasonTarget = max(1, state.totalRegularSeasonGames)
     let seasonProgress = clamp(Double(maxGamesPlayed) / Double(seasonTarget), min: 0, max: 1)
@@ -470,6 +474,75 @@ public func getRankings(_ league: LeagueState, topN: Int = 25) -> LeagueRankings
 
     let top = Array(ranked.prefix(max(1, topN)))
     return LeagueRankings(topN: max(1, topN), seasonProgress: seasonProgress, preseasonWeight: preseasonWeight, inSeasonWeight: inSeasonWeight, rankings: top)
+}
+
+public func getNationalTournamentBracket(_ league: LeagueState) -> NationalTournamentBracket? {
+    guard let state = LeagueStore.get(league.handle), let tournament = state.nationalTournament else { return nil }
+
+    let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
+    let nationalTeams = tournament.entrants.compactMap { entrant -> NationalTournamentTeam? in
+        guard let team = teamById[entrant.teamId] else { return nil }
+        return NationalTournamentTeam(
+            teamId: team.teamId,
+            teamName: team.teamName,
+            conferenceId: team.conferenceId,
+            overallSeed: entrant.overallSeed,
+            seedLine: entrant.seedLine,
+            automaticBid: entrant.automaticBid
+        )
+    }
+    let nationalTeamById = Dictionary(uniqueKeysWithValues: nationalTeams.map { ($0.teamId, $0) })
+
+    func team(for participant: LeagueStore.NationalTournamentState.ParticipantRef) -> NationalTournamentTeam? {
+        if let overallSeed = participant.overallSeed {
+            guard let entrant = tournament.entrants.first(where: { $0.overallSeed == overallSeed }) else { return nil }
+            return nationalTeamById[entrant.teamId]
+        }
+        guard
+            let fromRound = participant.fromRound,
+            let fromGame = participant.fromGame,
+            fromRound >= 0,
+            fromRound < tournament.winnersByRound.count,
+            fromGame >= 0,
+            fromGame < tournament.winnersByRound[fromRound].count,
+            let winnerTeamId = tournament.winnersByRound[fromRound][fromGame]
+        else {
+            return nil
+        }
+        return nationalTeamById[winnerTeamId]
+    }
+
+    let scheduleByRoundGame = Dictionary(
+        uniqueKeysWithValues: state.schedule.compactMap { game -> (String, LeagueStore.ScheduledGame)? in
+            guard game.type == "national_tournament", let round = game.tournamentRound, let index = game.tournamentGameIndex else { return nil }
+            return ("\(round):\(index)", game)
+        }
+    )
+
+    let rounds = tournament.rounds.enumerated().map { roundIndex, matchups in
+        matchups.enumerated().map { gameIndex, matchup in
+            let scheduled = scheduleByRoundGame["\(roundIndex):\(gameIndex)"]
+            let winnerTeamId = tournament.winnersByRound.indices.contains(roundIndex)
+                && tournament.winnersByRound[roundIndex].indices.contains(gameIndex)
+                ? tournament.winnersByRound[roundIndex][gameIndex]
+                : nil
+            return NationalTournamentGame(
+                gameId: scheduled?.gameId ?? "nt_r\(roundIndex + 1)_g\(gameIndex + 1)",
+                roundIndex: roundIndex,
+                gameIndex: gameIndex,
+                topTeam: team(for: matchup.top),
+                bottomTeam: team(for: matchup.bottom),
+                winnerTeamId: winnerTeamId,
+                completed: scheduled?.completed ?? (winnerTeamId != nil)
+            )
+        }
+    }
+
+    let orderedTeams = nationalTeams.sorted {
+        if $0.overallSeed != $1.overallSeed { return $0.overallSeed < $1.overallSeed }
+        return $0.teamName < $1.teamName
+    }
+    return NationalTournamentBracket(teams: orderedTeams, rounds: rounds)
 }
 
 public func getLeagueSummary(_ league: LeagueState) -> LeagueSummary {

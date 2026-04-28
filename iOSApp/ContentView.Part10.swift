@@ -2,6 +2,142 @@ import SwiftUI
 import UniformTypeIdentifiers
 import CBBCoachCore
 
+struct NationalBracketView: View {
+    let bracket: NationalTournamentBracket?
+    let userTeamId: String?
+
+    private let roundTitles = ["Round of 64", "Round of 32", "Sweet 16", "Elite 8", "Final Four", "Title"]
+    private let columnWidth: CGFloat = 184
+    private let gameHeight: CGFloat = 74
+
+    var body: some View {
+        ZStack {
+            AppTheme.background.ignoresSafeArea()
+
+            if let bracket {
+                ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                    HStack(alignment: .top, spacing: 28) {
+                        ForEach(Array(bracket.rounds.enumerated()), id: \.offset) { roundIndex, games in
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(roundTitles[safe: roundIndex] ?? "Round \(roundIndex + 1)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: columnWidth, alignment: .leading)
+
+                                VStack(spacing: verticalSpacing(for: roundIndex)) {
+                                    ForEach(games) { game in
+                                        BracketGameCard(
+                                            game: game,
+                                            userTeamId: userTeamId,
+                                            height: gameHeight
+                                        )
+                                        .frame(width: columnWidth, height: gameHeight)
+                                    }
+                                }
+                                .padding(.top, topInset(for: roundIndex))
+                            }
+                        }
+                    }
+                    .padding(16)
+                    .frame(minWidth: 1320, minHeight: 1200, alignment: .topLeading)
+                }
+            } else {
+                VStack(spacing: 10) {
+                    Text("Bracket")
+                        .font(.title2.weight(.black))
+                    Text("The national tournament field appears after conference tournaments finish.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+            }
+        }
+        .navigationTitle("Bracket")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func verticalSpacing(for roundIndex: Int) -> CGFloat {
+        switch roundIndex {
+        case 0: 10
+        case 1: 94
+        case 2: 262
+        case 3: 598
+        case 4: 1270
+        default: 0
+        }
+    }
+
+    private func topInset(for roundIndex: Int) -> CGFloat {
+        switch roundIndex {
+        case 0: 0
+        case 1: 42
+        case 2: 126
+        case 3: 294
+        case 4: 630
+        default: 1302
+        }
+    }
+}
+
+private struct BracketGameCard: View {
+    let game: NationalTournamentGame
+    let userTeamId: String?
+    let height: CGFloat
+
+    var body: some View {
+        VStack(spacing: 0) {
+            teamRow(game.topTeam)
+            Divider()
+            teamRow(game.bottomTeam)
+        }
+        .frame(height: height)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+        )
+    }
+
+    private func teamRow(_ team: NationalTournamentTeam?) -> some View {
+        let isWinner = team?.teamId == game.winnerTeamId
+        let isUser = team?.teamId == userTeamId
+
+        return HStack(spacing: 8) {
+            Text(team.map { "\($0.seedLine)" } ?? "-")
+                .font(.caption2.monospacedDigit().weight(.black))
+                .foregroundStyle(isWinner ? .white : (isUser ? AppTheme.accent : .secondary))
+                .frame(width: 22, height: 22)
+                .background(isWinner ? AppTheme.success : Color(UIColor.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+            Text(team?.teamName ?? "TBD")
+                .font(.caption.weight(isUser || isWinner ? .bold : .semibold))
+                .foregroundStyle(isWinner ? AppTheme.success : (isUser ? AppTheme.accent : AppTheme.ink))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            Spacer(minLength: 4)
+
+            if team?.automaticBid == true {
+                Text("AQ")
+                    .font(.caption2.weight(.black))
+                    .foregroundStyle(AppTheme.warning)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(isUser ? AppTheme.accent.opacity(0.08) : .clear)
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+
 struct RankingsView: View {
     let rankings: LeagueRankings?
     let userTeamId: String?

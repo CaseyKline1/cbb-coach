@@ -61,6 +61,7 @@ struct CollegeLeagueHomeView: View {
     @State var conferenceStandings: [String: [ConferenceStanding]] = [:]
     @State var conferenceNamesById: [String: String] = [:]
     @State var rankings: LeagueRankings?
+    @State var nationalBracket: NationalTournamentBracket?
     @State var completedLeagueGames: [LeagueGameSummary] = []
     @State var teamRostersByName: [String: [UserRosterPlayerSummary]] = [:]
     @State var teamStatsById: [String: TeamAggregateStats] = [:]
@@ -120,6 +121,11 @@ struct CollegeLeagueHomeView: View {
 
                     GameCard {
                         VStack(spacing: 8) {
+                            NavigationLink(value: LeagueMenuDestination.bracket) {
+                                MenuRow(title: "Bracket")
+                            }
+                            .buttonStyle(.plain)
+
                             GameSectionHeader(title: "Team")
                             NavigationLink(value: LeagueMenuDestination.roster) {
                                 MenuRow(title: "Roster")
@@ -227,6 +233,11 @@ struct CollegeLeagueHomeView: View {
                 case .rankings:
                     RankingsView(
                         rankings: rankings,
+                        userTeamId: summary?.userTeamId
+                    )
+                case .bracket:
+                    NationalBracketView(
+                        bracket: nationalBracket,
                         userTeamId: summary?.userTeamId
                     )
                 case .coachingStaff:

@@ -244,6 +244,44 @@ func conferenceTournamentsFollowRegularSeason() throws {
     #expect(!tournamentGames.isEmpty)
 }
 
+@Test("National tournament follows conference tournaments with 64 seeded teams")
+func nationalTournamentFollowsConferenceTournaments() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "national-tourney-smoke", totalRegularSeasonGames: 1))
+    autoFillUserNonConferenceOpponents(&league)
+    generateSeasonSchedule(&league)
+
+    var safetyCounter = 0
+    while safetyCounter < 250 {
+        safetyCounter += 1
+        let summary = advanceToNextUserGame(&league)
+        if summary?.done == true {
+            break
+        }
+    }
+
+    guard let bracket = getNationalTournamentBracket(league) else {
+        Issue.record("Missing national tournament bracket")
+        return
+    }
+
+    let completed = getCompletedLeagueGames(league)
+    let conferenceGames = completed.filter { $0.type == "conference_tournament" }
+    let nationalGames = completed.filter { $0.type == "national_tournament" }
+    let summary = getLeagueSummary(league)
+
+    #expect(bracket.teams.count == 64)
+    #expect(bracket.rounds.map(\.count) == [32, 16, 8, 4, 2, 1])
+    #expect(Set(bracket.teams.map(\.seedLine)) == Set(1...16))
+    #expect(bracket.rounds.first?.allSatisfy { game in
+        guard let top = game.topTeam, let bottom = game.bottomTeam else { return false }
+        return top.seedLine + bottom.seedLine == 17
+    } == true)
+    #expect(bracket.teams.filter(\.automaticBid).count == summary.totalConferences)
+    #expect(!conferenceGames.isEmpty)
+    #expect(nationalGames.count == 63)
+    #expect((nationalGames.compactMap(\.day).min() ?? 0) > (conferenceGames.compactMap(\.day).max() ?? 0))
+}
+
 @Test("12-team conference tournament gives top 4 seeds a first-round bye")
 func conferenceTournamentTwelveTeamByes() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Dayton", seed: "conference-twelve-bye", totalRegularSeasonGames: 1))

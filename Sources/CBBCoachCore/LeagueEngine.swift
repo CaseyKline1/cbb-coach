@@ -220,6 +220,34 @@ public struct LeagueRankings: Codable, Equatable, Sendable {
     public var rankings: [LeagueRankingTeam]
 }
 
+public struct NationalTournamentTeam: Codable, Equatable, Sendable, Identifiable {
+    public var teamId: String
+    public var teamName: String
+    public var conferenceId: String
+    public var overallSeed: Int
+    public var seedLine: Int
+    public var automaticBid: Bool
+
+    public var id: String { teamId }
+}
+
+public struct NationalTournamentGame: Codable, Equatable, Sendable, Identifiable {
+    public var gameId: String
+    public var roundIndex: Int
+    public var gameIndex: Int
+    public var topTeam: NationalTournamentTeam?
+    public var bottomTeam: NationalTournamentTeam?
+    public var winnerTeamId: String?
+    public var completed: Bool
+
+    public var id: String { gameId }
+}
+
+public struct NationalTournamentBracket: Codable, Equatable, Sendable {
+    public var teams: [NationalTournamentTeam]
+    public var rounds: [[NationalTournamentGame]]
+}
+
 public struct LeagueSummary: Codable, Equatable, Sendable {
     public var status: String
     public var currentDay: Int
@@ -344,6 +372,31 @@ struct LeagueStore {
         var scheduledRoundCount: Int
     }
 
+    struct NationalTournamentState: Codable, Equatable, Sendable {
+        struct Entrant: Codable, Equatable, Sendable {
+            var teamId: String
+            var overallSeed: Int
+            var seedLine: Int
+            var automaticBid: Bool
+        }
+
+        struct ParticipantRef: Codable, Equatable, Sendable {
+            var overallSeed: Int?
+            var fromRound: Int?
+            var fromGame: Int?
+        }
+
+        struct Matchup: Codable, Equatable, Sendable {
+            var top: ParticipantRef
+            var bottom: ParticipantRef
+        }
+
+        var entrants: [Entrant]
+        var rounds: [[Matchup]]
+        var winnersByRound: [[String?]]
+        var scheduledRoundCount: Int
+    }
+
     struct State: Codable, Equatable, Sendable {
         var optionsSeed: String
         var status: String
@@ -360,6 +413,7 @@ struct LeagueStore {
         var userGameHistory: [UserGameSummary]
         var scheduleGenerated: Bool
         var conferenceTournaments: [ConferenceTournamentState]?
+        var nationalTournament: NationalTournamentState?
         var remainingRegularSeasonGames: Int?
     }
 
