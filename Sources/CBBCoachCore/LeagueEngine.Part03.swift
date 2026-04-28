@@ -210,7 +210,7 @@ public func advanceUserGames(_ league: inout LeagueState, maxGames: Int) -> User
     guard safeMaxGames > 0 else {
         return UserGameAdvanceBatch(results: [], seasonCompleted: false)
     }
-    return LeagueStore.update(league.handle) { state in
+    return LeagueStore.updateOutsideLock(league.handle) { state in
         var cachedContext: LeagueAdvanceContext?
         var completedUserGames: [UserGameSummary] = []
         var boxScoresByGameId: [String: [TeamBoxScore]] = [:]

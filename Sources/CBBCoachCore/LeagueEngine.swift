@@ -390,6 +390,22 @@ struct LeagueStore {
         states[handle] = state
         return out
     }
+
+    static func updateOutsideLock<T>(_ handle: String, _ body: (inout State) -> T) -> T? {
+        lock.lock()
+        guard var state = states[handle] else {
+            lock.unlock()
+            return nil
+        }
+        lock.unlock()
+
+        let out = body(&state)
+
+        lock.lock()
+        states[handle] = state
+        lock.unlock()
+        return out
+    }
 }
 
 struct LoadedD1Data {
