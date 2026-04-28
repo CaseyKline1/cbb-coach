@@ -83,7 +83,18 @@ func average(_ values: [Double]) -> Double {
 }
 
 func parseLengthToInches(_ value: String?, fallback: Double) -> Double {
-    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return fallback }
+    guard let value, !value.isEmpty else { return fallback }
+
+    if let parsed = fastParseLengthToInches(value) {
+        return parsed
+    }
+
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return fallback }
+
+    if trimmed != value, let parsed = fastParseLengthToInches(trimmed) {
+        return parsed
+    }
 
     let cache = LengthParseCache.shared
     cache.lock.lock()
@@ -112,6 +123,49 @@ func parseLengthToInches(_ value: String?, fallback: Double) -> Double {
     cache.parsedInchesByRaw[trimmed] = parsedValue
     cache.lock.unlock()
     return parsedValue
+}
+
+func fastParseLengthToInches(_ text: String) -> Double? {
+    var feet = 0
+    var inches = 0
+    var separator: Unicode.Scalar?
+    var sawFeetDigit = false
+    var sawInchesDigit = false
+
+    for scalar in text.unicodeScalars {
+        let value = scalar.value
+        if value >= 48, value <= 57 {
+            let digit = Int(value - 48)
+            if separator != nil {
+                sawInchesDigit = true
+                inches = inches * 10 + digit
+            } else {
+                sawFeetDigit = true
+                feet = feet * 10 + digit
+            }
+            continue
+        }
+
+        if scalar == "-" || scalar == "'" {
+            if separator != nil || !sawFeetDigit { return nil }
+            separator = scalar
+            continue
+        }
+
+        if scalar == "\"" {
+            guard separator == "'", sawInchesDigit else { return nil }
+            continue
+        }
+
+        return nil
+    }
+
+    if separator != nil {
+        guard sawFeetDigit, sawInchesDigit else { return nil }
+        return Double(feet * 12 + inches)
+    }
+    guard sawFeetDigit else { return nil }
+    return Double(feet)
 }
 
 func extractFeetInches(_ text: String, regex: NSRegularExpression) -> (Int, Int)? {

@@ -79,15 +79,19 @@ func reboundCollectorRoleBonus(_ player: Player) -> Double {
     }
 }
 
+private func baseRating(_ raw: Int) -> Double {
+    normalizedBaseRating(Double(raw), fallback: 50)
+}
+
 func offensiveReboundSkillScore(_ player: Player, zone: ReboundZone) -> Double {
-    let oreb = getBaseRating(player, path: "rebounding.offensiveRebounding")
-    let box = getBaseRating(player, path: "rebounding.boxouts")
-    let hustle = getBaseRating(player, path: "skills.hustle")
-    let hands = getBaseRating(player, path: "skills.hands")
-    let vertical = getBaseRating(player, path: "athleticism.vertical")
-    let strength = getBaseRating(player, path: "athleticism.strength")
-    let burst = getBaseRating(player, path: "athleticism.burst")
-    let speed = getBaseRating(player, path: "athleticism.speed")
+    let oreb = baseRating(player.rebounding.offensiveRebounding)
+    let box = baseRating(player.rebounding.boxouts)
+    let hustle = baseRating(player.skills.hustle)
+    let hands = baseRating(player.skills.hands)
+    let vertical = baseRating(player.athleticism.vertical)
+    let strength = baseRating(player.athleticism.strength)
+    let burst = baseRating(player.athleticism.burst)
+    let speed = baseRating(player.athleticism.speed)
     let height = heightReboundRating(player)
     let wingspan = wingspanReboundRating(player)
     let core = oreb * 0.48 + box * 0.16 + hustle * 0.12 + hands * 0.08 + strength * 0.08 + vertical * 0.08
@@ -103,14 +107,14 @@ func offensiveReboundSkillScore(_ player: Player, zone: ReboundZone) -> Double {
 }
 
 func defensiveReboundSkillScore(_ player: Player, zone: ReboundZone) -> Double {
-    let dreb = getBaseRating(player, path: "rebounding.defensiveRebound")
-    let box = getBaseRating(player, path: "rebounding.boxouts")
-    let hustle = getBaseRating(player, path: "skills.hustle")
-    let hands = getBaseRating(player, path: "skills.hands")
-    let vertical = getBaseRating(player, path: "athleticism.vertical")
-    let strength = getBaseRating(player, path: "athleticism.strength")
-    let burst = getBaseRating(player, path: "athleticism.burst")
-    let speed = getBaseRating(player, path: "athleticism.speed")
+    let dreb = baseRating(player.rebounding.defensiveRebound)
+    let box = baseRating(player.rebounding.boxouts)
+    let hustle = baseRating(player.skills.hustle)
+    let hands = baseRating(player.skills.hands)
+    let vertical = baseRating(player.athleticism.vertical)
+    let strength = baseRating(player.athleticism.strength)
+    let burst = baseRating(player.athleticism.burst)
+    let speed = baseRating(player.athleticism.speed)
     let height = heightReboundRating(player)
     let wingspan = wingspanReboundRating(player)
     let core = dreb * 0.46 + box * 0.24 + hustle * 0.12 + hands * 0.08 + strength * 0.06 + vertical * 0.04

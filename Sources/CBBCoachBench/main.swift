@@ -32,6 +32,7 @@ let teamName = optionValue("--team", default: "Duke")
 
 var runTotals: [String: Double] = [:]
 var simulatedGameCounts: [Int] = []
+var simulatedCountryGameCounts: [Int] = []
 
 print("CBBCoach skip-ahead benchmark")
 print("team=\(teamName) games=\(games) iterations=\(iterations) seed=\(seed)")
@@ -41,11 +42,15 @@ for iteration in 1...iterations {
     var league = try measure("create league", buckets: &buckets) {
         try createD1League(options: CreateLeagueOptions(userTeamName: teamName, seed: "\(seed)-\(iteration)"))
     }
+    let completedLeagueGamesBeforeAdvance = getCompletedLeagueGames(league).count
 
     let batch = measure("advance user games", buckets: &buckets) {
         advanceUserGames(&league, maxGames: games)
     }
     simulatedGameCounts.append(batch.results.count)
+    let completedLeagueGamesAfterAdvance = getCompletedLeagueGames(league).count
+    let simulatedCountryGames = max(0, completedLeagueGamesAfterAdvance - completedLeagueGamesBeforeAdvance)
+    simulatedCountryGameCounts.append(simulatedCountryGames)
 
     let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("cbb-coach-bench-\(UUID().uuidString).json")
@@ -77,7 +82,7 @@ for iteration in 1...iterations {
     let formattedBuckets = buckets
         .map { "\($0.label)=\(String(format: "%.3f", $0.seconds))s" }
         .joined(separator: " ")
-    print("run \(iteration): total=\(String(format: "%.3f", total))s games=\(batch.results.count) saveBytes=\(saveInfo.bytes) \(formattedBuckets)")
+    print("run \(iteration): total=\(String(format: "%.3f", total))s userGames=\(batch.results.count) countryGames=\(simulatedCountryGames) saveBytes=\(saveInfo.bytes) \(formattedBuckets)")
 }
 
 print("averages:")
@@ -86,6 +91,9 @@ for label in ["total", "create league", "advance user games", "compact save", "r
     print("  \(label): \(String(format: "%.3f", average))s")
 }
 let avgGames = Double(simulatedGameCounts.reduce(0, +)) / Double(max(1, simulatedGameCounts.count))
+let avgCountryGames = Double(simulatedCountryGameCounts.reduce(0, +)) / Double(max(1, simulatedCountryGameCounts.count))
 let avgAdvance = (runTotals["advance user games"] ?? 0) / Double(iterations)
 print("  simulated user games: \(String(format: "%.1f", avgGames))")
+print("  simulated country games: \(String(format: "%.1f", avgCountryGames))")
 print("  advance seconds/game: \(String(format: "%.3f", avgAdvance / max(1, avgGames)))s")
+print("  advance seconds/country game: \(String(format: "%.4f", avgAdvance / max(1, avgCountryGames)))s")

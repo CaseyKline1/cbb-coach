@@ -337,9 +337,20 @@ func zonePresenceAffinity(_ player: Player, zone: ReboundZone) -> Double {
 }
 
 func positionProximity(_ player: Player, zone: ReboundZone) -> Double {
-    let positionTag = player.bio.position.rawValue.uppercased()
-    let isBig = positionTag.contains("C") || positionTag.contains("PF") || positionTag.contains("F")
-    let isGuard = positionTag.contains("PG") || positionTag.contains("SG") || positionTag.contains("G")
+    let isBig: Bool
+    let isGuard: Bool
+    switch player.bio.position {
+    case .c, .cg, .pf, .sf, .f:
+        isBig = true
+    case .pg, .sg, .wing, .big:
+        isBig = false
+    }
+    switch player.bio.position {
+    case .pg, .sg, .cg, .wing, .big:
+        isGuard = true
+    case .c, .pf, .sf, .f:
+        isGuard = false
+    }
     switch zone {
     case .paint:
         return isBig ? 1.25 : (isGuard ? 0.75 : 1.0)
