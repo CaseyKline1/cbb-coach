@@ -395,10 +395,11 @@ struct CollegeLeagueHomeView: View {
             let result = await runSkipAhead(from: startingLeague, target: target)
             await MainActor.run {
                 league = result.league
-                refreshFromLeague(result.league)
+                refreshFromLeague(result.league, includeDeferredData: false)
                 skipAheadGameRecaps = result.recaps
                 statusText = result.seasonCompleted ? "Season complete." : target.completionMessage
                 isSkipAheadInProgress = false
+                refreshDeferredDataFromLeague(result.league)
             }
         }
     }

@@ -2,21 +2,55 @@ import SwiftUI
 import UniformTypeIdentifiers
 import CBBCoachCore
 
+struct DeferredLeagueRefreshData: Sendable {
+    let conferenceStandings: [String: [ConferenceStanding]]
+    let conferenceNamesById: [String: String]
+    let completedLeagueGames: [LeagueGameSummary]
+    let teamRostersByName: [String: [UserRosterPlayerSummary]]
+}
+
 extension CollegeLeagueHomeView {
-    func refreshFromLeague(_ league: LeagueState) {
+    func refreshFromLeague(_ league: LeagueState, includeDeferredData: Bool = true) {
         roster = getUserRoster(league)
         schedule = getUserSchedule(league)
         rotationSlots = getUserRotation(league)
         coachingStaff = getUserCoachingStaff(league)
         summary = getLeagueSummary(league)
-        let standingsData = fetchConferenceStandings(league)
-        conferenceStandings = standingsData.standings
-        conferenceNamesById = standingsData.conferenceNames
         rankings = getRankings(league)
-        completedLeagueGames = getCompletedLeagueGames(league)
-        teamRostersByName = Dictionary(
+        if includeDeferredData {
+            applyDeferredRefresh(Self.buildDeferredRefreshData(for: league))
+        }
+    }
+
+    func refreshDeferredDataFromLeague(_ league: LeagueState) {
+        let targetHandle = league.handle
+        Task.detached(priority: .utility) {
+            let data = Self.buildDeferredRefreshData(for: league)
+            await MainActor.run {
+                guard self.league?.handle == targetHandle else { return }
+                applyDeferredRefresh(data)
+            }
+        }
+    }
+
+    func applyDeferredRefresh(_ data: DeferredLeagueRefreshData) {
+        conferenceStandings = data.conferenceStandings
+        conferenceNamesById = data.conferenceNamesById
+        completedLeagueGames = data.completedLeagueGames
+        teamRostersByName = data.teamRostersByName
+    }
+
+    nonisolated static func buildDeferredRefreshData(for league: LeagueState) -> DeferredLeagueRefreshData {
+        let standingsData = fetchConferenceStandings(for: league)
+        let teamRosters = Dictionary(
             getTeamRosters(league).map { ($0.teamName, $0.players) },
             uniquingKeysWith: { first, _ in first }
+        )
+        return DeferredLeagueRefreshData(
+            conferenceStandings: standingsData.standings,
+            conferenceNamesById: standingsData.conferenceNames,
+            completedLeagueGames: getCompletedLeagueGames(league),
+            teamRostersByName: teamRosters
         )
     }
 
@@ -30,6 +64,10 @@ extension CollegeLeagueHomeView {
     }
 
     func fetchConferenceStandings(_ league: LeagueState) -> (standings: [String: [ConferenceStanding]], conferenceNames: [String: String]) {
+        Self.fetchConferenceStandings(for: league)
+    }
+
+    nonisolated static func fetchConferenceStandings(for league: LeagueState) -> (standings: [String: [ConferenceStanding]], conferenceNames: [String: String]) {
         let conferenceOptions = listCareerTeamOptions()
         let conferenceNames = Dictionary(
             conferenceOptions.map { ($0.conferenceId, $0.conferenceName) },
