@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import CBBCoachCore
 
-struct TeamAggregateStats {
+struct TeamAggregateStats: Sendable {
     let teamId: String
     let teamName: String
     var games: Int = 0
@@ -89,7 +89,7 @@ struct TeamStatsMetricRow: Hashable {
 }
 
 struct TeamStatsView: View {
-    let games: [LeagueGameSummary]
+    let teamStatsById: [String: TeamAggregateStats]
     let userTeamId: String?
     let userConferenceId: String?
     let conferenceIdByTeamId: [String: String]
@@ -102,7 +102,7 @@ struct TeamStatsView: View {
         let formatter: (Double) -> String
     }
 
-    private var teamStatsById: [String: TeamAggregateStats] {
+    nonisolated static func aggregateTeamStats(from games: [LeagueGameSummary]) -> [String: TeamAggregateStats] {
         var totals: [String: TeamAggregateStats] = [:]
         for game in games {
             let lines = parseGameLines(from: game)
@@ -251,7 +251,7 @@ struct TeamStatsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func parseGameLines(from game: LeagueGameSummary) -> [TeamGameBoxLine] {
+    nonisolated private static func parseGameLines(from game: LeagueGameSummary) -> [TeamGameBoxLine] {
         guard
             let resultObject = game.result?.objectDictionary,
             let boxArray = resultObject["boxScore"]?.arrayValues

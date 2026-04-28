@@ -63,6 +63,7 @@ struct CollegeLeagueHomeView: View {
     @State var rankings: LeagueRankings?
     @State var completedLeagueGames: [LeagueGameSummary] = []
     @State var teamRostersByName: [String: [UserRosterPlayerSummary]] = [:]
+    @State var teamStatsById: [String: TeamAggregateStats] = [:]
     @State var showingSkipAheadOptions = false
     @State var isSkipAheadInProgress = false
     @State var skipAheadTitle = ""
@@ -213,7 +214,7 @@ struct CollegeLeagueHomeView: View {
                     )
                 case .teamStats:
                     TeamStatsView(
-                        games: completedLeagueGames,
+                        teamStatsById: teamStatsById,
                         userTeamId: summary?.userTeamId,
                         userConferenceId: userConferenceId,
                         conferenceIdByTeamId: conferenceIdByTeamId

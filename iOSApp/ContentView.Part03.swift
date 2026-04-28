@@ -7,6 +7,7 @@ struct DeferredLeagueRefreshData: Sendable {
     let conferenceNamesById: [String: String]
     let completedLeagueGames: [LeagueGameSummary]
     let teamRostersByName: [String: [UserRosterPlayerSummary]]
+    let teamStatsById: [String: TeamAggregateStats]
 }
 
 extension CollegeLeagueHomeView {
@@ -38,6 +39,7 @@ extension CollegeLeagueHomeView {
         conferenceNamesById = data.conferenceNamesById
         completedLeagueGames = data.completedLeagueGames
         teamRostersByName = data.teamRostersByName
+        teamStatsById = data.teamStatsById
     }
 
     nonisolated static func buildDeferredRefreshData(for league: LeagueState) -> DeferredLeagueRefreshData {
@@ -46,11 +48,13 @@ extension CollegeLeagueHomeView {
             getTeamRosters(league).map { ($0.teamName, $0.players) },
             uniquingKeysWith: { first, _ in first }
         )
+        let completedGames = getCompletedLeagueGames(league)
         return DeferredLeagueRefreshData(
             conferenceStandings: standingsData.standings,
             conferenceNamesById: standingsData.conferenceNames,
-            completedLeagueGames: getCompletedLeagueGames(league),
-            teamRostersByName: teamRosters
+            completedLeagueGames: completedGames,
+            teamRostersByName: teamRosters,
+            teamStatsById: TeamStatsView.aggregateTeamStats(from: completedGames)
         )
     }
 
