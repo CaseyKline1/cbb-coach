@@ -401,9 +401,9 @@ public func getRankings(_ league: LeagueState, topN: Int = 25) -> LeagueRankings
         }
         opponentPowersByTeamId[game.homeTeamId, default: []].append(awayPower)
         opponentPowersByTeamId[game.awayTeamId, default: []].append(homePower)
-        if result.winnerTeamId == game.homeTeamId, awayPower >= 0.58 {
+        if result.winnerTeamId == game.homeTeamId, awayPower >= 0.54 {
             qualityWinsByTeamId[game.homeTeamId, default: 0] += 1
-        } else if result.winnerTeamId == game.awayTeamId, homePower >= 0.58 {
+        } else if result.winnerTeamId == game.awayTeamId, homePower >= 0.54 {
             qualityWinsByTeamId[game.awayTeamId, default: 0] += 1
         }
     }
@@ -420,15 +420,19 @@ public func getRankings(_ league: LeagueState, topN: Int = 25) -> LeagueRankings
         let strengthOfSchedule = clamp(opponentStrength * 0.68 + conferenceStrength * 0.32, min: 0, max: 1)
         let qualityWins = qualityWinsByTeamId[team.teamId] ?? 0
         let qualityWinShare = clamp(Double(qualityWins) / Double(max(1, games)), min: 0, max: 1)
-        let scheduleAdjustedWinRate = clamp(winRate * (0.38 + strengthOfSchedule * 0.92), min: 0, max: 1)
-        let qualityWinRate = clamp(scheduleAdjustedWinRate * 0.58 + qualityWinShare * 0.28 + team.prestige * 0.14, min: 0, max: 1)
+        let scheduleAdjustedWinRate = clamp(winRate * (0.24 + strengthOfSchedule * 1.04), min: 0, max: 1)
+        let qualityWinRate = clamp(scheduleAdjustedWinRate * 0.5 + qualityWinShare * 0.36 + team.prestige * 0.14, min: 0, max: 1)
+        let lowSchedulePenalty = clamp((0.52 - strengthOfSchedule) / 0.22, min: 0, max: 1)
+            * clamp((winRate - 0.76) / 0.24, min: 0, max: 1)
+            * clamp((0.14 - qualityWinShare) / 0.14, min: 0, max: 1)
 
         let preseasonScore = playerSkill * 0.45 + coachQuality * 0.25 + team.prestige * 0.2 + team.lastYearResult * 0.1
-        let inSeasonScore = scheduleAdjustedWinRate * 0.3
-            + qualityWinRate * 0.18
-            + clamp((pointDiffPerGame + 20) / 40, min: 0, max: 1) * 0.1
-            + strengthOfSchedule * 0.32
-            + qualityWinShare * 0.1
+        let rawInSeasonScore = scheduleAdjustedWinRate * 0.25
+            + qualityWinRate * 0.2
+            + clamp((pointDiffPerGame + 20) / 40, min: 0, max: 1) * 0.08
+            + strengthOfSchedule * 0.36
+            + qualityWinShare * 0.11
+        let inSeasonScore = clamp(rawInSeasonScore - lowSchedulePenalty * 0.16, min: 0, max: 1)
         let composite = preseasonScore * preseasonWeight + inSeasonScore * inSeasonWeight
 
         return LeagueRankingTeam(

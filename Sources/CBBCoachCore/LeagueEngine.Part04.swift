@@ -405,6 +405,10 @@ private struct ScheduledGameSimulationInput {
     let awayIndex: Int
     let homeTeam: Team
     let awayTeam: Team
+    let homePower: Double
+    let awayPower: Double
+    let homeConferenceBaseline: Double
+    let awayConferenceBaseline: Double
 }
 
 private struct ScheduledGameSimulationOutcome {
@@ -461,21 +465,93 @@ private func makeScheduledGameSimulationInput(
     applyPreGameModifiers(team: &homeTeam, isHome: !game.neutralSite)
     applyPreGameModifiers(team: &awayTeam, isHome: false)
 
+    let homeState = state.teams[homeIndex]
+    let awayState = state.teams[awayIndex]
+
     return ScheduledGameSimulationInput(
         scheduleIndex: scheduleIndex,
         game: game,
         homeIndex: homeIndex,
         awayIndex: awayIndex,
         homeTeam: homeTeam,
-        awayTeam: awayTeam
+        awayTeam: awayTeam,
+        homePower: matchupPower(for: homeState),
+        awayPower: matchupPower(for: awayState),
+        homeConferenceBaseline: historicalConferenceBaseline(for: homeState.conferenceId),
+        awayConferenceBaseline: historicalConferenceBaseline(for: awayState.conferenceId)
     )
+}
+
+private func matchupPower(for team: LeagueStore.TeamState) -> Double {
+    let playerSkill = teamOverall(team.teamModel) / 100
+    return clamp(
+        playerSkill * 0.48
+            + team.prestige * 0.26
+            + team.lastYearResult * 0.26,
+        min: 0,
+        max: 1
+    )
+}
+
+private func applyTeamExecutionModifier(team: inout Team, multiplier: Double) {
+    let safeMultiplier = clamp(multiplier, min: 0.88, max: 1.1)
+    for idx in team.players.indices {
+        team.players[idx].condition.offensiveCoachingModifier *= safeMultiplier
+        team.players[idx].condition.defensiveCoachingModifier *= safeMultiplier
+    }
+    for idx in team.lineup.indices {
+        team.lineup[idx].condition.offensiveCoachingModifier *= safeMultiplier
+        team.lineup[idx].condition.defensiveCoachingModifier *= safeMultiplier
+    }
+}
+
+private func applyScheduledGameVolatility(
+    homeTeam: inout Team,
+    awayTeam: inout Team,
+    input: ScheduledGameSimulationInput,
+    random: inout SeededRandom
+) {
+    guard input.game.type == "regular_season" else { return }
+
+    let powerGap = input.homePower - input.awayPower
+    let homeScheduleEdge = input.homeConferenceBaseline - input.awayConferenceBaseline
+    let gameNoise = random.nextUnit() + random.nextUnit() + random.nextUnit() - 1.5
+    let tailNoise = random.nextUnit() < 0.26 ? (random.nextUnit() - 0.5) * 1.7 : 0
+    let underdogSurge = clamp(-(powerGap + homeScheduleEdge * 0.24), min: 0, max: 0.36)
+    let favoriteDrag = clamp(powerGap + homeScheduleEdge * 0.16, min: 0, max: 0.4)
+    let homeExecution = 1
+        + gameNoise * 0.03
+        + tailNoise * 0.022
+        + underdogSurge * 0.105
+        - favoriteDrag * 0.046
+    let awayNoise = random.nextUnit() + random.nextUnit() + random.nextUnit() - 1.5
+    let awayTailNoise = random.nextUnit() < 0.32 ? (random.nextUnit() - 0.5) * 2.0 : 0
+    let awayUnderdogSurge = clamp(powerGap - homeScheduleEdge * 0.12, min: 0, max: 0.42)
+    let awayFavoriteDrag = clamp(-powerGap + homeScheduleEdge * 0.08, min: 0, max: 0.36)
+    let awayExecution = 1
+        + awayNoise * 0.037
+        + awayTailNoise * 0.027
+        + awayUnderdogSurge * 0.14
+        - awayFavoriteDrag * 0.044
+        - (input.game.neutralSite ? 0 : 0.016)
+
+    applyTeamExecutionModifier(team: &homeTeam, multiplier: homeExecution)
+    applyTeamExecutionModifier(team: &awayTeam, multiplier: awayExecution)
 }
 
 private func simulateScheduledGameOutcome(optionsSeed: String, input: ScheduledGameSimulationInput) -> ScheduledGameSimulationOutcome {
     var random = SeededRandom(seed: hashString("sim:\(optionsSeed):\(input.game.gameId)"))
+    var homeTeam = input.homeTeam
+    var awayTeam = input.awayTeam
+    applyScheduledGameVolatility(
+        homeTeam: &homeTeam,
+        awayTeam: &awayTeam,
+        input: input,
+        random: &random
+    )
     let result = simulateGameForBatch(
-        homeTeam: input.homeTeam,
-        awayTeam: input.awayTeam,
+        homeTeam: homeTeam,
+        awayTeam: awayTeam,
         random: &random,
         includePlayByPlay: false
     )
