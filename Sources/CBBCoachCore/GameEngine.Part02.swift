@@ -1,8 +1,6 @@
 import Foundation
 
-@discardableResult
-public func resolveActionChunk(state: inout GameState, random: inout SeededRandom) -> String {
-    guard let chunkType = NativeGameStateStore.withState(state.handle, { stored in
+func resolveActionChunk(stored: inout NativeGameStateStore.StoredState, random: inout SeededRandom) -> String {
         if stored.gameClockRemaining <= 0 {
             return "period_end"
         }
@@ -217,6 +215,12 @@ public func resolveActionChunk(state: inout GameState, random: inout SeededRando
             maybeCallTechnicalFoul(stored: &stored, random: &random)
         }
         return eventType
+}
+
+@discardableResult
+public func resolveActionChunk(state: inout GameState, random: inout SeededRandom) -> String {
+    guard let chunkType = NativeGameStateStore.withState(state.handle, { stored in
+        resolveActionChunk(stored: &stored, random: &random)
     }) else {
         fatalError("resolveActionChunk failed: unknown game handle \(state.handle)")
     }

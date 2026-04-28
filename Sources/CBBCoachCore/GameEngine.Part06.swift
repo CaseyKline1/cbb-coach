@@ -382,6 +382,69 @@ public func simulateHalf(state: inout GameState, random: inout SeededRandom) {
     }
 }
 
+func simulateHalf(stored: inout NativeGameStateStore.StoredState, random: inout SeededRandom) {
+    while resolveActionChunk(stored: &stored, random: &random) != "period_end" {
+        // Same interaction-by-interaction engine as the public GameState path, minus store lookup overhead.
+    }
+}
+
+func advanceStoredGameToNextPeriod(_ stored: inout NativeGameStateStore.StoredState, half: Int, seconds: Int) {
+    stored.currentHalf = half
+    stored.gameClockRemaining = seconds
+    stored.shotClockRemaining = SHOT_CLOCK_SECONDS
+    stored.teamFoulsInHalf = Array(repeating: 0, count: stored.teamFoulsInHalf.count)
+    recoverAllPlayersForHalftime(stored: &stored)
+}
+
+func simulatedGameResult(from final: NativeGameStateStore.StoredState, overtimeNumber: Int) -> SimulatedGameResult {
+    let homeBox = TeamBoxScore(
+        name: final.teams[0].team.name,
+        players: final.teams[0].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 },
+        teamExtras: final.teams[0].teamExtras
+    )
+    let awayBox = TeamBoxScore(
+        name: final.teams[1].team.name,
+        players: final.teams[1].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 },
+        teamExtras: final.teams[1].teamExtras
+    )
+    let boxScores = [homeBox, awayBox]
+
+    return SimulatedGameResult(
+        home: SimulatedTeamResult(name: final.teams[0].team.name, score: final.teams[0].score, boxScore: homeBox),
+        away: SimulatedTeamResult(name: final.teams[1].team.name, score: final.teams[1].score, boxScore: awayBox),
+        winner: final.teams[0].score == final.teams[1].score ? nil : (final.teams[0].score > final.teams[1].score ? final.teams[0].team.name : final.teams[1].team.name),
+        wentToOvertime: overtimeNumber > 0,
+        playByPlay: final.playByPlay,
+        boxScore: boxScores
+    )
+}
+
+func simulateGameForBatch(
+    homeTeam: Team,
+    awayTeam: Team,
+    random: inout SeededRandom,
+    includePlayByPlay: Bool = false
+) -> SimulatedGameResult {
+    var stored = NativeGameStateStore.makeInitialState(
+        home: homeTeam,
+        away: awayTeam,
+        random: &random,
+        includePlayByPlay: includePlayByPlay
+    )
+    simulateHalf(stored: &stored, random: &random)
+    advanceStoredGameToNextPeriod(&stored, half: 2, seconds: HALF_SECONDS)
+    simulateHalf(stored: &stored, random: &random)
+
+    var overtimeNumber = 0
+    while stored.teams[0].score == stored.teams[1].score {
+        overtimeNumber += 1
+        advanceStoredGameToNextPeriod(&stored, half: 2 + overtimeNumber, seconds: OVERTIME_SECONDS)
+        simulateHalf(stored: &stored, random: &random)
+    }
+
+    return simulatedGameResult(from: stored, overtimeNumber: overtimeNumber)
+}
+
 public func simulateGame(
     homeTeam: Team,
     awayTeam: Team,

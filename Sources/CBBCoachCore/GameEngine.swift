@@ -196,36 +196,37 @@ struct NativeGameStateStore {
     private static nonisolated(unsafe) var nextId = 1
     private static nonisolated(unsafe) var states: [String: StoredBox] = [:]
 
+    static func makeInitialState(home: Team, away: Team, random: inout SeededRandom, includePlayByPlay: Bool) -> StoredState {
+        let initialPossession = random.nextUnit() < 0.5 ? 0 : 1
+        return StoredState(
+            teams: [
+                makeTeamTracker(home),
+                makeTeamTracker(away),
+            ],
+            currentHalf: 1,
+            gameClockRemaining: HALF_SECONDS,
+            shotClockRemaining: SHOT_CLOCK_SECONDS,
+            possessionTeamId: initialPossession,
+            playByPlayEnabled: includePlayByPlay,
+            playByPlay: [],
+            teamFoulsInHalf: [0, 0],
+            formationCycleIndex: [0, 0],
+            pendingTransition: nil,
+            lastSubElapsedGameSeconds: [-9999, -9999],
+            traceEnabled: false,
+            actionCounter: 0,
+            currentActionInteractions: [],
+            currentActionStatRecords: [],
+            actionTraces: []
+        )
+    }
+
     static func create(home: Team, away: Team, random: inout SeededRandom, includePlayByPlay: Bool) -> String {
         mapLock.lock()
         defer { mapLock.unlock() }
         let handle = "swift_g_\(nextId)"
         nextId += 1
-
-        let initialPossession = random.nextUnit() < 0.5 ? 0 : 1
-        states[handle] = StoredBox(
-            state: StoredState(
-                teams: [
-                    makeTeamTracker(home),
-                    makeTeamTracker(away),
-                ],
-                currentHalf: 1,
-                gameClockRemaining: HALF_SECONDS,
-                shotClockRemaining: SHOT_CLOCK_SECONDS,
-                possessionTeamId: initialPossession,
-                playByPlayEnabled: includePlayByPlay,
-                playByPlay: [],
-                teamFoulsInHalf: [0, 0],
-                formationCycleIndex: [0, 0],
-                pendingTransition: nil,
-                lastSubElapsedGameSeconds: [-9999, -9999],
-                traceEnabled: false,
-                actionCounter: 0,
-                currentActionInteractions: [],
-                currentActionStatRecords: [],
-                actionTraces: []
-            )
-        )
+        states[handle] = StoredBox(state: makeInitialState(home: home, away: away, random: &random, includePlayByPlay: includePlayByPlay))
         return handle
     }
 

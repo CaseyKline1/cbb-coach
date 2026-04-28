@@ -473,7 +473,7 @@ private func makeScheduledGameSimulationInput(
 
 private func simulateScheduledGameOutcome(optionsSeed: String, input: ScheduledGameSimulationInput) -> ScheduledGameSimulationOutcome {
     var random = SeededRandom(seed: hashString("sim:\(optionsSeed):\(input.game.gameId)"))
-    let result = simulateGame(
+    let result = simulateGameForBatch(
         homeTeam: input.homeTeam,
         awayTeam: input.awayTeam,
         random: &random,
