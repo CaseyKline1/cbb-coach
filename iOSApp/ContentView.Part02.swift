@@ -80,7 +80,6 @@ struct CollegeLeagueHomeView: View {
 
                     if let lastPlayed = latestCompletedGame {
                         GameCard {
-                            GameSectionHeader(title: "Last Result")
                             NavigationLink(value: LeagueMenuDestination.boxScore(lastPlayed.gameId ?? "")) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -166,14 +165,6 @@ struct CollegeLeagueHomeView: View {
                                 MenuRow(title: "Coaching Staff")
                             }
                             .buttonStyle(.plain)
-                        }
-                    }
-
-                    if !statusText.isEmpty {
-                        GameCard {
-                            Text(statusText)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
                         }
                     }
 
