@@ -94,6 +94,7 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
         userGameHistory: [],
         scheduleGenerated: false,
         conferenceTournaments: nil,
+        nationalTournament: nil,
         remainingRegularSeasonGames: nil
     )
 
@@ -205,6 +206,7 @@ public func setUserNonConferenceOpponents(_ league: inout LeagueState, opponentT
         state.schedule.removeAll()
         state.userGameHistory.removeAll()
         state.conferenceTournaments = nil
+        state.nationalTournament = nil
         resetTeamRecords(&state)
     }
 }
@@ -216,6 +218,7 @@ public func autoFillUserNonConferenceOpponents(_ league: inout LeagueState, seed
         state.schedule.removeAll()
         state.userGameHistory.removeAll()
         state.conferenceTournaments = nil
+        state.nationalTournament = nil
         resetTeamRecords(&state)
     }
 }

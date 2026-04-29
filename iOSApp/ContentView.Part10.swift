@@ -2,6 +2,142 @@ import SwiftUI
 import UniformTypeIdentifiers
 import CBBCoachCore
 
+struct NationalBracketView: View {
+    let bracket: NationalTournamentBracket?
+    let userTeamId: String?
+
+    private let roundTitles = ["Round of 64", "Round of 32", "Sweet 16", "Elite 8", "Final Four", "Title"]
+    private let columnWidth: CGFloat = 184
+    private let gameHeight: CGFloat = 74
+
+    var body: some View {
+        ZStack {
+            AppTheme.background.ignoresSafeArea()
+
+            if let bracket {
+                ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                    HStack(alignment: .top, spacing: 28) {
+                        ForEach(Array(bracket.rounds.enumerated()), id: \.offset) { roundIndex, games in
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(roundTitles[safe: roundIndex] ?? "Round \(roundIndex + 1)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: columnWidth, alignment: .leading)
+
+                                VStack(spacing: verticalSpacing(for: roundIndex)) {
+                                    ForEach(games) { game in
+                                        BracketGameCard(
+                                            game: game,
+                                            userTeamId: userTeamId,
+                                            height: gameHeight
+                                        )
+                                        .frame(width: columnWidth, height: gameHeight)
+                                    }
+                                }
+                                .padding(.top, topInset(for: roundIndex))
+                            }
+                        }
+                    }
+                    .padding(16)
+                    .frame(minWidth: 1320, minHeight: 1200, alignment: .topLeading)
+                }
+            } else {
+                VStack(spacing: 10) {
+                    Text("Bracket")
+                        .font(.title2.weight(.black))
+                    Text("The national tournament field appears after conference tournaments finish.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+            }
+        }
+        .navigationTitle("Bracket")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func verticalSpacing(for roundIndex: Int) -> CGFloat {
+        switch roundIndex {
+        case 0: 10
+        case 1: 94
+        case 2: 262
+        case 3: 598
+        case 4: 1270
+        default: 0
+        }
+    }
+
+    private func topInset(for roundIndex: Int) -> CGFloat {
+        switch roundIndex {
+        case 0: 0
+        case 1: 42
+        case 2: 126
+        case 3: 294
+        case 4: 630
+        default: 1302
+        }
+    }
+}
+
+private struct BracketGameCard: View {
+    let game: NationalTournamentGame
+    let userTeamId: String?
+    let height: CGFloat
+
+    var body: some View {
+        VStack(spacing: 0) {
+            teamRow(game.topTeam)
+            Divider()
+            teamRow(game.bottomTeam)
+        }
+        .frame(height: height)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+        )
+    }
+
+    private func teamRow(_ team: NationalTournamentTeam?) -> some View {
+        let isWinner = team?.teamId == game.winnerTeamId
+        let isUser = team?.teamId == userTeamId
+
+        return HStack(spacing: 8) {
+            Text(team.map { "\($0.seedLine)" } ?? "-")
+                .font(.caption2.monospacedDigit().weight(.black))
+                .foregroundStyle(isWinner ? .white : (isUser ? AppTheme.accent : .secondary))
+                .frame(width: 22, height: 22)
+                .background(isWinner ? AppTheme.success : Color(UIColor.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+            Text(team?.teamName ?? "TBD")
+                .font(.caption.weight(isUser || isWinner ? .bold : .semibold))
+                .foregroundStyle(isWinner ? AppTheme.success : (isUser ? AppTheme.accent : AppTheme.ink))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            Spacer(minLength: 4)
+
+            if team?.automaticBid == true {
+                Text("AQ")
+                    .font(.caption2.weight(.black))
+                    .foregroundStyle(AppTheme.warning)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(isUser ? AppTheme.accent.opacity(0.08) : .clear)
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+
 struct RankingsView: View {
     let rankings: LeagueRankings?
     let userTeamId: String?
@@ -72,6 +208,648 @@ struct RankingsView: View {
         }
         .navigationTitle("Rankings")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct SeasonRecapView: View {
+    let games: [LeagueGameSummary]
+    let schedule: [UserGameSummary]
+    let userTeamId: String?
+    let userTeamName: String
+    let userConferenceId: String?
+    let standingsByConference: [String: [ConferenceStanding]]
+    let conferenceNamesById: [String: String]
+    let bracket: NationalTournamentBracket?
+    let roster: [UserRosterPlayerSummary]
+    let teamRostersByName: [String: [UserRosterPlayerSummary]]
+
+    private enum RecapTab: String, CaseIterable {
+        case team = "Team"
+        case nationalAwards = "Awards"
+        case allAmericans = "All-Americans"
+        case allConference = "All-Conference"
+    }
+
+    @State private var tab: RecapTab = .team
+    @State private var selectedConferenceId: String
+
+    init(
+        games: [LeagueGameSummary],
+        schedule: [UserGameSummary],
+        userTeamId: String?,
+        userTeamName: String,
+        userConferenceId: String?,
+        standingsByConference: [String: [ConferenceStanding]],
+        conferenceNamesById: [String: String],
+        bracket: NationalTournamentBracket?,
+        roster: [UserRosterPlayerSummary],
+        teamRostersByName: [String: [UserRosterPlayerSummary]]
+    ) {
+        self.games = games
+        self.schedule = schedule
+        self.userTeamId = userTeamId
+        self.userTeamName = userTeamName
+        self.userConferenceId = userConferenceId
+        self.standingsByConference = standingsByConference
+        self.conferenceNamesById = conferenceNamesById
+        self.bracket = bracket
+        self.roster = roster
+        self.teamRostersByName = teamRostersByName
+        _selectedConferenceId = State(initialValue: userConferenceId ?? standingsByConference.keys.sorted().first ?? "")
+    }
+
+    private var playerStats: [SeasonPlayerStat] {
+        SeasonPlayerStat.build(from: games, conferenceIdByTeamId: conferenceIdByTeamId, teamRostersByName: teamRostersByName)
+    }
+
+    private var conferenceIdByTeamId: [String: String] {
+        var result: [String: String] = [:]
+        for rows in standingsByConference.values {
+            for row in rows {
+                result[row.teamId] = row.conferenceId
+            }
+        }
+        return result
+    }
+
+    private var userStats: [SeasonPlayerStat] {
+        playerStats
+            .filter { $0.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame }
+            .sorted { lhs, rhs in
+                if lhs.pointsPerGame != rhs.pointsPerGame { return lhs.pointsPerGame > rhs.pointsPerGame }
+                return lhs.playerName.localizedCaseInsensitiveCompare(rhs.playerName) == .orderedAscending
+            }
+    }
+
+    private var eligibleStats: [SeasonPlayerStat] {
+        playerStats
+            .filter { $0.games >= 8 && $0.minutesPerGame >= 12 }
+            .sorted { lhs, rhs in
+                if lhs.awardScore != rhs.awardScore { return lhs.awardScore > rhs.awardScore }
+                return lhs.playerName.localizedCaseInsensitiveCompare(rhs.playerName) == .orderedAscending
+            }
+    }
+
+    private var awardRows: [(title: String, stat: SeasonPlayerStat?)] {
+        [
+            ("NPOY", eligibleStats.first),
+            ("Freshman of the Year", eligibleStats.first { $0.year.uppercased() == "FR" }),
+            ("Best PG", bestPlayer(for: "PG")),
+            ("Best SG", bestPlayer(for: "SG")),
+            ("Best SF", bestPlayer(for: "SF")),
+            ("Best PF", bestPlayer(for: "PF")),
+            ("Best C", bestPlayer(for: "C")),
+        ]
+    }
+
+    private var allAmericans: [(team: String, players: [SeasonPlayerStat])] {
+        let top = Array(eligibleStats.prefix(15))
+        return [
+            ("First Team", Array(top.prefix(5))),
+            ("Second Team", Array(top.dropFirst(5).prefix(5))),
+            ("Third Team", Array(top.dropFirst(10).prefix(5))),
+        ]
+    }
+
+    private var selectedAllConference: [SeasonPlayerStat] {
+        eligibleStats
+            .filter { $0.conferenceId == selectedConferenceId }
+            .prefix(15)
+            .map { $0 }
+    }
+
+    private var userAwardLines: [String] {
+        let national = awardRows.compactMap { title, stat in
+            stat?.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame ? "\(stat?.playerName ?? ""): \(title)" : nil
+        }
+        let americans = allAmericans.flatMap { team, players in
+            players.filter { $0.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame }
+                .map { "\($0.playerName): \(team) All-American" }
+        }
+        let conference = eligibleStats
+            .filter { $0.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame && $0.conferenceId == userConferenceId }
+            .prefix(15)
+            .map { "\($0.playerName): All-\(conferenceTitle($0.conferenceId ?? userConferenceId ?? ""))" }
+        return national + americans + conference
+    }
+
+    private var userStanding: ConferenceStanding? {
+        guard let userTeamId else { return nil }
+        return standingsByConference.values.flatMap { $0 }.first { $0.teamId == userTeamId }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("Recap", selection: $tab) {
+                ForEach(RecapTab.allCases, id: \.self) { item in
+                    Text(item.rawValue).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding([.horizontal, .top], 16)
+            .padding(.bottom, 8)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    switch tab {
+                    case .team:
+                        teamTab
+                    case .nationalAwards:
+                        awardsTab
+                    case .allAmericans:
+                        allAmericansTab
+                    case .allConference:
+                        allConferenceTab
+                    }
+
+                    NavigationLink {
+                        OffseasonScheduleView()
+                    } label: {
+                        Text("Offseason Schedule")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GameButtonStyle(variant: .primary))
+                    .padding(.top, 4)
+                }
+                .padding(16)
+            }
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Season Recap")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var teamTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            GameCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    GameSectionHeader(title: userTeamName)
+                    HStack(spacing: 8) {
+                        StatChip(title: "RECORD", value: userStanding.map { "\($0.wins)-\($0.losses)" } ?? "--")
+                        StatChip(title: "CONF", value: userStanding.map { "\($0.conferenceWins)-\($0.conferenceLosses)" } ?? "--")
+                        StatChip(title: "POST", value: postseasonText)
+                    }
+                }
+            }
+
+            GameCard {
+                GameSectionHeader(title: "Player Awards")
+                if userAwardLines.isEmpty {
+                    Text("No award winners this season.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(userAwardLines, id: \.self) { line in
+                            Text(line)
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                }
+            }
+
+            playerTable(title: "Final Player Stats", stats: userStats)
+        }
+    }
+
+    private var awardsTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(awardRows, id: \.title) { row in
+                if let stat = row.stat {
+                    awardRow(title: row.title, stat: stat)
+                }
+            }
+        }
+    }
+
+    private var allAmericansTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(allAmericans, id: \.team) { section in
+                playerListCard(title: section.team, stats: section.players)
+            }
+        }
+    }
+
+    private var allConferenceTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Picker("Conference", selection: $selectedConferenceId) {
+                ForEach(standingsByConference.keys.sorted { conferenceTitle($0) < conferenceTitle($1) }, id: \.self) { id in
+                    Text(conferenceTitle(id)).tag(id)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            playerListCard(title: "All-\(conferenceTitle(selectedConferenceId))", stats: selectedAllConference)
+        }
+    }
+
+    private func playerTable(title: String, stats: [SeasonPlayerStat]) -> some View {
+        let columns: [AppTableColumn<String>] = [
+            .init(id: "name", title: "", width: 166, alignment: .leading),
+            .init(id: "g", title: "G", width: 36),
+            .init(id: "pts", title: "PTS", width: 48),
+            .init(id: "reb", title: "REB", width: 48),
+            .init(id: "ast", title: "AST", width: 48),
+            .init(id: "efg", title: "EFG", width: 56),
+            .init(id: "a/to", title: "A:TO", width: 54),
+        ]
+        return GameCard {
+            GameSectionHeader(title: title)
+            AppTable(columns: columns, rows: stats.map { (id: AnyHashable($0.id), data: $0) }) { stat in
+                HStack(spacing: 0) {
+                    NavigationLink {
+                        playerCard(for: stat)
+                    } label: {
+                        AppTableTextCell(text: stat.playerName, width: 166, alignment: .leading, foreground: AppTheme.accent)
+                    }
+                    .buttonStyle(.plain)
+                    AppTableTextCell(text: "\(stat.games)", width: 36)
+                    AppTableTextCell(text: format(stat.pointsPerGame), width: 48)
+                    AppTableTextCell(text: format(stat.reboundsPerGame), width: 48)
+                    AppTableTextCell(text: format(stat.assistsPerGame), width: 48)
+                    AppTableTextCell(text: pct(stat.effectiveFieldGoalPercentage), width: 56)
+                    AppTableTextCell(text: format(stat.assistTurnoverRatio), width: 54)
+                }
+            }
+        }
+    }
+
+    private func playerListCard(title: String, stats: [SeasonPlayerStat]) -> some View {
+        GameCard {
+            GameSectionHeader(title: title)
+            if stats.isEmpty {
+                Text("No qualified players.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(Array(stats.enumerated()), id: \.element.id) { index, stat in
+                        HStack(spacing: 10) {
+                            Text("\(index + 1)")
+                                .font(.callout.weight(.black))
+                                .foregroundStyle(index < 5 ? AppTheme.accent : .secondary)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                NavigationLink {
+                                    playerCard(for: stat)
+                                } label: {
+                                    Text(stat.playerName)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(AppTheme.accent)
+                                }
+                                .buttonStyle(.plain)
+                                Text("\(stat.position) • \(stat.teamName)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(format(stat.awardScore))
+                                .font(.callout.monospacedDigit().weight(.bold))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func awardRow(title: String, stat: SeasonPlayerStat) -> some View {
+        GameCard {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    NavigationLink {
+                        playerCard(for: stat)
+                    } label: {
+                        Text(stat.playerName)
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(AppTheme.accent)
+                    }
+                    .buttonStyle(.plain)
+                    Text("\(stat.position) • \(stat.teamName) • \(format(stat.pointsPerGame)) PPG, \(format(stat.reboundsPerGame)) RPG, \(format(stat.assistsPerGame)) APG")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(format(stat.awardScore))
+                    .font(.title3.monospacedDigit().bold())
+                    .foregroundStyle(AppTheme.ink)
+            }
+        }
+    }
+
+    private var postseasonText: String {
+        guard let userTeamId else { return "None" }
+        if let champ = bracket?.rounds.last?.first?.winnerTeamId, champ == userTeamId {
+            return "Champion"
+        }
+        let completedUserNationalWins = games.filter { game in
+            game.type == "national_tournament"
+                && game.result?.objectDictionary?["winnerTeamId"]?.stringValue == userTeamId
+        }.count
+        if completedUserNationalWins > 0 {
+            let labels = ["R32", "Sweet 16", "Elite 8", "Final 4", "Title Game", "Champion"]
+            return labels[safe: min(completedUserNationalWins - 1, labels.count - 1)] ?? "Tournament"
+        }
+        if bracket?.teams.contains(where: { $0.teamId == userTeamId }) == true {
+            return "Tournament"
+        }
+        return "None"
+    }
+
+    private func bestPlayer(for position: String) -> SeasonPlayerStat? {
+        eligibleStats.first { $0.normalizedPosition == position }
+    }
+
+    private func playerCard(for stat: SeasonPlayerStat) -> PlayerCardDetailView {
+        PlayerCardDetailView(player: playerProfile(for: stat), games: games, teamName: stat.teamName)
+    }
+
+    private func playerProfile(for stat: SeasonPlayerStat) -> UserRosterPlayerSummary {
+        let matches = rosterForTeam(named: stat.teamName)?.filter { $0.name == stat.playerName } ?? []
+        if matches.count == 1 { return matches[0] }
+        if let positional = matches.first(where: { normalizePosition($0.position) == stat.normalizedPosition }) {
+            return positional
+        }
+        if stat.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame,
+           let userMatch = roster.first(where: { $0.name == stat.playerName }) {
+            return userMatch
+        }
+        return UserRosterPlayerSummary(
+            playerIndex: -1,
+            name: stat.playerName,
+            position: stat.position,
+            year: stat.year.isEmpty ? "N/A" : stat.year,
+            home: nil,
+            height: nil,
+            weight: nil,
+            wingspan: nil,
+            overall: 0,
+            isStarter: false,
+            attributes: nil
+        )
+    }
+
+    private func rosterForTeam(named teamName: String) -> [UserRosterPlayerSummary]? {
+        if let direct = teamRostersByName[teamName] { return direct }
+        return teamRostersByName.first { $0.key.caseInsensitiveCompare(teamName) == .orderedSame }?.value
+    }
+
+    private func conferenceTitle(_ id: String) -> String {
+        conferenceNamesById[id] ?? id.split(separator: "-").map { String($0).capitalized }.joined(separator: " ")
+    }
+
+    private func format(_ value: Double) -> String {
+        String(format: "%.1f", value)
+    }
+
+    private func pct(_ value: Double) -> String {
+        guard value > 0 else { return "--" }
+        return String(format: "%.1f%%", value)
+    }
+}
+
+struct OffseasonSchedulePhase: Identifiable, Hashable {
+    enum Status: String {
+        case completed = "Completed"
+        case current = "Current"
+        case upcoming = "Upcoming"
+    }
+
+    let id: String
+    let title: String
+    let detail: String
+    let status: Status
+
+    static let initialPhases: [OffseasonSchedulePhase] = [
+        OffseasonSchedulePhase(
+            id: "season-recap",
+            title: "Season Recap",
+            detail: "Review final results, awards, standings, and team stats.",
+            status: .completed
+        ),
+    ]
+}
+
+struct OffseasonScheduleView: View {
+    private let phases = OffseasonSchedulePhase.initialPhases
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GameCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        GameSectionHeader(title: "Offseason")
+                        Text("Each offseason phase will appear here as it is added.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                ForEach(Array(phases.enumerated()), id: \.element.id) { index, phase in
+                    offseasonPhaseRow(phase, number: index + 1)
+                }
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Offseason Schedule")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func offseasonPhaseRow(_ phase: OffseasonSchedulePhase, number: Int) -> some View {
+        GameCard {
+            HStack(alignment: .top, spacing: 12) {
+                Text("\(number)")
+                    .font(.caption.monospacedDigit().weight(.black))
+                    .foregroundStyle(phase.status == .current ? .white : AppTheme.accent)
+                    .frame(width: 28, height: 28)
+                    .background(phase.status == .current ? AppTheme.accent : AppTheme.accent.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(phase.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.ink)
+
+                        Spacer(minLength: 8)
+
+                        GamePill(text: phase.status.rawValue, color: statusColor(phase.status))
+                    }
+
+                    Text(phase.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func statusColor(_ status: OffseasonSchedulePhase.Status) -> Color {
+        switch status {
+        case .completed: return AppTheme.success
+        case .current: return AppTheme.accent
+        case .upcoming: return .secondary
+        }
+    }
+}
+
+private struct SeasonPlayerStat: Hashable {
+    let playerName: String
+    let teamId: String
+    let teamName: String
+    let conferenceId: String?
+    let position: String
+    let year: String
+    var games: Int = 0
+    var minutes: Double = 0
+    var points: Int = 0
+    var rebounds: Int = 0
+    var assists: Int = 0
+    var steals: Int = 0
+    var blocks: Int = 0
+    var turnovers: Int = 0
+    var fgMade: Int = 0
+    var fgAttempts: Int = 0
+    var threeMade: Int = 0
+    var ftMade: Int = 0
+    var ftAttempts: Int = 0
+
+    var id: String { "\(teamName)|\(playerName)|\(position)" }
+    var minutesPerGame: Double { perGame(minutes) }
+    var pointsPerGame: Double { perGame(points) }
+    var reboundsPerGame: Double { perGame(rebounds) }
+    var assistsPerGame: Double { perGame(assists) }
+    var stealsPerGame: Double { perGame(steals) }
+    var blocksPerGame: Double { perGame(blocks) }
+    var turnoversPerGame: Double { perGame(turnovers) }
+    var effectiveFieldGoalPercentage: Double {
+        guard fgAttempts > 0 else { return 0 }
+        return ((Double(fgMade) + 0.5 * Double(threeMade)) / Double(fgAttempts)) * 100
+    }
+    var trueShootingPercentage: Double {
+        let attempts = 2 * (Double(fgAttempts) + 0.44 * Double(ftAttempts))
+        guard attempts > 0 else { return 0 }
+        return (Double(points) / attempts) * 100
+    }
+    var assistTurnoverRatio: Double {
+        Double(assists) / Double(max(1, turnovers))
+    }
+    var normalizedPosition: String { normalizePosition(position) }
+    var awardScore: Double {
+        pointsPerGame
+        + reboundsPerGame * 1.15
+        + assistsPerGame * 1.45
+        + stealsPerGame * 2.2
+        + blocksPerGame * 2.0
+        + effectiveFieldGoalPercentage * 0.08
+        + trueShootingPercentage * 0.06
+        + assistTurnoverRatio * 1.2
+        + minutesPerGame * 0.08
+        - turnoversPerGame * 0.9
+        + min(Double(games), 38) * 0.06
+    }
+
+    private func perGame(_ value: Int) -> Double {
+        guard games > 0 else { return 0 }
+        return Double(value) / Double(games)
+    }
+
+    private func perGame(_ value: Double) -> Double {
+        guard games > 0 else { return 0 }
+        return value / Double(games)
+    }
+
+    static func build(
+        from games: [LeagueGameSummary],
+        conferenceIdByTeamId: [String: String],
+        teamRostersByName: [String: [UserRosterPlayerSummary]]
+    ) -> [SeasonPlayerStat] {
+        struct Key: Hashable {
+            let playerName: String
+            let teamName: String
+            let position: String
+        }
+
+        var rosterByTeamName: [String: [UserRosterPlayerSummary]] = [:]
+        for (teamName, roster) in teamRostersByName {
+            rosterByTeamName[teamName.lowercased()] = rosterByTeamName[teamName.lowercased()] ?? roster
+        }
+        var totals: [Key: SeasonPlayerStat] = [:]
+
+        for game in games where game.completed == true {
+            guard
+                let resultObject = game.result?.objectDictionary,
+                let boxArray = resultObject["boxScore"]?.arrayValues
+            else { continue }
+
+            for (index, boxValue) in boxArray.enumerated() {
+                guard let teamObject = boxValue.objectDictionary else { continue }
+                let teamName = index == 0 ? (game.homeTeamName ?? teamObject["name"]?.stringValue ?? "Team") : (game.awayTeamName ?? teamObject["name"]?.stringValue ?? "Team")
+                let teamId = index == 0 ? (game.homeTeamId ?? teamName) : (game.awayTeamId ?? teamName)
+                let players = teamObject["players"]?.arrayValues ?? []
+                let roster = rosterByTeamName[teamName.lowercased()] ?? []
+
+                for player in players {
+                    guard let parsed = ParsedPlayerBoxScore(value: player) else { continue }
+                    let key = Key(playerName: parsed.playerName, teamName: teamName, position: parsed.position)
+                    let parsedPosition = normalizePosition(parsed.position)
+                    let positionalProfile = roster.first { rosterPlayer in
+                        rosterPlayer.name == parsed.playerName
+                            && normalizePosition(rosterPlayer.position) == parsedPosition
+                    }
+                    let nameProfile = roster.first { rosterPlayer in
+                        rosterPlayer.name == parsed.playerName
+                    }
+                    let profile = positionalProfile ?? nameProfile
+                    var current = totals[key] ?? SeasonPlayerStat(
+                        playerName: parsed.playerName,
+                        teamId: teamId,
+                        teamName: teamName,
+                        conferenceId: conferenceIdByTeamId[teamId],
+                        position: parsed.position,
+                        year: profile?.year ?? ""
+                    )
+                    current.games += 1
+                    current.minutes += parsed.minutes
+                    current.points += parsed.points
+                    current.rebounds += parsed.rebounds
+                    current.assists += parsed.assists
+                    current.steals += parsed.steals
+                    current.blocks += parsed.blocks
+                    current.turnovers += parsed.turnovers
+                    current.fgMade += parsed.fgMade
+                    current.fgAttempts += parsed.fgAttempts
+                    current.threeMade += parsed.threeMade
+                    current.ftMade += parsed.ftMade
+                    current.ftAttempts += parsed.ftAttempts
+                    totals[key] = current
+                }
+            }
+        }
+
+        return Array(totals.values)
+    }
+}
+
+private func normalizePosition(_ position: String) -> String {
+    switch position.uppercased() {
+    case "PG":
+        return "PG"
+    case "SG", "CG":
+        return "SG"
+    case "SF", "WING":
+        return "SF"
+    case "PF", "F":
+        return "PF"
+    case "C", "BIG":
+        return "C"
+    default:
+        return position.uppercased()
     }
 }
 

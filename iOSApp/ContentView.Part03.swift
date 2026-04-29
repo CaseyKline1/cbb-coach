@@ -18,6 +18,7 @@ extension CollegeLeagueHomeView {
         coachingStaff = getUserCoachingStaff(league)
         summary = getLeagueSummary(league)
         rankings = getRankings(league)
+        nationalBracket = getNationalTournamentBracket(league)
         if includeDeferredData {
             applyDeferredRefresh(Self.buildDeferredRefreshData(for: league))
         }
@@ -197,6 +198,7 @@ struct SkipAheadOverlayView: View {
 }
 
 enum LeagueMenuDestination: Hashable {
+    case bracket
     case roster
     case schedule
     case rotation

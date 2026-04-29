@@ -72,6 +72,41 @@ func conferenceTournamentTemplate(entrantCount: Int) -> [[LeagueStore.Conference
     }
 }
 
+func nationalTournamentTemplate() -> [[LeagueStore.NationalTournamentState.Matchup]] {
+    typealias Ref = LeagueStore.NationalTournamentState.ParticipantRef
+    typealias Matchup = LeagueStore.NationalTournamentState.Matchup
+
+    func seed(_ value: Int) -> Ref {
+        Ref(overallSeed: value, fromRound: nil, fromGame: nil)
+    }
+
+    func winner(_ round: Int, _ game: Int) -> Ref {
+        Ref(overallSeed: nil, fromRound: round, fromGame: game)
+    }
+
+    let regionSeeds = [
+        [1, 16, 8, 9, 5, 12, 4, 13, 6, 11, 3, 14, 7, 10, 2, 15],
+        [4, 13, 5, 12, 8, 9, 1, 16, 7, 10, 2, 15, 6, 11, 3, 14],
+        [3, 14, 6, 11, 7, 10, 2, 15, 8, 9, 1, 16, 5, 12, 4, 13],
+        [2, 15, 7, 10, 6, 11, 3, 14, 5, 12, 4, 13, 8, 9, 1, 16],
+    ]
+
+    let roundOne = regionSeeds.enumerated().flatMap { regionIndex, region -> [Matchup] in
+        stride(from: 0, to: region.count, by: 2).map { index in
+            let topOverallSeed = (region[index] - 1) * 4 + regionIndex + 1
+            let bottomOverallSeed = (region[index + 1] - 1) * 4 + regionIndex + 1
+            return Matchup(top: seed(topOverallSeed), bottom: seed(bottomOverallSeed))
+        }
+    }
+    let roundTwo = stride(from: 0, to: 32, by: 2).map { Matchup(top: winner(0, $0), bottom: winner(0, $0 + 1)) }
+    let roundThree = stride(from: 0, to: 16, by: 2).map { Matchup(top: winner(1, $0), bottom: winner(1, $0 + 1)) }
+    let roundFour = stride(from: 0, to: 8, by: 2).map { Matchup(top: winner(2, $0), bottom: winner(2, $0 + 1)) }
+    let roundFive = stride(from: 0, to: 4, by: 2).map { Matchup(top: winner(3, $0), bottom: winner(3, $0 + 1)) }
+    let championship = [Matchup(top: winner(4, 0), bottom: winner(4, 1))]
+
+    return [roundOne, roundTwo, roundThree, roundFour, roundFive, championship]
+}
+
 func sortedConferenceTeamIdsForSeeding(_ state: LeagueStore.State, conferenceId: String) -> [String] {
     state.teams
         .filter { $0.conferenceId == conferenceId }
@@ -124,6 +159,8 @@ func prepareConferenceTournamentsIfNeeded(_ state: inout LeagueStore.State) {
     }
 
     appendReadyConferenceTournamentRoundsInState(&state)
+    prepareNationalTournamentIfNeeded(&state)
+    appendReadyNationalTournamentRoundsInState(&state)
 }
 
 func appendReadyConferenceTournamentRoundsInState(_ state: inout LeagueStore.State) {
@@ -236,6 +273,162 @@ func recordConferenceTournamentWinner(
     state.conferenceTournaments = tournaments
 }
 
+func conferenceTournamentChampions(_ state: LeagueStore.State) -> [String] {
+    guard let tournaments = state.conferenceTournaments, !tournaments.isEmpty else { return [] }
+    var champions: [String] = []
+    champions.reserveCapacity(tournaments.count)
+
+    for tournament in tournaments {
+        guard let finalRound = tournament.winnersByRound.last, finalRound.count == 1, let champion = finalRound.first ?? nil else {
+            return []
+        }
+        champions.append(champion)
+    }
+
+    return champions
+}
+
+func prepareNationalTournamentIfNeeded(_ state: inout LeagueStore.State) {
+    guard state.nationalTournament == nil else { return }
+    let automaticBidIds = conferenceTournamentChampions(state)
+    guard !automaticBidIds.isEmpty else { return }
+
+    let rankings = calculateRankings(state, topN: state.teams.count).rankings
+    var selectedIds = Set(automaticBidIds)
+    var orderedIds = automaticBidIds
+
+    for team in rankings where orderedIds.count < 64 {
+        guard !selectedIds.contains(team.teamId) else { continue }
+        selectedIds.insert(team.teamId)
+        orderedIds.append(team.teamId)
+    }
+
+    guard orderedIds.count == 64 else { return }
+
+    let rankingIndexByTeamId = Dictionary(uniqueKeysWithValues: rankings.enumerated().map { ($0.element.teamId, $0.offset) })
+    orderedIds.sort {
+        let lhsRank = rankingIndexByTeamId[$0] ?? Int.max
+        let rhsRank = rankingIndexByTeamId[$1] ?? Int.max
+        if lhsRank != rhsRank { return lhsRank < rhsRank }
+        return $0 < $1
+    }
+
+    let automaticBidSet = Set(automaticBidIds)
+    let entrants = orderedIds.enumerated().map { index, teamId in
+        LeagueStore.NationalTournamentState.Entrant(
+            teamId: teamId,
+            overallSeed: index + 1,
+            seedLine: index / 4 + 1,
+            automaticBid: automaticBidSet.contains(teamId)
+        )
+    }
+    let rounds = nationalTournamentTemplate()
+    state.nationalTournament = LeagueStore.NationalTournamentState(
+        entrants: entrants,
+        rounds: rounds,
+        winnersByRound: rounds.map { Array(repeating: nil, count: $0.count) },
+        scheduledRoundCount: 0
+    )
+}
+
+func appendReadyNationalTournamentRoundsInState(_ state: inout LeagueStore.State) {
+    guard var tournament = state.nationalTournament else { return }
+
+    let roundIndex = tournament.scheduledRoundCount
+    guard roundIndex < tournament.rounds.count else { return }
+
+    let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
+    let round = tournament.rounds[roundIndex]
+    var resolved: [(homeId: String, awayId: String, gameIndex: Int)] = []
+    resolved.reserveCapacity(round.count)
+
+    for gameIndex in round.indices {
+        let matchup = round[gameIndex]
+        guard
+            let topTeamId = resolveNationalTournamentParticipantTeamId(tournament: tournament, participant: matchup.top),
+            let bottomTeamId = resolveNationalTournamentParticipantTeamId(tournament: tournament, participant: matchup.bottom)
+        else {
+            resolved.removeAll(keepingCapacity: false)
+            break
+        }
+        resolved.append((homeId: topTeamId, awayId: bottomTeamId, gameIndex: gameIndex))
+    }
+
+    guard resolved.count == round.count else { return }
+
+    let conferenceTournamentEndDay = state.schedule
+        .filter { $0.type == "conference_tournament" }
+        .map(\.day)
+        .max() ?? state.totalRegularSeasonGames
+    let day = conferenceTournamentEndDay + 1 + roundIndex
+
+    for game in resolved {
+        guard let homeTeam = teamById[game.homeId], let awayTeam = teamById[game.awayId] else { continue }
+        state.schedule.append(
+            LeagueStore.ScheduledGame(
+                gameId: "nt_r\(roundIndex + 1)_g\(game.gameIndex + 1)",
+                day: day,
+                type: "national_tournament",
+                siteType: "neutral",
+                neutralSite: true,
+                homeTeamId: homeTeam.teamId,
+                homeTeamName: homeTeam.teamName,
+                awayTeamId: awayTeam.teamId,
+                awayTeamName: awayTeam.teamName,
+                conferenceId: nil,
+                tournamentRound: roundIndex,
+                tournamentGameIndex: game.gameIndex,
+                completed: false,
+                result: nil
+            )
+        )
+    }
+
+    tournament.scheduledRoundCount += 1
+    state.nationalTournament = tournament
+    state.schedule.sort {
+        if $0.day != $1.day { return $0.day < $1.day }
+        return $0.gameId < $1.gameId
+    }
+}
+
+func resolveNationalTournamentParticipantTeamId(
+    tournament: LeagueStore.NationalTournamentState,
+    participant: LeagueStore.NationalTournamentState.ParticipantRef
+) -> String? {
+    if let overallSeed = participant.overallSeed {
+        return tournament.entrants.first(where: { $0.overallSeed == overallSeed })?.teamId
+    }
+
+    guard
+        let fromRound = participant.fromRound,
+        let fromGame = participant.fromGame,
+        fromRound >= 0,
+        fromRound < tournament.winnersByRound.count,
+        fromGame >= 0,
+        fromGame < tournament.winnersByRound[fromRound].count
+    else {
+        return nil
+    }
+
+    return tournament.winnersByRound[fromRound][fromGame]
+}
+
+func recordNationalTournamentWinner(
+    _ state: inout LeagueStore.State,
+    roundIndex: Int,
+    gameIndex: Int,
+    winnerTeamId: String?
+) {
+    guard let winnerTeamId else { return }
+    guard var tournament = state.nationalTournament else { return }
+    guard roundIndex >= 0, roundIndex < tournament.winnersByRound.count else { return }
+    guard gameIndex >= 0, gameIndex < tournament.winnersByRound[roundIndex].count else { return }
+
+    tournament.winnersByRound[roundIndex][gameIndex] = winnerTeamId
+    state.nationalTournament = tournament
+}
+
 func autoFillUserNonConferenceOpponentsInState(_ state: inout LeagueStore.State, seed: String) {
     guard let user = state.teams.first(where: { $0.teamId == state.userTeamId }) else { return }
     var random = SeededRandom(seed: hashString("\(state.optionsSeed):\(seed):\(state.userTeamId)"))
@@ -257,6 +450,7 @@ func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
     state.schedule.removeAll(keepingCapacity: true)
     state.userGameHistory.removeAll(keepingCapacity: true)
     state.conferenceTournaments = nil
+    state.nationalTournament = nil
     state.remainingRegularSeasonGames = nil
     resetTeamRecords(&state)
 
@@ -482,7 +676,7 @@ private func simulateScheduledGameOutcome(optionsSeed: String, input: ScheduledG
 
     var homeScore = result.home.score
     var awayScore = result.away.score
-    if input.game.type == "conference_tournament", homeScore == awayScore {
+    if (input.game.type == "conference_tournament" || input.game.type == "national_tournament"), homeScore == awayScore {
         if random.nextUnit() < 0.5 {
             homeScore += 1
         } else {
@@ -571,6 +765,17 @@ private func applyScheduledGameOutcomeInState(_ state: inout LeagueStore.State, 
         recordConferenceTournamentWinner(
             &state,
             conferenceId: conferenceId,
+            roundIndex: roundIndex,
+            gameIndex: gameIndex,
+            winnerTeamId: winnerTeamId
+        )
+    }
+
+    if game.type == "national_tournament",
+       let roundIndex = game.tournamentRound,
+       let gameIndex = game.tournamentGameIndex {
+        recordNationalTournamentWinner(
+            &state,
             roundIndex: roundIndex,
             gameIndex: gameIndex,
             winnerTeamId: winnerTeamId

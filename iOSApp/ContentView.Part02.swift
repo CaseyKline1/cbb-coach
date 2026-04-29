@@ -61,6 +61,7 @@ struct CollegeLeagueHomeView: View {
     @State var conferenceStandings: [String: [ConferenceStanding]] = [:]
     @State var conferenceNamesById: [String: String] = [:]
     @State var rankings: LeagueRankings?
+    @State var nationalBracket: NationalTournamentBracket?
     @State var completedLeagueGames: [LeagueGameSummary] = []
     @State var teamRostersByName: [String: [UserRosterPlayerSummary]] = [:]
     @State var teamStatsById: [String: TeamAggregateStats] = [:]
@@ -68,6 +69,7 @@ struct CollegeLeagueHomeView: View {
     @State var isSkipAheadInProgress = false
     @State var skipAheadTitle = ""
     @State var skipAheadGameRecaps: [String] = []
+    @State var showingSeasonRecap = false
 
     var body: some View {
         NavigationStack {
@@ -101,8 +103,12 @@ struct CollegeLeagueHomeView: View {
                     }
 
                     HStack(spacing: 10) {
-                        Button("Sim Next User Game") {
-                            playNextGame()
+                        Button(primaryAdvanceButtonTitle) {
+                            if seasonIsComplete {
+                                showingSeasonRecap = true
+                            } else {
+                                playNextGame()
+                            }
                         }
                         .buttonStyle(GameButtonStyle(variant: .primary))
                         .disabled(isSkipAheadInProgress)
@@ -120,6 +126,11 @@ struct CollegeLeagueHomeView: View {
 
                     GameCard {
                         VStack(spacing: 8) {
+                            NavigationLink(value: LeagueMenuDestination.bracket) {
+                                MenuRow(title: "Bracket")
+                            }
+                            .buttonStyle(.plain)
+
                             GameSectionHeader(title: "Team")
                             NavigationLink(value: LeagueMenuDestination.roster) {
                                 MenuRow(title: "Roster")
@@ -229,6 +240,11 @@ struct CollegeLeagueHomeView: View {
                         rankings: rankings,
                         userTeamId: summary?.userTeamId
                     )
+                case .bracket:
+                    NationalBracketView(
+                        bracket: nationalBracket,
+                        userTeamId: summary?.userTeamId
+                    )
                 case .coachingStaff:
                     CoachingStaffView(
                         staff: coachingStaff,
@@ -241,6 +257,20 @@ struct CollegeLeagueHomeView: View {
                         BoxScoreDetailView(game: game, userTeamName: summary?.userTeamName ?? teamName)
                     }
                 }
+            }
+            .navigationDestination(isPresented: $showingSeasonRecap) {
+                SeasonRecapView(
+                    games: completedLeagueGames,
+                    schedule: schedule,
+                    userTeamId: summary?.userTeamId,
+                    userTeamName: summary?.userTeamName ?? teamName,
+                    userConferenceId: userConferenceId,
+                    standingsByConference: conferenceStandings,
+                    conferenceNamesById: conferenceNamesById,
+                    bracket: nationalBracket,
+                    roster: roster,
+                    teamRostersByName: teamRostersByName
+                )
             }
             .onAppear {
                 if league == nil {
@@ -282,6 +312,14 @@ struct CollegeLeagueHomeView: View {
             return $0.isHome == true ? home > away : away > home
         }.count
         return "\(wins)-\(max(0, completedGames.count - wins))"
+    }
+
+    private var seasonIsComplete: Bool {
+        summary?.status == "completed"
+    }
+
+    private var primaryAdvanceButtonTitle: String {
+        seasonIsComplete ? "Advance to Offseason" : "Sim Next User Game"
     }
 
     private var userRanking: Int? {
