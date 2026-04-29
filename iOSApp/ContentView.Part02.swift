@@ -62,6 +62,7 @@ struct CollegeLeagueHomeView: View {
     @State var conferenceNamesById: [String: String] = [:]
     @State var rankings: LeagueRankings?
     @State var nationalBracket: NationalTournamentBracket?
+    @State var nilBudgetSummary: NILBudgetSummary?
     @State var completedLeagueGames: [LeagueGameSummary] = []
     @State var teamRostersByName: [String: [UserRosterPlayerSummary]] = [:]
     @State var teamStatsById: [String: TeamAggregateStats] = [:]
@@ -268,6 +269,7 @@ struct CollegeLeagueHomeView: View {
                     standingsByConference: conferenceStandings,
                     conferenceNamesById: conferenceNamesById,
                     bracket: nationalBracket,
+                    nilBudgetSummary: nilBudgetSummary,
                     roster: roster,
                     teamRostersByName: teamRostersByName
                 )

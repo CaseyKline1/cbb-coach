@@ -19,6 +19,7 @@ extension CollegeLeagueHomeView {
         summary = getLeagueSummary(league)
         rankings = getRankings(league)
         nationalBracket = getNationalTournamentBracket(league)
+        nilBudgetSummary = getNILBudgetSummary(league)
         if includeDeferredData {
             applyDeferredRefresh(Self.buildDeferredRefreshData(for: league))
         }

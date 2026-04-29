@@ -483,3 +483,26 @@ func actionInitiationShareStaysBalanced() {
 
     #expect(starShare <= 0.42)
 }
+
+@Test("NIL budgets apply revenue sharing tiers and service academy exception")
+func nilBudgetRevenueSharingRules() throws {
+    let uconn = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "nil-uconn"))
+    let uconnBudget = try #require(getNILBudgetSummary(uconn).userTeam)
+    #expect(uconnBudget.revenueSharing == 8_000_000)
+    #expect(uconnBudget.total >= uconnBudget.revenueSharing)
+
+    let duke = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "nil-duke"))
+    let dukeBudget = try #require(getNILBudgetSummary(duke).userTeam)
+    #expect(dukeBudget.revenueSharing == 6_000_000)
+
+    let alabama = try createD1League(options: CreateLeagueOptions(userTeamName: "Alabama", seed: "nil-alabama"))
+    let alabamaBudget = try #require(getNILBudgetSummary(alabama).userTeam)
+    #expect(alabamaBudget.revenueSharing == 3_000_000)
+
+    let airForce = try createD1League(options: CreateLeagueOptions(userTeamName: "Air Force", seed: "nil-air-force"))
+    let airForceBudget = try #require(getNILBudgetSummary(airForce).userTeam)
+    #expect(airForceBudget.serviceAcademy)
+    #expect(airForceBudget.revenueSharing == 0)
+    #expect(airForceBudget.donations == 0)
+    #expect(airForceBudget.total == 0)
+}

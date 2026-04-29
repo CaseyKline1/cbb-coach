@@ -267,6 +267,34 @@ public struct UserCoachingStaffSummary: Codable, Equatable, Sendable {
     public var gamePrepAssistantIndex: Int?
 }
 
+public struct NILBudgetTeamSummary: Codable, Equatable, Sendable, Identifiable {
+    public var teamId: String
+    public var teamName: String
+    public var conferenceId: String
+    public var conferenceName: String
+    public var revenueSharing: Double
+    public var donations: Double
+    public var total: Double
+    public var serviceAcademy: Bool
+    public var prestigeScore: Double
+    public var fundraisingScore: Double
+    public var successScore: Double
+    public var awardScore: Double
+
+    public var id: String { teamId }
+}
+
+public struct NILBudgetSummary: Codable, Equatable, Sendable {
+    public var userTeamId: String
+    public var teams: [NILBudgetTeamSummary]
+    public var conferenceAverage: Double
+    public var nationalAverage: Double
+
+    public var userTeam: NILBudgetTeamSummary? {
+        teams.first { $0.teamId == userTeamId }
+    }
+}
+
 public struct CreateLeagueOptions: Codable, Equatable, Sendable {
     public var userTeamName: String
     public var userTeamId: String?

@@ -220,6 +220,7 @@ struct SeasonRecapView: View {
     let standingsByConference: [String: [ConferenceStanding]]
     let conferenceNamesById: [String: String]
     let bracket: NationalTournamentBracket?
+    let nilBudgetSummary: NILBudgetSummary?
     let roster: [UserRosterPlayerSummary]
     let teamRostersByName: [String: [UserRosterPlayerSummary]]
 
@@ -242,6 +243,7 @@ struct SeasonRecapView: View {
         standingsByConference: [String: [ConferenceStanding]],
         conferenceNamesById: [String: String],
         bracket: NationalTournamentBracket?,
+        nilBudgetSummary: NILBudgetSummary?,
         roster: [UserRosterPlayerSummary],
         teamRostersByName: [String: [UserRosterPlayerSummary]]
     ) {
@@ -253,6 +255,7 @@ struct SeasonRecapView: View {
         self.standingsByConference = standingsByConference
         self.conferenceNamesById = conferenceNamesById
         self.bracket = bracket
+        self.nilBudgetSummary = nilBudgetSummary
         self.roster = roster
         self.teamRostersByName = teamRostersByName
         _selectedConferenceId = State(initialValue: userConferenceId ?? standingsByConference.keys.sorted().first ?? "")
@@ -363,7 +366,7 @@ struct SeasonRecapView: View {
                     }
 
                     NavigationLink {
-                        OffseasonScheduleView()
+                        OffseasonScheduleView(nilBudgetSummary: nilBudgetSummary)
                     } label: {
                         Text("Offseason Schedule")
                             .frame(maxWidth: .infinity)
@@ -630,10 +633,18 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
             detail: "Review final results, awards, standings, and team stats.",
             status: .completed
         ),
+        OffseasonSchedulePhase(
+            id: "nil-budgets",
+            title: "NIL Budgets",
+            detail: "Reveal next season's revenue sharing and donor pool.",
+            status: .current
+        ),
     ]
 }
 
 struct OffseasonScheduleView: View {
+    let nilBudgetSummary: NILBudgetSummary?
+
     private let phases = OffseasonSchedulePhase.initialPhases
 
     var body: some View {
@@ -649,7 +660,16 @@ struct OffseasonScheduleView: View {
                 }
 
                 ForEach(Array(phases.enumerated()), id: \.element.id) { index, phase in
-                    offseasonPhaseRow(phase, number: index + 1)
+                    if phase.id == "nil-budgets" {
+                        NavigationLink {
+                            NILBudgetView(summary: nilBudgetSummary)
+                        } label: {
+                            offseasonPhaseRow(phase, number: index + 1)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        offseasonPhaseRow(phase, number: index + 1)
+                    }
                 }
             }
             .padding(16)
@@ -680,10 +700,18 @@ struct OffseasonScheduleView: View {
                         GamePill(text: phase.status.rawValue, color: statusColor(phase.status))
                     }
 
-                    Text(phase.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Text(phase.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        if phase.id == "nil-budgets" {
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
         }
@@ -695,6 +723,220 @@ struct OffseasonScheduleView: View {
         case .current: return AppTheme.accent
         case .upcoming: return .secondary
         }
+    }
+}
+
+struct NILBudgetView: View {
+    let summary: NILBudgetSummary?
+
+    private var userBudget: NILBudgetTeamSummary? {
+        summary?.userTeam
+    }
+
+    private var topBudgets: [NILBudgetTeamSummary] {
+        Array((summary?.teams ?? []).prefix(8))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if let budget = userBudget {
+                    teamHeaderCard(budget)
+                    budgetBreakdownCard(budget)
+                    factorsCard(budget)
+                    leagueContextCard(budget)
+                    topBudgetsCard
+                } else {
+                    GameCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            GameSectionHeader(title: "NIL Budgets")
+                            Text("Budget data is not available for this league yet.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("NIL Budgets")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func teamHeaderCard(_ budget: NILBudgetTeamSummary) -> some View {
+        GameCard {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(budget.teamName)
+                        .font(.headline.weight(.black))
+                        .foregroundStyle(AppTheme.ink)
+                    GameBadge(text: budget.conferenceName, color: AppTheme.accent)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(moneyText(budget.total))
+                        .font(.title2.monospacedDigit().weight(.black))
+                        .foregroundStyle(budget.total > 0 ? AppTheme.accent : AppTheme.warning)
+                    Text("available")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func budgetBreakdownCard(_ budget: NILBudgetTeamSummary) -> some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 0) {
+                GameSectionHeader(title: "Budget Breakdown")
+                budgetRow(label: "Revenue Sharing", note: revenueSharingNote(for: budget), amount: budget.revenueSharing)
+                Divider().padding(.vertical, 8)
+                budgetRow(label: "Donations", note: "Prestige, fundraising, winning, postseason results, and awards", amount: budget.donations)
+                Divider().padding(.vertical, 8)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Total NIL Budget")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(AppTheme.ink)
+                    Spacer()
+                    Text(moneyText(budget.total))
+                        .font(.title3.monospacedDigit().weight(.black))
+                        .foregroundStyle(AppTheme.accent)
+                }
+            }
+        }
+    }
+
+    private func factorsCard(_ budget: NILBudgetTeamSummary) -> some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 10) {
+                GameSectionHeader(title: "Donation Drivers")
+                HStack(spacing: 8) {
+                    factorChip(title: "PRESTIGE", value: percentText(budget.prestigeScore))
+                    factorChip(title: "FUND", value: percentText(budget.fundraisingScore))
+                    factorChip(title: "SUCCESS", value: scoreText(budget.successScore))
+                    factorChip(title: "AWARDS", value: scoreText(budget.awardScore))
+                }
+            }
+        }
+    }
+
+    private func leagueContextCard(_ budget: NILBudgetTeamSummary) -> some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 0) {
+                GameSectionHeader(title: "League Context")
+                contextRow(label: "\(budget.conferenceName) Average", amount: summary?.conferenceAverage ?? 0)
+                Divider().padding(.vertical, 8)
+                contextRow(label: "National Average", amount: summary?.nationalAverage ?? 0)
+            }
+        }
+    }
+
+    private var topBudgetsCard: some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 10) {
+                GameSectionHeader(title: "Top NIL Budgets")
+                ForEach(Array(topBudgets.enumerated()), id: \.element.teamId) { index, team in
+                    HStack(spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(.caption.monospacedDigit().weight(.black))
+                            .foregroundStyle(team.teamId == summary?.userTeamId ? .white : AppTheme.accent)
+                            .frame(width: 24, height: 24)
+                            .background(team.teamId == summary?.userTeamId ? AppTheme.accent : AppTheme.accent.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(team.teamName)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(team.teamId == summary?.userTeamId ? AppTheme.accent : AppTheme.ink)
+                            Text(team.conferenceName)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(moneyText(team.total))
+                            .font(.subheadline.monospacedDigit().weight(.bold))
+                    }
+                }
+            }
+        }
+    }
+
+    private func budgetRow(label: String, note: String, amount: Double) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.ink)
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Text(moneyText(amount))
+                .font(.subheadline.monospacedDigit().weight(.bold))
+                .foregroundStyle(AppTheme.ink)
+        }
+    }
+
+    private func contextRow(label: String, amount: Double) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(moneyText(amount))
+                .font(.subheadline.monospacedDigit().weight(.bold))
+                .foregroundStyle(AppTheme.ink)
+        }
+    }
+
+    private func factorChip(title: String, value: String) -> some View {
+        VStack(spacing: 3) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.black))
+                .foregroundStyle(AppTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func revenueSharingNote(for budget: NILBudgetTeamSummary) -> String {
+        if budget.serviceAcademy { return "Service academies do not use NIL budgets" }
+        if budget.teamName.caseInsensitiveCompare("UConn") == .orderedSame { return "UConn basketball premium" }
+        switch budget.conferenceId {
+        case "acc", "big-ten", "big-12":
+            return "\(budget.conferenceName) revenue sharing"
+        case "sec":
+            return "SEC revenue sharing"
+        default:
+            return "Baseline D-I revenue sharing"
+        }
+    }
+
+    private func moneyText(_ amount: Double) -> String {
+        if amount >= 1_000_000 {
+            return "$\(String(format: "%.1f", amount / 1_000_000))M"
+        }
+        return "$\(Int(amount / 1_000).formatted())K"
+    }
+
+    private func percentText(_ value: Double) -> String {
+        "\(Int((value * 100).rounded()))"
+    }
+
+    private func scoreText(_ value: Double) -> String {
+        String(format: "%.1f", value)
     }
 }
 
