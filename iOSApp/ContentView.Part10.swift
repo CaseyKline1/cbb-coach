@@ -361,6 +361,15 @@ struct SeasonRecapView: View {
                     case .allConference:
                         allConferenceTab
                     }
+
+                    NavigationLink {
+                        OffseasonScheduleView()
+                    } label: {
+                        Text("Offseason Schedule")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GameButtonStyle(variant: .primary))
+                    .padding(.top, 4)
                 }
                 .padding(16)
             }
@@ -599,6 +608,93 @@ struct SeasonRecapView: View {
     private func pct(_ value: Double) -> String {
         guard value > 0 else { return "--" }
         return String(format: "%.1f%%", value)
+    }
+}
+
+struct OffseasonSchedulePhase: Identifiable, Hashable {
+    enum Status: String {
+        case completed = "Completed"
+        case current = "Current"
+        case upcoming = "Upcoming"
+    }
+
+    let id: String
+    let title: String
+    let detail: String
+    let status: Status
+
+    static let initialPhases: [OffseasonSchedulePhase] = [
+        OffseasonSchedulePhase(
+            id: "season-recap",
+            title: "Season Recap",
+            detail: "Review final results, awards, standings, and team stats.",
+            status: .completed
+        ),
+    ]
+}
+
+struct OffseasonScheduleView: View {
+    private let phases = OffseasonSchedulePhase.initialPhases
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GameCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        GameSectionHeader(title: "Offseason")
+                        Text("Each offseason phase will appear here as it is added.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                ForEach(Array(phases.enumerated()), id: \.element.id) { index, phase in
+                    offseasonPhaseRow(phase, number: index + 1)
+                }
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Offseason Schedule")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func offseasonPhaseRow(_ phase: OffseasonSchedulePhase, number: Int) -> some View {
+        GameCard {
+            HStack(alignment: .top, spacing: 12) {
+                Text("\(number)")
+                    .font(.caption.monospacedDigit().weight(.black))
+                    .foregroundStyle(phase.status == .current ? .white : AppTheme.accent)
+                    .frame(width: 28, height: 28)
+                    .background(phase.status == .current ? AppTheme.accent : AppTheme.accent.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(phase.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.ink)
+
+                        Spacer(minLength: 8)
+
+                        GamePill(text: phase.status.rawValue, color: statusColor(phase.status))
+                    }
+
+                    Text(phase.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func statusColor(_ status: OffseasonSchedulePhase.Status) -> Color {
+        switch status {
+        case .completed: return AppTheme.success
+        case .current: return AppTheme.accent
+        case .upcoming: return .secondary
+        }
     }
 }
 
