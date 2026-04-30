@@ -651,6 +651,36 @@ func draftSelectsTopEntrantsAndAnnotatesPlayers() throws {
     #expect(draft.picks.allSatisfy { $0.player.draftSlot == $0.slot })
 }
 
+@Test("Elite underclass draft prospects enter during players leaving")
+func eliteUnderclassDraftProspectsEnterDuringPlayersLeaving() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "early-draft", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.playersLeaving = nil
+        for teamIdx in state.teams.indices {
+            for idx in state.teams[teamIdx].teamModel.players.indices {
+                state.teams[teamIdx].teamModel.players[idx].bio.year = .so
+                state.teams[teamIdx].teamModel.players[idx].bio.potential = 45
+                makePlayerReplacementLevel(&state.teams[teamIdx].teamModel.players[idx])
+            }
+        }
+
+        guard let userIndex = state.teams.firstIndex(where: { $0.teamId == state.userTeamId }) else { return }
+        for idx in 0..<min(7, state.teams[userIndex].teamModel.players.count) {
+            state.teams[userIndex].teamModel.players[idx].bio.year = .fr
+            state.teams[userIndex].teamModel.players[idx].bio.potential = 99
+            state.teams[userIndex].teamModel.players[idx].loyalty = 0
+            state.teams[userIndex].teamModel.players[idx].greed = 100
+            makePlayerElite(&state.teams[userIndex].teamModel.players[idx])
+        }
+    }
+
+    let draftEntrants = getPlayersLeavingSummary(league).userEntries.filter { $0.outcome == .draft }
+    #expect(draftEntrants.count >= 6)
+    #expect(draftEntrants.allSatisfy { $0.reason.contains("draft prospect") })
+}
+
 private func makePlayerElite(_ player: inout Player) {
     player.skills.shotIQ = 95
     player.skills.ballHandling = 95
@@ -663,4 +693,18 @@ private func makePlayerElite(_ player: inout Player) {
     player.rebounding.defensiveRebound = 95
     player.athleticism.speed = 95
     player.athleticism.agility = 95
+}
+
+private func makePlayerReplacementLevel(_ player: inout Player) {
+    player.skills.shotIQ = 40
+    player.skills.ballHandling = 40
+    player.skills.passingIQ = 40
+    player.shooting.threePointShooting = 40
+    player.shooting.midrangeShot = 40
+    player.shooting.closeShot = 40
+    player.defense.perimeterDefense = 40
+    player.defense.postDefense = 40
+    player.rebounding.defensiveRebound = 40
+    player.athleticism.speed = 40
+    player.athleticism.agility = 40
 }

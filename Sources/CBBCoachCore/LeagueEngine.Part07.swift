@@ -124,6 +124,7 @@ public func getDraftSummary(_ league: LeagueState) -> DraftSummary {
 
 func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry] {
     let minutesByTeamAndPlayer = buildLeavingPlayerStats(state)
+    let draftProspectRankById = buildDraftProspectRankById(state)
     var entries: [PlayerLeavingEntry] = []
 
     for team in state.teams {
@@ -141,6 +142,7 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
             let loyalty = resolvedLoyalty(player, teamId: team.teamId)
             let greed = resolvedGreed(player, teamId: team.teamId)
             let nilDollars = player.bio.nilDollarsLastYear ?? 0
+            let playerSummary = playerIndex < rosterSummaries.count ? rosterSummaries[playerIndex] : nil
 
             if player.bio.year == .sr && !isLikelyRedshirtingSenior(player, stats: stats, teamGames: max(1, team.wins + team.losses)) {
                 entries.append(
@@ -148,7 +150,7 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
                         team: team,
                         player: player,
                         playerIndex: playerIndex,
-                        playerSummary: playerIndex < rosterSummaries.count ? rosterSummaries[playerIndex] : nil,
+                        playerSummary: playerSummary,
                         overall: overall,
                         outcome: .graduated,
                         reason: "Graduated after senior season.",
@@ -164,6 +166,40 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
             }
 
             guard player.bio.year != .sr else { continue }
+
+            if let prospectRank = draftProspectRankById["\(team.teamId):\(player.bio.name)"] {
+                let chance = draftDeclarationChance(
+                    rank: prospectRank,
+                    loyalty: loyalty,
+                    greed: greed
+                )
+                let roll = deterministicLeavingRoll(
+                    state: state,
+                    teamId: team.teamId,
+                    playerName: player.bio.name,
+                    salt: "draft-decision"
+                )
+                if roll < chance {
+                    entries.append(
+                        leavingEntry(
+                            team: team,
+                            player: player,
+                            playerIndex: playerIndex,
+                            playerSummary: playerSummary,
+                            overall: overall,
+                            outcome: .draft,
+                            reason: "Projected as the #\(prospectRank) draft prospect.",
+                            minutesShare: minutesShare,
+                            expectedShare: expectedShare,
+                            transferRisk: chance,
+                            loyalty: loyalty,
+                            greed: greed,
+                            nilDollars: nilDollars
+                        )
+                    )
+                    continue
+                }
+            }
 
             let playingTimeGap = max(0, expectedShare - minutesShare)
             let tooGoodPressure = clamp((Double(overall) - 78) / 16, min: 0, max: 1)
@@ -202,7 +238,7 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
                     team: team,
                     player: player,
                     playerIndex: playerIndex,
-                    playerSummary: playerIndex < rosterSummaries.count ? rosterSummaries[playerIndex] : nil,
+                    playerSummary: playerSummary,
                     overall: overall,
                     outcome: .transfer,
                     reason: reason,
@@ -219,7 +255,7 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
 
     return entries.sorted { lhs, rhs in
         if lhs.teamId == rhs.teamId {
-            if lhs.outcome != rhs.outcome { return lhs.outcome == .graduated }
+            if lhs.outcome != rhs.outcome { return leavingOutcomeSortValue(lhs.outcome) < leavingOutcomeSortValue(rhs.outcome) }
             if lhs.transferRisk != rhs.transferRisk { return lhs.transferRisk > rhs.transferRisk }
             return lhs.playerName < rhs.playerName
         }
@@ -233,7 +269,7 @@ func calculateSchoolHallOfFame(_ state: LeagueStore.State) -> [SchoolHallOfFameE
     let draftSlotByPlayerId = Dictionary(uniqueKeysWithValues: (state.draftPicks ?? calculateDraftPicks(state)).map { ($0.id, $0.slot) })
     var entries: [SchoolHallOfFameEntry] = []
 
-    for departure in leaving where departure.outcome == .graduated {
+    for departure in leaving where departure.outcome == .graduated || departure.outcome == .draft {
         guard let honors = honorsByTeamAndPlayer[departure.teamId]?[departure.playerName], !honors.isEmpty else { continue }
         guard let team = state.teams.first(where: { $0.teamId == departure.teamId }) else { continue }
         guard var playerSummary = departure.player ?? rosterSummaryPlayers(
@@ -275,7 +311,7 @@ func calculateDraftPicks(_ state: LeagueStore.State) -> [DraftPickEntry] {
     let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
 
     let candidates = leaving.compactMap { departure -> (departure: PlayerLeavingEntry, score: Double, boardScore: Double)? in
-        guard departure.outcome == .graduated else { return nil }
+        guard departure.outcome == .graduated || departure.outcome == .draft else { return nil }
         guard let player = departure.player else { return nil }
         let stats = statsByTeamAndPlayer[departure.teamId]?[departure.playerName]
         let score = draftScore(
@@ -316,6 +352,83 @@ func calculateDraftPicks(_ state: LeagueStore.State) -> [DraftPickEntry] {
             player: player,
             draftScore: row.score
         )
+    }
+}
+
+private func buildDraftProspectRankById(_ state: LeagueStore.State) -> [String: Int] {
+    let statsByTeamAndPlayer = Dictionary(grouping: buildHallCandidateStats(state), by: \.teamId)
+        .mapValues { rows in
+            Dictionary(rows.map { ($0.playerName, $0) }, uniquingKeysWith: { first, second in
+                first.awardScore >= second.awardScore ? first : second
+            })
+        }
+
+    var prospects: [(id: String, score: Double)] = []
+    for team in state.teams {
+        let lineupNames = Set(team.teamModel.lineup.map(\.bio.name))
+        let summaries = rosterSummaryPlayers(from: team.teamModel, lineupNames: lineupNames)
+        for (index, player) in team.teamModel.players.enumerated() {
+            guard player.bio.year != .sr, player.bio.year != .hs, player.bio.year != .graduated else { continue }
+            guard index < summaries.count else { continue }
+            let stats = statsByTeamAndPlayer[team.teamId]?[player.bio.name]
+            let score = draftScore(
+                player: summaries[index],
+                stats: stats,
+                seed: "\(state.optionsSeed):prospect:\(team.teamId):\(player.bio.name)"
+            )
+            prospects.append((id: "\(team.teamId):\(player.bio.name)", score: score))
+        }
+    }
+
+    let ordered = prospects.sorted { lhs, rhs in
+        if lhs.score != rhs.score { return lhs.score > rhs.score }
+        return lhs.id < rhs.id
+    }
+    return Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($0.element.id, $0.offset + 1) })
+}
+
+private func draftDeclarationChance(rank: Int, loyalty: Double, greed: Double) -> Double {
+    let base: Double
+    switch rank {
+    case 1...7:
+        base = 0.99
+    case 8...14:
+        base = 0.95
+    case 15...30:
+        base = 0.70
+    case 31...60:
+        base = 0.30
+    case 61...100:
+        base = 0.08
+    default:
+        return 0
+    }
+
+    let greedAdjustment = (clamp(greed, min: 0, max: 100) - 50) / 50
+    let loyaltyAdjustment = (50 - clamp(loyalty, min: 0, max: 100)) / 50
+    let adjusted = base + greedAdjustment * 0.025 + loyaltyAdjustment * 0.025
+
+    switch rank {
+    case 1...7:
+        return clamp(adjusted, min: 0.94, max: 0.995)
+    case 8...14:
+        return clamp(adjusted, min: 0.86, max: 0.985)
+    case 15...30:
+        return clamp(adjusted, min: 0.52, max: 0.86)
+    case 31...60:
+        return clamp(adjusted, min: 0.18, max: 0.48)
+    case 61...100:
+        return clamp(adjusted, min: 0.03, max: 0.18)
+    default:
+        return 0
+    }
+}
+
+private func leavingOutcomeSortValue(_ outcome: PlayerLeavingOutcome) -> Int {
+    switch outcome {
+    case .graduated: return 0
+    case .draft: return 1
+    case .transfer: return 2
     }
 }
 

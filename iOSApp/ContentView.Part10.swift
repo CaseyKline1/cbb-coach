@@ -1008,6 +1008,10 @@ struct PlayersLeavingView: View {
         userRows.filter { $0.outcome == .transfer }
     }
 
+    private var draftRows: [PlayerLeavingEntry] {
+        userRows.filter { $0.outcome == .draft }
+    }
+
     private var graduationRows: [PlayerLeavingEntry] {
         userRows.filter { $0.outcome == .graduated }
     }
@@ -1024,12 +1028,14 @@ struct PlayersLeavingView: View {
                         GameSectionHeader(title: "Players Leaving")
                         HStack(spacing: 8) {
                             summaryTile(title: "Graduating", value: "\(graduationRows.count)")
+                            summaryTile(title: "Draft", value: "\(draftRows.count)")
                             summaryTile(title: "Transfers", value: "\(transferRows.count)")
                         }
                     }
                 }
 
                 leavingSection(title: "Graduating Seniors", rows: graduationRows, emptyText: "No seniors are graduating this offseason.")
+                leavingSection(title: "Draft Entrants", rows: draftRows, emptyText: "No underclassmen entered the draft.")
                 leavingSection(title: "Transfer Decisions", rows: transferRows, emptyText: "No returners decided to transfer.")
             }
             .padding(16)
@@ -1082,7 +1088,7 @@ struct PlayersLeavingView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                GamePill(text: row.outcome.rawValue, color: row.outcome == .graduated ? .secondary : AppTheme.warning)
+                GamePill(text: row.outcome.rawValue, color: outcomeColor(row.outcome))
             }
 
             Text(row.reason)
@@ -1136,6 +1142,14 @@ struct PlayersLeavingView: View {
 
     private func percentText(_ value: Double) -> String {
         "\(Int((value * 100).rounded()))%"
+    }
+
+    private func outcomeColor(_ outcome: PlayerLeavingOutcome) -> Color {
+        switch outcome {
+        case .graduated: return .secondary
+        case .draft: return AppTheme.accent
+        case .transfer: return AppTheme.warning
+        }
     }
 
     private func isHallOfFamer(_ row: PlayerLeavingEntry) -> Bool {

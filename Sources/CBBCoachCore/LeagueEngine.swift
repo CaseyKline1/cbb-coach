@@ -300,6 +300,7 @@ public struct NILBudgetSummary: Codable, Equatable, Sendable {
 
 public enum PlayerLeavingOutcome: String, Codable, Equatable, Sendable {
     case graduated = "Graduated"
+    case draft = "Draft"
     case transfer = "Transfer"
 }
 
