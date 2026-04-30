@@ -130,10 +130,12 @@ struct CollegeLeagueHomeView: View {
 
                     GameCard {
                         VStack(spacing: 8) {
-                            NavigationLink(value: LeagueMenuDestination.bracket) {
-                                MenuRow(title: "Bracket")
+                            if nationalBracket != nil {
+                                NavigationLink(value: LeagueMenuDestination.bracket) {
+                                    MenuRow(title: "Bracket")
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
 
                             GameSectionHeader(title: "Team")
                             NavigationLink(value: LeagueMenuDestination.roster) {
@@ -161,6 +163,7 @@ struct CollegeLeagueHomeView: View {
                             }
                             .buttonStyle(.plain)
 
+                            GameSectionHeader(title: "League")
                             NavigationLink(value: LeagueMenuDestination.statLeaders) {
                                 MenuRow(title: "Stat Leaders")
                             }
