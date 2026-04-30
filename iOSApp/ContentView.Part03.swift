@@ -116,12 +116,43 @@ extension CollegeLeagueHomeView {
         coachingStaff = getUserCoachingStaff(currentLeague)
     }
 
-    func advanceOffseasonSchedule() {
-        guard var currentLeague = league else { return }
-        guard let progress = advanceOffseason(&currentLeague) else { return }
+    @discardableResult
+    func advanceOffseasonSchedule() -> LeagueOffseasonProgress? {
+        guard var currentLeague = league else { return nil }
+        guard let progress = advanceOffseason(&currentLeague) else { return nil }
         league = currentLeague
         refreshFromLeague(currentLeague)
         statusText = offseasonStatusText(for: progress.stage)
+        return progress
+    }
+
+    func advanceToOffseasonScheduleFromRecap() {
+        let progress = advanceOffseasonSchedule()
+        if progress?.stage == .schedule {
+            navigationPath.append(.offseasonSchedule)
+        }
+    }
+
+    func advanceOffseasonScheduleAndNavigate() {
+        guard let progress = advanceOffseasonSchedule() else { return }
+        if let destination = destination(forOffseasonStage: progress.stage) {
+            navigationPath.append(destination)
+        }
+    }
+
+    private func destination(forOffseasonStage stage: LeagueOffseasonStage) -> LeagueMenuDestination? {
+        switch stage {
+        case .seasonRecap:
+            return .seasonRecap
+        case .nilBudgets:
+            return .nilBudgets
+        case .playersLeaving:
+            return .playersLeaving
+        case .draft:
+            return .draft
+        case .schedule, .complete:
+            return nil
+        }
     }
 
     private func offseasonStatusText(for stage: LeagueOffseasonStage) -> String {

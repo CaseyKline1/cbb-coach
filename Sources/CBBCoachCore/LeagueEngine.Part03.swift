@@ -32,7 +32,7 @@ private func seasonCompleteSummary(currentDay: Int) -> UserGameSummary {
 private func markSeasonCompleted(_ state: inout LeagueStore.State) {
     state.status = "completed"
     if state.offseasonStage == nil {
-        state.offseasonStage = .schedule
+        state.offseasonStage = .seasonRecap
     }
 }
 

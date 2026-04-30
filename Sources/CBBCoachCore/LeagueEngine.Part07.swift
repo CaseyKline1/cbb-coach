@@ -135,7 +135,7 @@ public func getOffseasonProgress(_ league: LeagueState) -> LeagueOffseasonProgre
     LeagueStore.update(league.handle) { state -> LeagueOffseasonProgress? in
         guard state.status == "completed" else { return nil }
         if state.offseasonStage == nil {
-            state.offseasonStage = .schedule
+            state.offseasonStage = .seasonRecap
         }
         return LeagueOffseasonProgress(stage: state.offseasonStage ?? .schedule)
     } ?? nil
@@ -146,12 +146,12 @@ public func advanceOffseason(_ league: inout LeagueState) -> LeagueOffseasonProg
     LeagueStore.update(league.handle) { state -> LeagueOffseasonProgress? in
         guard state.status == "completed" else { return nil }
 
-        let currentStage = state.offseasonStage ?? .schedule
+        let currentStage = state.offseasonStage ?? .seasonRecap
         switch currentStage {
         case .schedule:
-            state.offseasonStage = .seasonRecap
-        case .seasonRecap:
             state.offseasonStage = .nilBudgets
+        case .seasonRecap:
+            state.offseasonStage = .schedule
         case .nilBudgets:
             if state.playersLeaving == nil {
                 state.playersLeaving = calculatePlayersLeaving(state)

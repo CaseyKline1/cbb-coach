@@ -76,9 +76,10 @@ struct CollegeLeagueHomeView: View {
     @State var skipAheadGameRecaps: [String] = []
     @State var showingSeasonRecap = false
     @State var showingOffseasonSchedule = false
+    @State var navigationPath: [LeagueMenuDestination] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -111,7 +112,7 @@ struct CollegeLeagueHomeView: View {
                     HStack(spacing: 10) {
                         Button(primaryAdvanceButtonTitle) {
                             if seasonIsComplete {
-                                showingOffseasonSchedule = true
+                                navigationPath.append(.seasonRecap)
                             } else {
                                 playNextGame()
                             }
@@ -219,7 +220,8 @@ struct CollegeLeagueHomeView: View {
                         draftSummary: draftSummary,
                         hallOfFameSummary: hallOfFameSummary,
                         roster: roster,
-                        teamRostersByName: teamRostersByName
+                        teamRostersByName: teamRostersByName,
+                        onAdvanceToOffseasonSchedule: advanceToOffseasonScheduleFromRecap
                     )
                 case .offseasonSchedule:
                     OffseasonScheduleView(
@@ -230,19 +232,27 @@ struct CollegeLeagueHomeView: View {
                         hallOfFameSummary: hallOfFameSummary,
                         games: completedLeagueGames,
                         teamRostersByName: teamRostersByName,
-                        onAdvance: advanceOffseasonSchedule
+                        onAdvance: advanceOffseasonScheduleAndNavigate
                     )
                 case .nilBudgets:
-                    NILBudgetView(summary: nilBudgetSummary)
+                    NILBudgetView(
+                        summary: nilBudgetSummary,
+                        onAdvance: advanceOffseasonScheduleAndNavigate
+                    )
                 case .playersLeaving:
                     PlayersLeavingView(
                         summary: playersLeavingSummary,
                         hallOfFameSummary: hallOfFameSummary,
                         games: completedLeagueGames,
-                        teamRostersByName: teamRostersByName
+                        teamRostersByName: teamRostersByName,
+                        onAdvance: advanceOffseasonScheduleAndNavigate
                     )
                 case .draft:
-                    DraftView(summary: draftSummary, games: completedLeagueGames)
+                    DraftView(
+                        summary: draftSummary,
+                        games: completedLeagueGames,
+                        onAdvance: advanceOffseasonScheduleAndNavigate
+                    )
                 case .roster:
                     RosterRatingsView(
                         roster: roster,
@@ -332,7 +342,8 @@ struct CollegeLeagueHomeView: View {
                     draftSummary: draftSummary,
                     hallOfFameSummary: hallOfFameSummary,
                     roster: roster,
-                    teamRostersByName: teamRostersByName
+                    teamRostersByName: teamRostersByName,
+                    onAdvanceToOffseasonSchedule: advanceToOffseasonScheduleFromRecap
                 )
             }
             .navigationDestination(isPresented: $showingOffseasonSchedule) {
@@ -344,7 +355,7 @@ struct CollegeLeagueHomeView: View {
                     hallOfFameSummary: hallOfFameSummary,
                     games: completedLeagueGames,
                     teamRostersByName: teamRostersByName,
-                    onAdvance: advanceOffseasonSchedule
+                    onAdvance: advanceOffseasonScheduleAndNavigate
                 )
             }
             .onAppear {
@@ -506,6 +517,7 @@ struct CollegeLeagueHomeView: View {
         refreshFromLeague(currentLeague)
         if result.done == true {
             statusText = "Season complete."
+            navigationPath.append(.seasonRecap)
             return
         }
         let userScore = result.score?.numberValue(for: "user")?.roundedInt ?? 0
@@ -530,6 +542,9 @@ struct CollegeLeagueHomeView: View {
                 skipAheadGameRecaps = result.recaps
                 statusText = result.seasonCompleted && target != .offseason ? "Season complete." : target.completionMessage
                 isSkipAheadInProgress = false
+                if target == .offseason || result.seasonCompleted {
+                    navigationPath.append(.seasonRecap)
+                }
             }
         }
     }

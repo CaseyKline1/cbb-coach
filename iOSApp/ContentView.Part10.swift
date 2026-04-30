@@ -226,6 +226,7 @@ struct SeasonRecapView: View {
     let hallOfFameSummary: SchoolHallOfFameSummary?
     let roster: [UserRosterPlayerSummary]
     let teamRostersByName: [String: [UserRosterPlayerSummary]]
+    let onAdvanceToOffseasonSchedule: () -> Void
 
     private enum RecapTab: String, CaseIterable {
         case team = "Team"
@@ -251,7 +252,8 @@ struct SeasonRecapView: View {
         draftSummary: DraftSummary?,
         hallOfFameSummary: SchoolHallOfFameSummary?,
         roster: [UserRosterPlayerSummary],
-        teamRostersByName: [String: [UserRosterPlayerSummary]]
+        teamRostersByName: [String: [UserRosterPlayerSummary]],
+        onAdvanceToOffseasonSchedule: @escaping () -> Void
     ) {
         self.games = games
         self.schedule = schedule
@@ -267,6 +269,7 @@ struct SeasonRecapView: View {
         self.hallOfFameSummary = hallOfFameSummary
         self.roster = roster
         self.teamRostersByName = teamRostersByName
+        self.onAdvanceToOffseasonSchedule = onAdvanceToOffseasonSchedule
         _selectedConferenceId = State(initialValue: userConferenceId ?? standingsByConference.keys.sorted().first ?? "")
     }
 
@@ -389,8 +392,10 @@ struct SeasonRecapView: View {
                         allConferenceTab
                     }
 
-                    NavigationLink(value: LeagueMenuDestination.offseasonSchedule) {
-                        Text("Offseason Schedule")
+                    Button {
+                        onAdvanceToOffseasonSchedule()
+                    } label: {
+                        Text("Advance to Offseason Schedule")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(GameButtonStyle(variant: .primary))
@@ -639,40 +644,36 @@ struct SeasonRecapView: View {
 }
 
 struct OffseasonSchedulePhase: Identifiable, Hashable {
-    enum Status: String {
-        case completed = "Completed"
-        case current = "Current"
-        case upcoming = "Upcoming"
-    }
-
     let id: String
     let title: String
     let detail: String
+    let window: String
+    let icon: String
     let stage: LeagueOffseasonStage
 
     static let initialPhases: [OffseasonSchedulePhase] = [
         OffseasonSchedulePhase(
-            id: "season-recap",
-            title: "Season Recap",
-            detail: "Review final results, awards, standings, and team stats.",
-            stage: .seasonRecap
-        ),
-        OffseasonSchedulePhase(
             id: "nil-budgets",
             title: "NIL Budgets",
             detail: "Reveal next season's revenue sharing and donor pool.",
+            window: "Next",
+            icon: "dollarsign.circle.fill",
             stage: .nilBudgets
         ),
         OffseasonSchedulePhase(
             id: "players-leaving",
             title: "Players Leaving",
             detail: "Seniors graduate and transfer risks decide whether to move on.",
+            window: "After NIL",
+            icon: "person.crop.circle.badge.minus",
             stage: .playersLeaving
         ),
         OffseasonSchedulePhase(
             id: "draft",
             title: "Draft",
             detail: "The top 60 draft entrants come off the board.",
+            window: "Final Event",
+            icon: "list.number",
             stage: .draft
         ),
     ]
@@ -689,7 +690,6 @@ struct OffseasonScheduleView: View {
     let onAdvance: () -> Void
 
     private let phases = OffseasonSchedulePhase.initialPhases
-    private let stageOrder: [LeagueOffseasonStage] = [.seasonRecap, .nilBudgets, .playersLeaving, .draft]
 
     private var currentStage: LeagueOffseasonStage {
         progress?.stage ?? .schedule
@@ -698,9 +698,9 @@ struct OffseasonScheduleView: View {
     private var advanceTitle: String {
         switch currentStage {
         case .schedule:
-            return "Start Offseason"
-        case .seasonRecap:
             return "Advance to NIL Budgets"
+        case .seasonRecap:
+            return "Advance to Offseason Schedule"
         case .nilBudgets:
             return "Advance to Players Leaving"
         case .playersLeaving:
@@ -714,26 +714,33 @@ struct OffseasonScheduleView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 16) {
                 GameCard {
-                    VStack(alignment: .leading, spacing: 8) {
-                        GameSectionHeader(title: "Offseason")
-                        Text("Review the upcoming phases, then advance through them in order.")
+                    VStack(alignment: .leading, spacing: 10) {
+                        GameSectionHeader(title: "Offseason Schedule")
+                        Text("A quick look at the events ahead before the roster starts moving.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+
+                        HStack(spacing: 10) {
+                            ForEach(phases) { phase in
+                                VStack(spacing: 8) {
+                                    Image(systemName: phase.icon)
+                                        .font(.title3.weight(.semibold))
+                                        .foregroundStyle(AppTheme.accent)
+                                    Text(phase.window)
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                        }
                     }
                 }
 
                 ForEach(Array(phases.enumerated()), id: \.element.id) { index, phase in
-                    let status = status(for: phase)
-                    if let destination = destination(for: phase), status != .upcoming {
-                        NavigationLink(value: destination) {
-                            offseasonPhaseRow(phase, number: index + 1, status: status, showsChevron: true)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        offseasonPhaseRow(phase, number: index + 1, status: status, showsChevron: false)
-                    }
+                    offseasonEventCard(phase, number: index + 1)
                 }
 
                 Button(advanceTitle) {
@@ -749,93 +756,46 @@ struct OffseasonScheduleView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func offseasonPhaseRow(
+    private func offseasonEventCard(
         _ phase: OffseasonSchedulePhase,
-        number: Int,
-        status: OffseasonSchedulePhase.Status,
-        showsChevron: Bool
+        number: Int
     ) -> some View {
         GameCard {
-            HStack(alignment: .top, spacing: 12) {
-                Text("\(number)")
-                    .font(.caption.monospacedDigit().weight(.black))
-                    .foregroundStyle(status == .current ? .white : AppTheme.accent)
-                    .frame(width: 28, height: 28)
-                    .background(status == .current ? AppTheme.accent : AppTheme.accent.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            HStack(alignment: .center, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(AppTheme.accent.opacity(0.12))
+                        .frame(width: 52, height: 52)
+                    Image(systemName: phase.icon)
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(AppTheme.accent)
+                }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(number)")
+                            .font(.caption.monospacedDigit().weight(.black))
+                            .foregroundStyle(.secondary)
                         Text(phase.title)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(AppTheme.ink)
 
                         Spacer(minLength: 8)
-
-                        GamePill(text: status.rawValue, color: statusColor(status))
                     }
 
-                    HStack(spacing: 8) {
-                        Text(phase.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 8)
-                        if showsChevron {
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    Text(phase.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-        }
-    }
-
-    private func status(for phase: OffseasonSchedulePhase) -> OffseasonSchedulePhase.Status {
-        if currentStage == .complete {
-            return .completed
-        }
-        guard let phaseIndex = stageOrder.firstIndex(of: phase.stage),
-              let currentIndex = stageOrder.firstIndex(of: currentStage)
-        else {
-            return .upcoming
-        }
-        if phaseIndex < currentIndex {
-            return .completed
-        }
-        if phaseIndex == currentIndex {
-            return .current
-        }
-        return .upcoming
-    }
-
-    private func destination(for phase: OffseasonSchedulePhase) -> LeagueMenuDestination? {
-        switch phase.stage {
-        case .seasonRecap:
-            return .seasonRecap
-        case .nilBudgets:
-            return .nilBudgets
-        case .playersLeaving:
-            return .playersLeaving
-        case .draft:
-            return .draft
-        case .schedule, .complete:
-            return nil
-        }
-    }
-
-    private func statusColor(_ status: OffseasonSchedulePhase.Status) -> Color {
-        switch status {
-        case .completed: return AppTheme.success
-        case .current: return AppTheme.accent
-        case .upcoming: return .secondary
         }
     }
 }
 
 struct NILBudgetView: View {
     let summary: NILBudgetSummary?
+    let onAdvance: () -> Void
 
     private var userBudget: NILBudgetTeamSummary? {
         summary?.userTeam
@@ -864,6 +824,14 @@ struct NILBudgetView: View {
                         }
                     }
                 }
+
+                Button {
+                    onAdvance()
+                } label: {
+                    Text("Advance to Players Leaving")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GameButtonStyle(variant: .primary))
             }
             .padding(16)
         }
@@ -1053,6 +1021,7 @@ struct PlayersLeavingView: View {
     let hallOfFameSummary: SchoolHallOfFameSummary?
     let games: [LeagueGameSummary]
     let teamRostersByName: [String: [UserRosterPlayerSummary]]
+    let onAdvance: () -> Void
 
     private let hallGold = Color(red: 0.96, green: 0.68, blue: 0.18)
 
@@ -1093,6 +1062,14 @@ struct PlayersLeavingView: View {
                 leavingSection(title: "Graduating Seniors", rows: graduationRows, emptyText: "No seniors are graduating this offseason.")
                 leavingSection(title: "Draft Entrants", rows: draftRows, emptyText: "No underclassmen entered the draft.")
                 leavingSection(title: "Transfer Decisions", rows: transferRows, emptyText: "No returners decided to transfer.")
+
+                Button {
+                    onAdvance()
+                } label: {
+                    Text("Advance to Draft")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GameButtonStyle(variant: .primary))
             }
             .padding(16)
         }
@@ -1327,6 +1304,7 @@ struct SchoolHallOfFameView: View {
 struct DraftView: View {
     let summary: DraftSummary?
     let games: [LeagueGameSummary]
+    let onAdvance: () -> Void
 
     private var picks: [DraftPickEntry] {
         summary?.picks ?? []
@@ -1353,6 +1331,14 @@ struct DraftView: View {
                     draftSection(title: "Your Draft Picks", rows: userPicks)
                 }
                 draftSection(title: "Top 60", rows: picks)
+
+                Button {
+                    onAdvance()
+                } label: {
+                    Text("Complete Offseason")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GameButtonStyle(variant: .primary))
             }
             .padding(16)
         }
