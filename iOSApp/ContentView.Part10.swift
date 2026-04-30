@@ -648,7 +648,6 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
     let title: String
     let detail: String
     let window: String
-    let icon: String
     let stage: LeagueOffseasonStage
 
     static let initialPhases: [OffseasonSchedulePhase] = [
@@ -657,7 +656,6 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
             title: "NIL Budgets",
             detail: "Reveal next season's revenue sharing and donor pool.",
             window: "Next",
-            icon: "dollarsign.circle.fill",
             stage: .nilBudgets
         ),
         OffseasonSchedulePhase(
@@ -665,7 +663,6 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
             title: "Players Leaving",
             detail: "Seniors graduate and transfer risks decide whether to move on.",
             window: "After NIL",
-            icon: "person.crop.circle.badge.minus",
             stage: .playersLeaving
         ),
         OffseasonSchedulePhase(
@@ -673,7 +670,6 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
             title: "Draft",
             detail: "The top 60 draft entrants come off the board.",
             window: "Final Event",
-            icon: "list.number",
             stage: .draft
         ),
     ]
@@ -714,34 +710,8 @@ struct OffseasonScheduleView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                GameCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        GameSectionHeader(title: "Offseason Schedule")
-                        Text("A quick look at the events ahead before the roster starts moving.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: 10) {
-                            ForEach(phases) { phase in
-                                VStack(spacing: 8) {
-                                    Image(systemName: phase.icon)
-                                        .font(.title3.weight(.semibold))
-                                        .foregroundStyle(AppTheme.accent)
-                                    Text(phase.window)
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundStyle(.secondary)
-                                        .multilineTextAlignment(.center)
-                                }
-                                .frame(maxWidth: .infinity)
-                            }
-                        }
-                    }
-                }
-
-                ForEach(Array(phases.enumerated()), id: \.element.id) { index, phase in
-                    offseasonEventCard(phase, number: index + 1)
-                }
+            VStack(alignment: .leading, spacing: 14) {
+                scheduleTable
 
                 Button(advanceTitle) {
                     onAdvance()
@@ -756,40 +726,68 @@ struct OffseasonScheduleView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func offseasonEventCard(
-        _ phase: OffseasonSchedulePhase,
-        number: Int
-    ) -> some View {
+    private var scheduleTable: some View {
         GameCard {
-            HStack(alignment: .center, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(AppTheme.accent.opacity(0.12))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: phase.icon)
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(AppTheme.accent)
+            VStack(alignment: .leading, spacing: 0) {
+                GameSectionHeader(title: "Offseason Schedule")
+
+                HStack(alignment: .center, spacing: 0) {
+                    scheduleHeader("Order", width: 48, alignment: .leading)
+                    scheduleHeader("Window", width: 88, alignment: .leading)
+                    scheduleHeader("Event", alignment: .leading)
+                }
+                .padding(.vertical, 8)
+                .overlay(alignment: .bottom) {
+                    Divider()
                 }
 
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("\(number)")
-                            .font(.caption.monospacedDigit().weight(.black))
-                            .foregroundStyle(.secondary)
-                        Text(phase.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(AppTheme.ink)
+                ForEach(Array(phases.enumerated()), id: \.element.id) { index, phase in
+                    VStack(spacing: 0) {
+                        HStack(alignment: .top, spacing: 0) {
+                            Text("\(index + 1)")
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 48, alignment: .leading)
 
-                        Spacer(minLength: 8)
+                            Text(phase.window)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 88, alignment: .leading)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(phase.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(AppTheme.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                Text(phase.detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(.vertical, 12)
+
+                        if index < phases.count - 1 {
+                            Divider()
+                        }
                     }
-
-                    Text(phase.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+    }
+
+    private func scheduleHeader(
+        _ title: String,
+        width: CGFloat? = nil,
+        alignment: Alignment
+    ) -> some View {
+        Text(title)
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.secondary)
+            .frame(width: width, alignment: alignment)
+            .frame(maxWidth: width == nil ? .infinity : nil, alignment: alignment)
     }
 }
 
