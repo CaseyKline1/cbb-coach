@@ -304,6 +304,7 @@ public struct PlayerLeavingEntry: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var teamId: String
     public var teamName: String
+    public var player: UserRosterPlayerSummary?
     public var playerName: String
     public var position: String
     public var year: String
@@ -324,6 +325,26 @@ public struct PlayersLeavingSummary: Codable, Equatable, Sendable {
     public var entries: [PlayerLeavingEntry]
 
     public var userEntries: [PlayerLeavingEntry] {
+        entries.filter { $0.teamId == userTeamId }
+    }
+}
+
+public struct SchoolHallOfFameEntry: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var teamId: String
+    public var teamName: String
+    public var conferenceId: String
+    public var conferenceName: String
+    public var player: UserRosterPlayerSummary
+    public var honors: [String]
+    public var inductionReason: String
+}
+
+public struct SchoolHallOfFameSummary: Codable, Equatable, Sendable {
+    public var userTeamId: String
+    public var entries: [SchoolHallOfFameEntry]
+
+    public var userEntries: [SchoolHallOfFameEntry] {
         entries.filter { $0.teamId == userTeamId }
     }
 }
@@ -477,6 +498,7 @@ struct LeagueStore {
         var nationalTournament: NationalTournamentState?
         var remainingRegularSeasonGames: Int?
         var playersLeaving: [PlayerLeavingEntry]?
+        var schoolHallOfFame: [SchoolHallOfFameEntry]?
     }
 
     static let lock = NSLock()

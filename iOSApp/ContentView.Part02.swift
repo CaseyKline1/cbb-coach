@@ -64,6 +64,7 @@ struct CollegeLeagueHomeView: View {
     @State var nationalBracket: NationalTournamentBracket?
     @State var nilBudgetSummary: NILBudgetSummary?
     @State var playersLeavingSummary: PlayersLeavingSummary?
+    @State var hallOfFameSummary: SchoolHallOfFameSummary?
     @State var completedLeagueGames: [LeagueGameSummary] = []
     @State var teamRostersByName: [String: [UserRosterPlayerSummary]] = [:]
     @State var teamStatsById: [String: TeamAggregateStats] = [:]
@@ -178,6 +179,11 @@ struct CollegeLeagueHomeView: View {
                                 MenuRow(title: "Coaching Staff")
                             }
                             .buttonStyle(.plain)
+
+                            NavigationLink(value: LeagueMenuDestination.hallOfFame) {
+                                MenuRow(title: "Hall of Fame")
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
@@ -254,6 +260,12 @@ struct CollegeLeagueHomeView: View {
                             saveAssistantFocus(assistantIndex: index, focus: focus)
                         }
                     )
+                case .hallOfFame:
+                    SchoolHallOfFameView(
+                        summary: hallOfFameSummary,
+                        games: completedLeagueGames,
+                        userTeamName: summary?.userTeamName ?? teamName
+                    )
                 case .boxScore(let gameId):
                     if let game = schedule.first(where: { $0.gameId == gameId }) {
                         BoxScoreDetailView(game: game, userTeamName: summary?.userTeamName ?? teamName)
@@ -272,6 +284,7 @@ struct CollegeLeagueHomeView: View {
                     bracket: nationalBracket,
                     nilBudgetSummary: nilBudgetSummary,
                     playersLeavingSummary: playersLeavingSummary,
+                    hallOfFameSummary: hallOfFameSummary,
                     roster: roster,
                     teamRostersByName: teamRostersByName
                 )

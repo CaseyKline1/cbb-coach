@@ -5,6 +5,66 @@ private struct LeavingPlayerStat {
     var minutes: Double = 0
 }
 
+private struct HallCandidateStat: Hashable {
+    let playerName: String
+    let teamId: String
+    let position: String
+    let year: PlayerYear?
+    var games: Int = 0
+    var minutes: Double = 0
+    var points: Int = 0
+    var rebounds: Int = 0
+    var assists: Int = 0
+    var steals: Int = 0
+    var blocks: Int = 0
+    var turnovers: Int = 0
+    var fgMade: Int = 0
+    var fgAttempts: Int = 0
+    var threeMade: Int = 0
+    var ftAttempts: Int = 0
+
+    var normalizedPosition: String { normalizeHallPosition(position) }
+    var minutesPerGame: Double { perGame(minutes) }
+    var pointsPerGame: Double { perGame(points) }
+    var reboundsPerGame: Double { perGame(rebounds) }
+    var assistsPerGame: Double { perGame(assists) }
+    var stealsPerGame: Double { perGame(steals) }
+    var blocksPerGame: Double { perGame(blocks) }
+    var turnoversPerGame: Double { perGame(turnovers) }
+
+    var effectiveFieldGoalPercentage: Double {
+        guard fgAttempts > 0 else { return 0 }
+        return ((Double(fgMade) + 0.5 * Double(threeMade)) / Double(fgAttempts)) * 100
+    }
+
+    var assistTurnoverRatio: Double {
+        Double(assists) / Double(max(1, turnovers))
+    }
+
+    var awardScore: Double {
+        pointsPerGame
+            + reboundsPerGame * 1.15
+            + assistsPerGame * 1.45
+            + stealsPerGame * 2.2
+            + blocksPerGame * 2.0
+            + effectiveFieldGoalPercentage * 0.08
+            + assistTurnoverRatio * 1.2
+            + minutesPerGame * 0.08
+            - turnoversPerGame * 0.9
+            + min(Double(games), 38) * 0.06
+    }
+
+    private func perGame(_ value: Int) -> Double {
+        guard games > 0 else { return 0 }
+        return Double(value) / Double(games)
+    }
+
+    private func perGame(_ value: Double) -> Double {
+        guard games > 0 else { return 0 }
+        return value / Double(games)
+    }
+}
+
 public func getPlayersLeavingSummary(_ league: LeagueState) -> PlayersLeavingSummary {
     guard let summary = LeagueStore.update(league.handle, { state -> PlayersLeavingSummary in
         guard state.status == "completed" else {
@@ -20,6 +80,24 @@ public func getPlayersLeavingSummary(_ league: LeagueState) -> PlayersLeavingSum
     return summary
 }
 
+public func getSchoolHallOfFameSummary(_ league: LeagueState) -> SchoolHallOfFameSummary {
+    guard let summary = LeagueStore.update(league.handle, { state -> SchoolHallOfFameSummary in
+        guard state.status == "completed" else {
+            return SchoolHallOfFameSummary(userTeamId: state.userTeamId, entries: state.schoolHallOfFame ?? [])
+        }
+        if state.playersLeaving == nil {
+            state.playersLeaving = calculatePlayersLeaving(state)
+        }
+        if state.schoolHallOfFame == nil {
+            state.schoolHallOfFame = calculateSchoolHallOfFame(state)
+        }
+        return SchoolHallOfFameSummary(userTeamId: state.userTeamId, entries: state.schoolHallOfFame ?? [])
+    }) else {
+        return SchoolHallOfFameSummary(userTeamId: "", entries: [])
+    }
+    return summary
+}
+
 func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry] {
     let minutesByTeamAndPlayer = buildLeavingPlayerStats(state)
     var entries: [PlayerLeavingEntry] = []
@@ -28,6 +106,8 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
         let teamPrestige = clamp(team.prestige, min: 0, max: 1)
         let teamStats = minutesByTeamAndPlayer[team.teamId] ?? [:]
         let totalTeamMinutes = max(1, teamStats.values.reduce(0) { $0 + $1.minutes })
+        let lineupNames = Set(team.teamModel.lineup.map(\.bio.name))
+        let rosterSummaries = rosterSummaryPlayers(from: team.teamModel, lineupNames: lineupNames)
 
         for (playerIndex, player) in team.teamModel.players.enumerated() {
             let overall = playerOverall(player)
@@ -44,6 +124,7 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
                         team: team,
                         player: player,
                         playerIndex: playerIndex,
+                        playerSummary: playerIndex < rosterSummaries.count ? rosterSummaries[playerIndex] : nil,
                         overall: overall,
                         outcome: .graduated,
                         reason: "Graduated after senior season.",
@@ -97,6 +178,7 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
                     team: team,
                     player: player,
                     playerIndex: playerIndex,
+                    playerSummary: playerIndex < rosterSummaries.count ? rosterSummaries[playerIndex] : nil,
                     overall: overall,
                     outcome: .transfer,
                     reason: reason,
@@ -119,6 +201,137 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
         }
         return lhs.teamName < rhs.teamName
     }
+}
+
+func calculateSchoolHallOfFame(_ state: LeagueStore.State) -> [SchoolHallOfFameEntry] {
+    let honorsByTeamAndPlayer = hallHonorsByTeamAndPlayer(state)
+    let leaving = state.playersLeaving ?? calculatePlayersLeaving(state)
+    var entries: [SchoolHallOfFameEntry] = []
+
+    for departure in leaving where departure.outcome == .graduated {
+        guard let honors = honorsByTeamAndPlayer[departure.teamId]?[departure.playerName], !honors.isEmpty else { continue }
+        guard let team = state.teams.first(where: { $0.teamId == departure.teamId }) else { continue }
+        guard let playerSummary = departure.player ?? rosterSummaryPlayers(
+            from: team.teamModel,
+            lineupNames: Set(team.teamModel.lineup.map(\.bio.name))
+        ).first(where: { $0.name == departure.playerName }) else { continue }
+
+        entries.append(
+            SchoolHallOfFameEntry(
+                id: "\(departure.teamId):\(departure.playerName)",
+                teamId: departure.teamId,
+                teamName: departure.teamName,
+                conferenceId: team.conferenceId,
+                conferenceName: team.conferenceName,
+                player: playerSummary,
+                honors: honors,
+                inductionReason: honors.first ?? "School Hall of Fame"
+            )
+        )
+    }
+
+    return entries.sorted { lhs, rhs in
+        if lhs.teamId != rhs.teamId { return lhs.teamName < rhs.teamName }
+        if lhs.honors.count != rhs.honors.count { return lhs.honors.count > rhs.honors.count }
+        if lhs.player.overall != rhs.player.overall { return lhs.player.overall > rhs.player.overall }
+        return lhs.player.name < rhs.player.name
+    }
+}
+
+private func hallHonorsByTeamAndPlayer(_ state: LeagueStore.State) -> [String: [String: [String]]] {
+    let stats = buildHallCandidateStats(state)
+    let eligible = stats
+        .filter { $0.games >= 8 && $0.minutesPerGame >= 12 }
+        .sorted { lhs, rhs in
+            if lhs.awardScore != rhs.awardScore { return lhs.awardScore > rhs.awardScore }
+            return lhs.playerName < rhs.playerName
+        }
+
+    var honors: [String: [String: [String]]] = [:]
+    func add(_ stat: HallCandidateStat, honor: String) {
+        var current = honors[stat.teamId]?[stat.playerName] ?? []
+        if !current.contains(honor) {
+            current.append(honor)
+        }
+        honors[stat.teamId, default: [:]][stat.playerName] = current
+    }
+
+    if let national = eligible.first {
+        add(national, honor: "National Player of the Year")
+    }
+    if let freshman = eligible.first(where: { $0.year == .fr }) {
+        add(freshman, honor: "Freshman of the Year")
+    }
+    for position in ["PG", "SG", "SF", "PF", "C"] {
+        if let best = eligible.first(where: { $0.normalizedPosition == position }) {
+            add(best, honor: "Best \(position)")
+        }
+    }
+
+    for (index, player) in eligible.prefix(15).enumerated() {
+        let team = index < 5 ? "First Team" : (index < 10 ? "Second Team" : "Third Team")
+        add(player, honor: "\(team) All-American")
+    }
+
+    let conferenceIds = Set(state.teams.map(\.conferenceId))
+    let conferenceNameById = Dictionary(state.teams.map { ($0.conferenceId, $0.conferenceName) }, uniquingKeysWith: { first, _ in first })
+    for conferenceId in conferenceIds {
+        let firstTeam = eligible.filter { stat in
+            state.teams.first(where: { $0.teamId == stat.teamId })?.conferenceId == conferenceId
+        }.prefix(5)
+        let conferenceName = conferenceNameById[conferenceId] ?? conferenceId
+        for player in firstTeam {
+            add(player, honor: "First Team All-\(conferenceName)")
+        }
+    }
+
+    return honors
+}
+
+private func buildHallCandidateStats(_ state: LeagueStore.State) -> [HallCandidateStat] {
+    struct Key: Hashable {
+        let playerName: String
+        let teamId: String
+        let position: String
+    }
+
+    let rosterPlayerByTeamAndName = Dictionary(uniqueKeysWithValues: state.teams.map { team in
+        let playersByName = Dictionary(grouping: team.teamModel.players, by: { $0.bio.name })
+        return (team.teamId, playersByName)
+    })
+
+    var totals: [Key: HallCandidateStat] = [:]
+    for game in state.schedule where game.completed {
+        guard let boxScore = game.result?.boxScore else { continue }
+        for (index, teamBox) in boxScore.enumerated() {
+            let teamId = index == 0 ? game.homeTeamId : game.awayTeamId
+            for player in teamBox.players {
+                let key = Key(playerName: player.playerName, teamId: teamId, position: player.position)
+                let rosterPlayer = rosterPlayerByTeamAndName[teamId]?[player.playerName]?.first
+                var current = totals[key] ?? HallCandidateStat(
+                    playerName: player.playerName,
+                    teamId: teamId,
+                    position: player.position,
+                    year: rosterPlayer?.bio.year
+                )
+                current.games += 1
+                current.minutes += player.minutes
+                current.points += player.points
+                current.rebounds += player.rebounds
+                current.assists += player.assists
+                current.steals += player.steals
+                current.blocks += player.blocks
+                current.turnovers += player.turnovers
+                current.fgMade += player.fgMade
+                current.fgAttempts += player.fgAttempts
+                current.threeMade += player.threeMade
+                current.ftAttempts += player.ftAttempts
+                totals[key] = current
+            }
+        }
+    }
+
+    return Array(totals.values)
 }
 
 private func buildLeavingPlayerStats(_ state: LeagueStore.State) -> [String: [String: LeavingPlayerStat]] {
@@ -185,6 +398,7 @@ private func leavingEntry(
     team: LeagueStore.TeamState,
     player: Player,
     playerIndex: Int,
+    playerSummary: UserRosterPlayerSummary?,
     overall: Int,
     outcome: PlayerLeavingOutcome,
     reason: String,
@@ -199,6 +413,7 @@ private func leavingEntry(
         id: "\(team.teamId):\(playerIndex):\(player.bio.name):\(outcome.rawValue)",
         teamId: team.teamId,
         teamName: team.teamName,
+        player: playerSummary,
         playerName: player.bio.name,
         position: player.bio.position.rawValue,
         year: player.bio.year.rawValue,
@@ -213,4 +428,14 @@ private func leavingEntry(
         greed: greed,
         nilDollarsLastYear: nilDollars
     )
+}
+
+private func normalizeHallPosition(_ position: String) -> String {
+    switch position.uppercased() {
+    case "CG": return "PG"
+    case "WING": return "SF"
+    case "F": return "PF"
+    case "BIG": return "C"
+    default: return position.uppercased()
+    }
 }

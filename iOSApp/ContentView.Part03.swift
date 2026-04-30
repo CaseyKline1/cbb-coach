@@ -21,6 +21,7 @@ extension CollegeLeagueHomeView {
         nationalBracket = getNationalTournamentBracket(league)
         nilBudgetSummary = getNILBudgetSummary(league)
         playersLeavingSummary = getPlayersLeavingSummary(league)
+        hallOfFameSummary = getSchoolHallOfFameSummary(league)
         if includeDeferredData {
             applyDeferredRefresh(Self.buildDeferredRefreshData(for: league))
         }
@@ -210,6 +211,7 @@ enum LeagueMenuDestination: Hashable {
     case standings
     case rankings
     case coachingStaff
+    case hallOfFame
     case boxScore(String)
 }
 

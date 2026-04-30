@@ -222,6 +222,7 @@ struct SeasonRecapView: View {
     let bracket: NationalTournamentBracket?
     let nilBudgetSummary: NILBudgetSummary?
     let playersLeavingSummary: PlayersLeavingSummary?
+    let hallOfFameSummary: SchoolHallOfFameSummary?
     let roster: [UserRosterPlayerSummary]
     let teamRostersByName: [String: [UserRosterPlayerSummary]]
 
@@ -246,6 +247,7 @@ struct SeasonRecapView: View {
         bracket: NationalTournamentBracket?,
         nilBudgetSummary: NILBudgetSummary?,
         playersLeavingSummary: PlayersLeavingSummary?,
+        hallOfFameSummary: SchoolHallOfFameSummary?,
         roster: [UserRosterPlayerSummary],
         teamRostersByName: [String: [UserRosterPlayerSummary]]
     ) {
@@ -259,6 +261,7 @@ struct SeasonRecapView: View {
         self.bracket = bracket
         self.nilBudgetSummary = nilBudgetSummary
         self.playersLeavingSummary = playersLeavingSummary
+        self.hallOfFameSummary = hallOfFameSummary
         self.roster = roster
         self.teamRostersByName = teamRostersByName
         _selectedConferenceId = State(initialValue: userConferenceId ?? standingsByConference.keys.sorted().first ?? "")
@@ -369,7 +372,13 @@ struct SeasonRecapView: View {
                     }
 
                     NavigationLink {
-                        OffseasonScheduleView(nilBudgetSummary: nilBudgetSummary, playersLeavingSummary: playersLeavingSummary)
+                        OffseasonScheduleView(
+                            nilBudgetSummary: nilBudgetSummary,
+                            playersLeavingSummary: playersLeavingSummary,
+                            hallOfFameSummary: hallOfFameSummary,
+                            games: games,
+                            teamRostersByName: teamRostersByName
+                        )
                     } label: {
                         Text("Offseason Schedule")
                             .frame(maxWidth: .infinity)
@@ -654,6 +663,9 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
 struct OffseasonScheduleView: View {
     let nilBudgetSummary: NILBudgetSummary?
     let playersLeavingSummary: PlayersLeavingSummary?
+    let hallOfFameSummary: SchoolHallOfFameSummary?
+    let games: [LeagueGameSummary]
+    let teamRostersByName: [String: [UserRosterPlayerSummary]]
 
     private let phases = OffseasonSchedulePhase.initialPhases
 
@@ -679,7 +691,12 @@ struct OffseasonScheduleView: View {
                         .buttonStyle(.plain)
                     } else if phase.id == "players-leaving" {
                         NavigationLink {
-                            PlayersLeavingView(summary: playersLeavingSummary)
+                            PlayersLeavingView(
+                                summary: playersLeavingSummary,
+                                hallOfFameSummary: hallOfFameSummary,
+                                games: games,
+                                teamRostersByName: teamRostersByName
+                            )
                         } label: {
                             offseasonPhaseRow(phase, number: index + 1)
                         }
@@ -959,6 +976,11 @@ struct NILBudgetView: View {
 
 struct PlayersLeavingView: View {
     let summary: PlayersLeavingSummary?
+    let hallOfFameSummary: SchoolHallOfFameSummary?
+    let games: [LeagueGameSummary]
+    let teamRostersByName: [String: [UserRosterPlayerSummary]]
+
+    private let hallGold = Color(red: 0.96, green: 0.68, blue: 0.18)
 
     private var userRows: [PlayerLeavingEntry] {
         summary?.userEntries ?? []
@@ -970,6 +992,10 @@ struct PlayersLeavingView: View {
 
     private var graduationRows: [PlayerLeavingEntry] {
         userRows.filter { $0.outcome == .graduated }
+    }
+
+    private var hallPlayerIds: Set<String> {
+        Set((hallOfFameSummary?.entries ?? []).map { hallKey(teamId: $0.teamId, playerName: $0.player.name) })
     }
 
     var body: some View {
@@ -1021,9 +1047,18 @@ struct PlayersLeavingView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(row.playerName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppTheme.ink)
+                    NavigationLink {
+                        PlayerCardDetailView(
+                            player: playerProfile(for: row),
+                            games: games,
+                            teamName: row.teamName
+                        )
+                    } label: {
+                        Text(row.playerName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(isHallOfFamer(row) ? hallGold : AppTheme.accent)
+                    }
+                    .buttonStyle(.plain)
                     Text("\(row.year) \(row.position) | OVR \(row.overall) | POT \(row.potential)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1083,6 +1118,121 @@ struct PlayersLeavingView: View {
 
     private func percentText(_ value: Double) -> String {
         "\(Int((value * 100).rounded()))%"
+    }
+
+    private func isHallOfFamer(_ row: PlayerLeavingEntry) -> Bool {
+        hallPlayerIds.contains(hallKey(teamId: row.teamId, playerName: row.playerName))
+    }
+
+    private func hallKey(teamId: String, playerName: String) -> String {
+        "\(teamId):\(playerName)"
+    }
+
+    private func playerProfile(for row: PlayerLeavingEntry) -> UserRosterPlayerSummary {
+        if let player = row.player { return player }
+        if let match = rosterForTeam(named: row.teamName).first(where: { $0.name == row.playerName && $0.position == row.position }) {
+            return match
+        }
+        if let match = rosterForTeam(named: row.teamName).first(where: { $0.name == row.playerName }) {
+            return match
+        }
+        return UserRosterPlayerSummary(
+            playerIndex: -1,
+            name: row.playerName,
+            position: row.position,
+            year: row.year,
+            home: nil,
+            height: nil,
+            weight: nil,
+            wingspan: nil,
+            overall: row.overall,
+            isStarter: false,
+            attributes: ["potential": row.potential]
+        )
+    }
+
+    private func rosterForTeam(named teamName: String) -> [UserRosterPlayerSummary] {
+        if let direct = teamRostersByName[teamName] { return direct }
+        return teamRostersByName.first { $0.key.caseInsensitiveCompare(teamName) == .orderedSame }?.value ?? []
+    }
+}
+
+struct SchoolHallOfFameView: View {
+    let summary: SchoolHallOfFameSummary?
+    let games: [LeagueGameSummary]
+    let userTeamName: String
+
+    private let hallGold = Color(red: 0.96, green: 0.68, blue: 0.18)
+
+    private var rows: [SchoolHallOfFameEntry] {
+        summary?.userEntries ?? []
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GameCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        GameSectionHeader(title: "School Hall of Fame")
+                        Text("\(rows.count) inductees")
+                            .font(.subheadline.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if rows.isEmpty {
+                    GameCard {
+                        Text("No players have been inducted yet.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    GameCard {
+                        VStack(spacing: 0) {
+                            ForEach(rows) { row in
+                                hallRow(row)
+                                if row.id != rows.last?.id {
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Hall of Fame")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func hallRow(_ row: SchoolHallOfFameEntry) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                NavigationLink {
+                    PlayerCardDetailView(player: row.player, games: games, teamName: row.teamName)
+                } label: {
+                    Text(row.player.name)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(hallGold)
+                }
+                .buttonStyle(.plain)
+                Spacer(minLength: 8)
+                Text("OVR \(row.player.overall)")
+                    .font(.caption.monospacedDigit().weight(.bold))
+                    .foregroundStyle(AppTheme.ink)
+            }
+
+            Text("\(row.player.year) \(row.player.position) | \(row.inductionReason)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text(row.honors.joined(separator: " | "))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 12)
     }
 }
 
