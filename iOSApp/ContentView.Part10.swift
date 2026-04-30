@@ -1304,32 +1304,9 @@ struct DraftView: View {
     let games: [LeagueGameSummary]
     let onAdvance: () -> Void
 
-    private var picks: [DraftPickEntry] {
-        summary?.picks ?? []
-    }
-
-    private var userPicks: [DraftPickEntry] {
-        summary?.userPicks ?? []
-    }
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                GameCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        GameSectionHeader(title: "Draft")
-                        HStack(spacing: 8) {
-                            summaryTile(title: "Picks", value: "\(picks.count)")
-                            summaryTile(title: "Your Players", value: "\(userPicks.count)")
-                        }
-                    }
-                }
-
-                if !userPicks.isEmpty {
-                    draftSection(title: "Your Draft Picks", rows: userPicks)
-                }
-                draftSection(title: "Top 60", rows: picks)
-
                 Button {
                     onAdvance()
                 } label: {
@@ -1343,72 +1320,6 @@ struct DraftView: View {
         .background(AppTheme.background)
         .navigationTitle("Draft")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func draftSection(title: String, rows: [DraftPickEntry]) -> some View {
-        GameCard {
-            VStack(alignment: .leading, spacing: 10) {
-                GameSectionHeader(title: title)
-                if rows.isEmpty {
-                    Text("No players were drafted.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(rows) { pick in
-                            draftRow(pick)
-                            if pick.id != rows.last?.id {
-                                Divider()
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func draftRow(_ pick: DraftPickEntry) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("#\(pick.slot)")
-                .font(.callout.monospacedDigit().weight(.black))
-                .foregroundStyle(AppTheme.accent)
-                .frame(width: 42, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 3) {
-                NavigationLink {
-                    PlayerCardDetailView(player: pick.player, games: games, teamName: pick.teamName)
-                } label: {
-                    Text(pick.player.name)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppTheme.accent)
-                }
-                .buttonStyle(.plain)
-                Text("\(pick.player.year) \(pick.player.position) | \(pick.teamName) | OVR \(pick.player.overall)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 8)
-            Text(String(format: "%.1f", pick.draftScore))
-                .font(.caption.monospacedDigit().weight(.bold))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 10)
-    }
-
-    private func summaryTile(title: String, value: String) -> some View {
-        VStack(spacing: 4) {
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title3.monospacedDigit().weight(.black))
-                .foregroundStyle(AppTheme.ink)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(Color(UIColor.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
