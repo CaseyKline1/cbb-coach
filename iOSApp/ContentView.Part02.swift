@@ -66,6 +66,7 @@ struct CollegeLeagueHomeView: View {
     @State var playersLeavingSummary: PlayersLeavingSummary?
     @State var draftSummary: DraftSummary?
     @State var hallOfFameSummary: SchoolHallOfFameSummary?
+    @State var offseasonProgress: LeagueOffseasonProgress?
     @State var completedLeagueGames: [LeagueGameSummary] = []
     @State var teamRostersByName: [String: [UserRosterPlayerSummary]] = [:]
     @State var teamStatsById: [String: TeamAggregateStats] = [:]
@@ -74,6 +75,7 @@ struct CollegeLeagueHomeView: View {
     @State var skipAheadTitle = ""
     @State var skipAheadGameRecaps: [String] = []
     @State var showingSeasonRecap = false
+    @State var showingOffseasonSchedule = false
 
     var body: some View {
         NavigationStack {
@@ -109,7 +111,7 @@ struct CollegeLeagueHomeView: View {
                     HStack(spacing: 10) {
                         Button(primaryAdvanceButtonTitle) {
                             if seasonIsComplete {
-                                showingSeasonRecap = true
+                                showingOffseasonSchedule = true
                             } else {
                                 playNextGame()
                             }
@@ -118,10 +120,10 @@ struct CollegeLeagueHomeView: View {
                         .disabled(isSkipAheadInProgress)
 
                         Button("Skip Ahead") {
-                            if canSkipToMidseason || canSkipToEndRegularSeason {
+                            if hasSkipAheadTargets {
                                 showingSkipAheadOptions = true
                             } else {
-                                statusText = "Already past midseason and end of regular season checkpoints."
+                                statusText = "Already at the offseason checkpoint."
                             }
                         }
                         .buttonStyle(GameButtonStyle(variant: .secondary))
@@ -202,6 +204,45 @@ struct CollegeLeagueHomeView: View {
             .background(AppTheme.background)
             .navigationDestination(for: LeagueMenuDestination.self) { destination in
                 switch destination {
+                case .seasonRecap:
+                    SeasonRecapView(
+                        games: completedLeagueGames,
+                        schedule: schedule,
+                        userTeamId: summary?.userTeamId,
+                        userTeamName: summary?.userTeamName ?? teamName,
+                        userConferenceId: userConferenceId,
+                        standingsByConference: conferenceStandings,
+                        conferenceNamesById: conferenceNamesById,
+                        bracket: nationalBracket,
+                        nilBudgetSummary: nilBudgetSummary,
+                        playersLeavingSummary: playersLeavingSummary,
+                        draftSummary: draftSummary,
+                        hallOfFameSummary: hallOfFameSummary,
+                        roster: roster,
+                        teamRostersByName: teamRostersByName
+                    )
+                case .offseasonSchedule:
+                    OffseasonScheduleView(
+                        progress: offseasonProgress,
+                        nilBudgetSummary: nilBudgetSummary,
+                        playersLeavingSummary: playersLeavingSummary,
+                        draftSummary: draftSummary,
+                        hallOfFameSummary: hallOfFameSummary,
+                        games: completedLeagueGames,
+                        teamRostersByName: teamRostersByName,
+                        onAdvance: advanceOffseasonSchedule
+                    )
+                case .nilBudgets:
+                    NILBudgetView(summary: nilBudgetSummary)
+                case .playersLeaving:
+                    PlayersLeavingView(
+                        summary: playersLeavingSummary,
+                        hallOfFameSummary: hallOfFameSummary,
+                        games: completedLeagueGames,
+                        teamRostersByName: teamRostersByName
+                    )
+                case .draft:
+                    DraftView(summary: draftSummary, games: completedLeagueGames)
                 case .roster:
                     RosterRatingsView(
                         roster: roster,
@@ -294,6 +335,18 @@ struct CollegeLeagueHomeView: View {
                     teamRostersByName: teamRostersByName
                 )
             }
+            .navigationDestination(isPresented: $showingOffseasonSchedule) {
+                OffseasonScheduleView(
+                    progress: offseasonProgress,
+                    nilBudgetSummary: nilBudgetSummary,
+                    playersLeavingSummary: playersLeavingSummary,
+                    draftSummary: draftSummary,
+                    hallOfFameSummary: hallOfFameSummary,
+                    games: completedLeagueGames,
+                    teamRostersByName: teamRostersByName,
+                    onAdvance: advanceOffseasonSchedule
+                )
+            }
             .onAppear {
                 if league == nil {
                     createLeague()
@@ -309,6 +362,18 @@ struct CollegeLeagueHomeView: View {
                 if canSkipToEndRegularSeason {
                     Button("End of Regular Season") {
                         startSkipAhead(target: .endOfRegularSeason)
+                    }
+                }
+
+                if canSkipToSelectionSunday {
+                    Button("Selection Sunday") {
+                        startSkipAhead(target: .selectionSunday)
+                    }
+                }
+
+                if canSkipToOffseason {
+                    Button("Offseason") {
+                        startSkipAhead(target: .offseason)
                     }
                 }
 
@@ -405,6 +470,18 @@ struct CollegeLeagueHomeView: View {
         completedUserGameCount < 31
     }
 
+    private var canSkipToSelectionSunday: Bool {
+        nationalBracket == nil && !seasonIsComplete
+    }
+
+    private var canSkipToOffseason: Bool {
+        !seasonIsComplete
+    }
+
+    private var hasSkipAheadTargets: Bool {
+        canSkipToMidseason || canSkipToEndRegularSeason || canSkipToSelectionSunday || canSkipToOffseason
+    }
+
     private func createLeague() {
         do {
             let leagueSeed = "ios-league-\(UUID().uuidString.lowercased())"
@@ -451,13 +528,20 @@ struct CollegeLeagueHomeView: View {
                 refreshFromLeague(result.league, includeDeferredData: false)
                 applyDeferredRefresh(result.deferredData)
                 skipAheadGameRecaps = result.recaps
-                statusText = result.seasonCompleted ? "Season complete." : target.completionMessage
+                statusText = result.seasonCompleted && target != .offseason ? "Season complete." : target.completionMessage
                 isSkipAheadInProgress = false
             }
         }
     }
 
     private func runSkipAhead(from league: LeagueState, target: SkipAheadTarget) async -> SkipAheadSimulationResult {
+        switch target {
+        case .selectionSunday, .offseason:
+            return await runSeasonCheckpointSkipAhead(from: league, target: target)
+        case .midseason, .endOfRegularSeason:
+            break
+        }
+
         var currentLeague = league
         let userTeamName = getLeagueSummary(league).userTeamName
         let initialCompletedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
@@ -507,6 +591,33 @@ struct CollegeLeagueHomeView: View {
             league: currentLeague,
             seasonCompleted: seasonCompleted,
             recaps: liveRecaps,
+            deferredData: Self.buildDeferredRefreshData(for: currentLeague)
+        )
+    }
+
+    private func runSeasonCheckpointSkipAhead(from league: LeagueState, target: SkipAheadTarget) async -> SkipAheadSimulationResult {
+        var currentLeague = league
+        let userTeamName = getLeagueSummary(league).userTeamName
+        let initialCompletedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
+        let checkpoint: LeagueSeasonCheckpoint = target == .selectionSunday ? .selectionSunday : .offseason
+        let batch = advanceToSeasonCheckpoint(&currentLeague, checkpoint: checkpoint)
+        let recaps = batch.results.enumerated().map { offset, result in
+            Self.skipAheadGameRecap(
+                for: result,
+                gameNumber: initialCompletedGames + offset + 1,
+                userTeamName: userTeamName,
+                boxScore: result.gameId.flatMap { batch.boxScoresByGameId[$0] }
+            )
+        }
+
+        await MainActor.run {
+            skipAheadGameRecaps = recaps
+        }
+
+        return SkipAheadSimulationResult(
+            league: currentLeague,
+            seasonCompleted: batch.seasonCompleted,
+            recaps: recaps,
             deferredData: Self.buildDeferredRefreshData(for: currentLeague)
         )
     }

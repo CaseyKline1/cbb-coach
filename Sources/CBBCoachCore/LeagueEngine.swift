@@ -164,6 +164,24 @@ public struct UserGameAdvanceBatch: Codable, Equatable, Sendable {
     }
 }
 
+public enum LeagueSeasonCheckpoint: Codable, Equatable, Sendable {
+    case selectionSunday
+    case offseason
+}
+
+public enum LeagueOffseasonStage: String, Codable, Equatable, Sendable {
+    case schedule
+    case seasonRecap
+    case nilBudgets
+    case playersLeaving
+    case draft
+    case complete
+}
+
+public struct LeagueOffseasonProgress: Codable, Equatable, Sendable {
+    public var stage: LeagueOffseasonStage
+}
+
 public struct LeagueGameSummary: Codable, Equatable, Sendable {
     public var gameId: String?
     public var day: Int?
@@ -519,6 +537,7 @@ struct LeagueStore {
         var conferenceTournaments: [ConferenceTournamentState]?
         var nationalTournament: NationalTournamentState?
         var remainingRegularSeasonGames: Int?
+        var offseasonStage: LeagueOffseasonStage?
         var playersLeaving: [PlayerLeavingEntry]?
         var schoolHallOfFame: [SchoolHallOfFameEntry]?
         var draftPicks: [DraftPickEntry]?

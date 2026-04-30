@@ -29,6 +29,41 @@ private func seasonCompleteSummary(currentDay: Int) -> UserGameSummary {
     )
 }
 
+private func markSeasonCompleted(_ state: inout LeagueStore.State) {
+    state.status = "completed"
+    if state.offseasonStage == nil {
+        state.offseasonStage = .schedule
+    }
+}
+
+private func completedUserSummaryFromGame(
+    _ game: LeagueStore.ScheduledGame,
+    state: LeagueStore.State,
+    userTeamId: String
+) -> UserGameSummary {
+    let user = state.teams.first(where: { $0.teamId == userTeamId })
+    let wins = user?.wins ?? 0
+    let losses = user?.losses ?? 0
+
+    var out = userSummaryFromGame(game, userTeamId: userTeamId)
+    out.done = false
+    out.message = "Game complete"
+    if let result = game.result {
+        let userScore = game.homeTeamId == userTeamId ? result.homeScore : result.awayScore
+        let oppScore = game.homeTeamId == userTeamId ? result.awayScore : result.homeScore
+        out.score = .object([
+            "user": .number(Double(userScore)),
+            "opponent": .number(Double(oppScore)),
+        ])
+        out.won = userScore > oppScore
+    }
+    out.record = .object([
+        "wins": .number(Double(wins)),
+        "losses": .number(Double(losses)),
+    ])
+    return out
+}
+
 private func prepareAdvanceContext(_ state: LeagueStore.State, cached: LeagueAdvanceContext?) -> LeagueAdvanceContext {
     if let cached,
        cached.userTeamId == state.userTeamId,
@@ -119,7 +154,7 @@ private func advanceToNextUserGameInState(_ state: inout LeagueStore.State, cach
     var pending = nextPendingUserGame(state, context: &context)
     while pending == nil {
         guard let nextDay = nextPendingDay(&context) else {
-            state.status = "completed"
+            markSeasonCompleted(&state)
             return seasonCompleteSummary(currentDay: state.currentDay)
         }
 
@@ -137,7 +172,7 @@ private func advanceToNextUserGameInState(_ state: inout LeagueStore.State, cach
     cachedContext = context
 
     guard let pending else {
-        state.status = "completed"
+        markSeasonCompleted(&state)
         return seasonCompleteSummary(currentDay: state.currentDay)
     }
 
@@ -169,33 +204,13 @@ private func advanceToNextUserGameInState(_ state: inout LeagueStore.State, cach
     }
 
     guard let completedUserGame else {
-        state.status = "completed"
+        markSeasonCompleted(&state)
         return seasonCompleteSummary(currentDay: state.currentDay)
     }
     let summary = userSummaryFromGame(completedUserGame, userTeamId: userTeamId)
     state.userGameHistory.append(summary)
 
-    let user = state.teams.first(where: { $0.teamId == userTeamId })
-    let wins = user?.wins ?? 0
-    let losses = user?.losses ?? 0
-
-    var out = summary
-    out.done = false
-    out.message = "Game complete"
-    if let result = completedUserGame.result {
-        let userScore = completedUserGame.homeTeamId == userTeamId ? result.homeScore : result.awayScore
-        let oppScore = completedUserGame.homeTeamId == userTeamId ? result.awayScore : result.homeScore
-        out.score = .object([
-            "user": .number(Double(userScore)),
-            "opponent": .number(Double(oppScore)),
-        ])
-        out.won = userScore > oppScore
-    }
-    out.record = .object([
-        "wins": .number(Double(wins)),
-        "losses": .number(Double(losses)),
-    ])
-    return out
+    return completedUserSummaryFromGame(completedUserGame, state: state, userTeamId: userTeamId)
 }
 
 public func advanceToNextUserGame(_ league: inout LeagueState) -> UserGameSummary? {
@@ -234,6 +249,49 @@ public func advanceUserGames(_ league: inout LeagueState, maxGames: Int) -> User
             completedUserGames.append(result)
         }
         return UserGameAdvanceBatch(results: completedUserGames, seasonCompleted: seasonCompleted, boxScoresByGameId: boxScoresByGameId)
+    } ?? UserGameAdvanceBatch(results: [], seasonCompleted: false)
+}
+
+public func advanceToSeasonCheckpoint(_ league: inout LeagueState, checkpoint: LeagueSeasonCheckpoint) -> UserGameAdvanceBatch {
+    LeagueStore.updateOutsideLock(league.handle) { state in
+        if !state.scheduleGenerated || state.schedule.isEmpty {
+            generateSeasonScheduleInState(&state)
+        }
+        prepareConferenceTournamentsIfNeeded(&state)
+
+        var context = prepareAdvanceContext(state, cached: nil)
+        var completedUserGames: [UserGameSummary] = []
+        var boxScoresByGameId: [String: [TeamBoxScore]] = [:]
+
+        while true {
+            if checkpoint == .selectionSunday, state.nationalTournament != nil {
+                return UserGameAdvanceBatch(results: completedUserGames, seasonCompleted: false, boxScoresByGameId: boxScoresByGameId)
+            }
+
+            guard let nextDay = nextPendingDay(&context) else {
+                markSeasonCompleted(&state)
+                return UserGameAdvanceBatch(results: completedUserGames, seasonCompleted: true, boxScoresByGameId: boxScoresByGameId)
+            }
+
+            state.currentDay = nextDay
+            let dayIndexes = popPendingDayIndexes(&context, day: nextDay)
+            simulateScheduledDayInState(&state, scheduleIndexes: dayIndexes, teamIndexById: context.teamIndexById)
+
+            for scheduleIndex in dayIndexes {
+                guard scheduleIndex >= 0, scheduleIndex < state.schedule.count else { continue }
+                let game = state.schedule[scheduleIndex]
+                guard game.completed, game.homeTeamId == state.userTeamId || game.awayTeamId == state.userTeamId else { continue }
+                let summary = completedUserSummaryFromGame(game, state: state, userTeamId: state.userTeamId)
+                state.userGameHistory.append(summary)
+                completedUserGames.append(summary)
+                if let boxScore = game.result?.boxScore {
+                    boxScoresByGameId[game.gameId] = boxScore
+                }
+            }
+
+            prepareConferenceTournamentsIfNeeded(&state)
+            context = prepareAdvanceContext(state, cached: nil)
+        }
     } ?? UserGameAdvanceBatch(results: [], seasonCompleted: false)
 }
 

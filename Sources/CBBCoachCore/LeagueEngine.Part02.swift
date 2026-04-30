@@ -96,6 +96,7 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
         conferenceTournaments: nil,
         nationalTournament: nil,
         remainingRegularSeasonGames: nil,
+        offseasonStage: nil,
         playersLeaving: nil,
         schoolHallOfFame: nil,
         draftPicks: nil

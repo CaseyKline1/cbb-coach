@@ -23,6 +23,7 @@ extension CollegeLeagueHomeView {
         playersLeavingSummary = getPlayersLeavingSummary(league)
         draftSummary = getDraftSummary(league)
         hallOfFameSummary = getSchoolHallOfFameSummary(league)
+        offseasonProgress = getOffseasonProgress(league)
         if includeDeferredData {
             applyDeferredRefresh(Self.buildDeferredRefreshData(for: league))
         }
@@ -114,16 +115,44 @@ extension CollegeLeagueHomeView {
         league = currentLeague
         coachingStaff = getUserCoachingStaff(currentLeague)
     }
+
+    func advanceOffseasonSchedule() {
+        guard var currentLeague = league else { return }
+        guard let progress = advanceOffseason(&currentLeague) else { return }
+        league = currentLeague
+        refreshFromLeague(currentLeague)
+        statusText = offseasonStatusText(for: progress.stage)
+    }
+
+    private func offseasonStatusText(for stage: LeagueOffseasonStage) -> String {
+        switch stage {
+        case .schedule:
+            return "Advanced to offseason schedule."
+        case .seasonRecap:
+            return "Advanced to season recap."
+        case .nilBudgets:
+            return "Advanced to NIL budgets."
+        case .playersLeaving:
+            return "Advanced to players leaving."
+        case .draft:
+            return "Advanced to draft."
+        case .complete:
+            return "Offseason schedule complete."
+        }
+    }
 }
 
 enum SkipAheadTarget {
     case midseason
     case endOfRegularSeason
+    case selectionSunday
+    case offseason
 
     var completedGames: Int {
         switch self {
         case .midseason: 15
         case .endOfRegularSeason: 31
+        case .selectionSunday, .offseason: Int.max
         }
     }
 
@@ -131,6 +160,8 @@ enum SkipAheadTarget {
         switch self {
         case .midseason: "Simulating to Midseason..."
         case .endOfRegularSeason: "Simulating to End of Regular Season..."
+        case .selectionSunday: "Simulating to Selection Sunday..."
+        case .offseason: "Simulating to Offseason..."
         }
     }
 
@@ -138,6 +169,8 @@ enum SkipAheadTarget {
         switch self {
         case .midseason: "Advanced to midseason (between Weeks 15 and 16)."
         case .endOfRegularSeason: "Advanced to end of regular season (after Game 31)."
+        case .selectionSunday: "Advanced to Selection Sunday."
+        case .offseason: "Advanced to offseason."
         }
     }
 }
@@ -202,6 +235,11 @@ struct SkipAheadOverlayView: View {
 }
 
 enum LeagueMenuDestination: Hashable {
+    case seasonRecap
+    case offseasonSchedule
+    case nilBudgets
+    case playersLeaving
+    case draft
     case bracket
     case roster
     case schedule

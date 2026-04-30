@@ -67,7 +67,10 @@ private struct HallCandidateStat: Hashable {
 
 public func getPlayersLeavingSummary(_ league: LeagueState) -> PlayersLeavingSummary {
     guard let summary = LeagueStore.update(league.handle, { state -> PlayersLeavingSummary in
-        guard state.status == "completed" else {
+        guard state.status == "completed",
+              let stage = state.offseasonStage,
+              stage == .playersLeaving || stage == .draft || stage == .complete
+        else {
             return PlayersLeavingSummary(userTeamId: state.userTeamId, entries: state.playersLeaving ?? [])
         }
         if state.playersLeaving == nil {
@@ -82,7 +85,10 @@ public func getPlayersLeavingSummary(_ league: LeagueState) -> PlayersLeavingSum
 
 public func getSchoolHallOfFameSummary(_ league: LeagueState) -> SchoolHallOfFameSummary {
     guard let summary = LeagueStore.update(league.handle, { state -> SchoolHallOfFameSummary in
-        guard state.status == "completed" else {
+        guard state.status == "completed",
+              let stage = state.offseasonStage,
+              stage == .draft || stage == .complete
+        else {
             return SchoolHallOfFameSummary(userTeamId: state.userTeamId, entries: state.schoolHallOfFame ?? [])
         }
         if state.playersLeaving == nil {
@@ -103,7 +109,10 @@ public func getSchoolHallOfFameSummary(_ league: LeagueState) -> SchoolHallOfFam
 
 public func getDraftSummary(_ league: LeagueState) -> DraftSummary {
     guard let summary = LeagueStore.update(league.handle, { state -> DraftSummary in
-        guard state.status == "completed" else {
+        guard state.status == "completed",
+              let stage = state.offseasonStage,
+              stage == .draft || stage == .complete
+        else {
             return DraftSummary(userTeamId: state.userTeamId, picks: state.draftPicks ?? [])
         }
         if state.playersLeaving == nil {
@@ -120,6 +129,53 @@ public func getDraftSummary(_ league: LeagueState) -> DraftSummary {
         return DraftSummary(userTeamId: "", picks: [])
     }
     return summary
+}
+
+public func getOffseasonProgress(_ league: LeagueState) -> LeagueOffseasonProgress? {
+    LeagueStore.update(league.handle) { state -> LeagueOffseasonProgress? in
+        guard state.status == "completed" else { return nil }
+        if state.offseasonStage == nil {
+            state.offseasonStage = .schedule
+        }
+        return LeagueOffseasonProgress(stage: state.offseasonStage ?? .schedule)
+    } ?? nil
+}
+
+@discardableResult
+public func advanceOffseason(_ league: inout LeagueState) -> LeagueOffseasonProgress? {
+    LeagueStore.update(league.handle) { state -> LeagueOffseasonProgress? in
+        guard state.status == "completed" else { return nil }
+
+        let currentStage = state.offseasonStage ?? .schedule
+        switch currentStage {
+        case .schedule:
+            state.offseasonStage = .seasonRecap
+        case .seasonRecap:
+            state.offseasonStage = .nilBudgets
+        case .nilBudgets:
+            if state.playersLeaving == nil {
+                state.playersLeaving = calculatePlayersLeaving(state)
+            }
+            state.offseasonStage = .playersLeaving
+        case .playersLeaving:
+            if state.playersLeaving == nil {
+                state.playersLeaving = calculatePlayersLeaving(state)
+            }
+            if state.draftPicks == nil {
+                state.draftPicks = calculateDraftPicks(state)
+            }
+            if state.schoolHallOfFame == nil {
+                state.schoolHallOfFame = calculateSchoolHallOfFame(state)
+            }
+            state.offseasonStage = .draft
+        case .draft:
+            state.offseasonStage = .complete
+        case .complete:
+            break
+        }
+
+        return LeagueOffseasonProgress(stage: state.offseasonStage ?? .schedule)
+    } ?? nil
 }
 
 func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry] {
@@ -435,7 +491,7 @@ private func leavingOutcomeSortValue(_ outcome: PlayerLeavingOutcome) -> Int {
 private func draftScore(player: UserRosterPlayerSummary, stats: HallCandidateStat?, seed: String) -> Double {
     let potential = Double(player.attributes?["potential"] ?? player.overall)
     let overallScore = Double(player.overall)
-    let productionScore = clamp((stats?.awardScore ?? 0) / 36.0, min: 0, max: 1) * 100
+    let productionScore = draftProductionScore(stats)
     let youthScore = draftYouthScore(player.year)
     let measurementScore = draftMeasurementScore(position: player.position, height: player.height, wingspan: player.wingspan)
     var random = SeededRandom(seed: hashString(seed))
@@ -451,6 +507,24 @@ private func draftScore(player: UserRosterPlayerSummary, stats: HallCandidateSta
         min: 0,
         max: 110
     )
+}
+
+private func draftProductionScore(_ stats: HallCandidateStat?) -> Double {
+    guard let stats, stats.games > 0 else { return 0 }
+
+    let assistTurnoverScore = min(stats.assistTurnoverRatio, 3.0)
+    let score = stats.pointsPerGame
+        + stats.reboundsPerGame * 1.15
+        + stats.assistsPerGame * 1.05
+        + stats.stealsPerGame * 2.1
+        + stats.blocksPerGame * 2.1
+        + stats.effectiveFieldGoalPercentage * 0.08
+        + assistTurnoverScore * 0.65
+        + stats.minutesPerGame * 0.06
+        - stats.turnoversPerGame * 0.9
+        + min(Double(stats.games), 38) * 0.06
+
+    return clamp(score / 54.0, min: 0, max: 1) * 100
 }
 
 private func draftYouthScore(_ year: String) -> Double {

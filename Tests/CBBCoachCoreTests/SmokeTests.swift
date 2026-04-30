@@ -282,6 +282,78 @@ func nationalTournamentFollowsConferenceTournaments() throws {
     #expect((nationalGames.compactMap(\.day).min() ?? 0) > (conferenceGames.compactMap(\.day).max() ?? 0))
 }
 
+@Test("Season checkpoint skip can stop at Selection Sunday or offseason")
+func seasonCheckpointSkipTargets() throws {
+    var selectionLeague = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "selection-sunday-skip", totalRegularSeasonGames: 1))
+    LeagueStore.update(selectionLeague.handle) { state in
+        state.scheduleGenerated = true
+        state.schedule = []
+        state.remainingRegularSeasonGames = 0
+        state.conferenceTournaments = state.conferences.compactMap { conference in
+            let teamIds = state.teams.filter { $0.conferenceId == conference.id }.map(\.teamId)
+            guard teamIds.count >= 2, let champion = teamIds.first else { return nil }
+            return LeagueStore.ConferenceTournamentState(
+                conferenceId: conference.id,
+                conferenceName: conference.name,
+                entrantTeamIds: teamIds,
+                rounds: [[.init(top: .init(seed: 1, fromRound: nil, fromGame: nil), bottom: .init(seed: 2, fromRound: nil, fromGame: nil))]],
+                winnersByRound: [[champion]],
+                scheduledRoundCount: 1
+            )
+        }
+    }
+
+    let selectionBatch = advanceToSeasonCheckpoint(&selectionLeague, checkpoint: .selectionSunday)
+    let selectionCompleted = getCompletedLeagueGames(selectionLeague)
+    let selectionNationalGames = selectionCompleted.filter { $0.type == "national_tournament" }
+
+    #expect(selectionBatch.seasonCompleted == false)
+    #expect(getNationalTournamentBracket(selectionLeague) != nil)
+    #expect(selectionNationalGames.isEmpty)
+
+    var offseasonLeague = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "offseason-skip", totalRegularSeasonGames: 1))
+    LeagueStore.update(offseasonLeague.handle) { state in
+        let teams = Array(state.teams.prefix(2))
+        guard teams.count == 2 else { return }
+        state.scheduleGenerated = true
+        state.schedule = [
+            LeagueStore.ScheduledGame(
+                gameId: "nt_final_test",
+                day: state.totalRegularSeasonGames + 1,
+                type: "national_tournament",
+                siteType: "neutral",
+                neutralSite: true,
+                homeTeamId: teams[0].teamId,
+                homeTeamName: teams[0].teamName,
+                awayTeamId: teams[1].teamId,
+                awayTeamName: teams[1].teamName,
+                conferenceId: nil,
+                tournamentRound: 0,
+                tournamentGameIndex: 0,
+                completed: false,
+                result: nil
+            )
+        ]
+        state.remainingRegularSeasonGames = 0
+        state.conferenceTournaments = []
+        state.nationalTournament = LeagueStore.NationalTournamentState(
+            entrants: teams.enumerated().map { offset, team in
+                .init(teamId: team.teamId, overallSeed: offset + 1, seedLine: offset + 1, automaticBid: offset == 0)
+            },
+            rounds: [[.init(top: .init(overallSeed: 1, fromRound: nil, fromGame: nil), bottom: .init(overallSeed: 2, fromRound: nil, fromGame: nil))]],
+            winnersByRound: [[nil]],
+            scheduledRoundCount: 1
+        )
+    }
+
+    let offseasonBatch = advanceToSeasonCheckpoint(&offseasonLeague, checkpoint: .offseason)
+    let offseasonNationalGames = getCompletedLeagueGames(offseasonLeague).filter { $0.type == "national_tournament" }
+
+    #expect(offseasonBatch.seasonCompleted == true)
+    #expect(getLeagueSummary(offseasonLeague).status == "completed")
+    #expect(offseasonNationalGames.count == 1)
+}
+
 @Test("12-team conference tournament gives top 4 seeds a first-round bye")
 func conferenceTournamentTwelveTeamByes() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Dayton", seed: "conference-twelve-bye", totalRegularSeasonGames: 1))
@@ -515,6 +587,7 @@ func playersLeavingPhaseIncludesGraduatesAndTransfers() throws {
         guard let userIndex = state.teams.firstIndex(where: { $0.teamId == state.userTeamId }) else { return }
         state.playersLeaving = nil
         state.status = "completed"
+        state.offseasonStage = .playersLeaving
         state.teams[userIndex].wins = 1
 
         for idx in state.teams[userIndex].teamModel.players.indices {
@@ -628,6 +701,7 @@ func draftSelectsTopEntrantsAndAnnotatesPlayers() throws {
 
     _ = LeagueStore.update(league.handle) { state in
         state.status = "completed"
+        state.offseasonStage = .draft
         state.playersLeaving = nil
         state.draftPicks = nil
         state.schoolHallOfFame = nil
@@ -651,12 +725,134 @@ func draftSelectsTopEntrantsAndAnnotatesPlayers() throws {
     #expect(draft.picks.allSatisfy { $0.player.draftSlot == $0.slot })
 }
 
+@Test("Draft production does not overvalue point guard assist volume")
+func draftProductionDoesNotOvervaluePointGuardAssistVolume() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "draft-position-balance", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        guard let userIndex = state.teams.firstIndex(where: { $0.teamId == state.userTeamId }) else { return }
+        let userTeam = state.teams[userIndex]
+        let opponent = state.teams.first { $0.teamId != userTeam.teamId } ?? userTeam
+
+        let guardSummary = UserRosterPlayerSummary(
+            playerIndex: 0,
+            name: "Assist Lead",
+            position: "PG",
+            year: "SR",
+            home: nil,
+            height: "6-2",
+            weight: nil,
+            wingspan: "6-5",
+            overall: 84,
+            isStarter: true,
+            attributes: ["potential": 88]
+        )
+        let centerSummary = UserRosterPlayerSummary(
+            playerIndex: 1,
+            name: "Interior Anchor",
+            position: "C",
+            year: "SR",
+            home: nil,
+            height: "7-0",
+            weight: nil,
+            wingspan: "7-4",
+            overall: 84,
+            isStarter: true,
+            attributes: ["potential": 88]
+        )
+
+        state.status = "completed"
+        state.offseasonStage = .draft
+        state.playersLeaving = [
+            PlayerLeavingEntry(
+                id: "\(userTeam.teamId):0:Assist Lead:Draft",
+                teamId: userTeam.teamId,
+                teamName: userTeam.teamName,
+                player: guardSummary,
+                playerName: guardSummary.name,
+                position: guardSummary.position,
+                year: guardSummary.year,
+                overall: guardSummary.overall,
+                potential: 88,
+                outcome: .draft,
+                reason: "Test prospect.",
+                minutesShare: 0.2,
+                expectedMinutesShare: 0.2,
+                transferRisk: 0,
+                loyalty: 50,
+                greed: 50,
+                nilDollarsLastYear: 0
+            ),
+            PlayerLeavingEntry(
+                id: "\(userTeam.teamId):1:Interior Anchor:Draft",
+                teamId: userTeam.teamId,
+                teamName: userTeam.teamName,
+                player: centerSummary,
+                playerName: centerSummary.name,
+                position: centerSummary.position,
+                year: centerSummary.year,
+                overall: centerSummary.overall,
+                potential: 88,
+                outcome: .draft,
+                reason: "Test prospect.",
+                minutesShare: 0.2,
+                expectedMinutesShare: 0.2,
+                transferRisk: 0,
+                loyalty: 50,
+                greed: 50,
+                nilDollarsLastYear: 0
+            ),
+        ]
+        state.draftPicks = nil
+        state.schedule = [
+            LeagueStore.ScheduledGame(
+                gameId: "draft-balance-game",
+                day: 1,
+                type: "regular_season",
+                siteType: "home",
+                neutralSite: false,
+                homeTeamId: userTeam.teamId,
+                homeTeamName: userTeam.teamName,
+                awayTeamId: opponent.teamId,
+                awayTeamName: opponent.teamName,
+                conferenceId: nil,
+                tournamentRound: nil,
+                tournamentGameIndex: nil,
+                completed: true,
+                result: LeagueStore.GameResult(
+                    homeScore: 80,
+                    awayScore: 60,
+                    winnerTeamId: userTeam.teamId,
+                    wentToOvertime: false,
+                    boxScore: [
+                        TeamBoxScore(
+                            name: userTeam.teamName,
+                            players: [
+                                PlayerBoxScore(playerName: "Assist Lead", position: "PG", minutes: 35, points: 10, fgMade: 4, fgAttempts: 9, threeMade: 1, threeAttempts: 3, ftMade: 1, ftAttempts: 2, rebounds: 2, offensiveRebounds: 0, defensiveRebounds: 2, assists: 9, steals: 1, blocks: 0, turnovers: 2, fouls: 1, plusMinus: nil, energy: nil),
+                                PlayerBoxScore(playerName: "Interior Anchor", position: "C", minutes: 35, points: 24, fgMade: 12, fgAttempts: 20, threeMade: 0, threeAttempts: 0, ftMade: 0, ftAttempts: 2, rebounds: 14, offensiveRebounds: 4, defensiveRebounds: 10, assists: 1, steals: 0, blocks: 5, turnovers: 2, fouls: 2, plusMinus: nil, energy: nil),
+                            ],
+                            teamExtras: nil
+                        ),
+                        TeamBoxScore(name: opponent.teamName, players: [], teamExtras: nil),
+                    ]
+                )
+            ),
+        ]
+    }
+
+    let draft = getDraftSummary(league)
+    let guardPick = try #require(draft.picks.first { $0.player.name == "Assist Lead" })
+    let centerPick = try #require(draft.picks.first { $0.player.name == "Interior Anchor" })
+    #expect(centerPick.draftScore > guardPick.draftScore)
+}
+
 @Test("Elite underclass draft prospects enter during players leaving")
 func eliteUnderclassDraftProspectsEnterDuringPlayersLeaving() throws {
     let league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "early-draft", totalRegularSeasonGames: 1))
 
     _ = LeagueStore.update(league.handle) { state in
         state.status = "completed"
+        state.offseasonStage = .playersLeaving
         state.playersLeaving = nil
         for teamIdx in state.teams.indices {
             for idx in state.teams[teamIdx].teamModel.players.indices {
