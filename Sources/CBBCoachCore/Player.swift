@@ -29,6 +29,7 @@ public struct Player: Codable, Equatable, Sendable {
         public var year: PlayerYear = .hs
         public var redshirtUsed: Bool = false
         public var potential: Int = 1
+        public var nilDollarsLastYear: Double? = nil
     }
 
     public struct Athleticism: Codable, Equatable, Sendable {
@@ -127,6 +128,8 @@ public struct Player: Codable, Equatable, Sendable {
     public var tendencies = Tendencies()
     public var size = Size()
     public var condition = Condition()
+    public var greed: Double? = nil
+    public var loyalty: Double? = nil
 
     public init() {}
 }

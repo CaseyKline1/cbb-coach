@@ -295,6 +295,39 @@ public struct NILBudgetSummary: Codable, Equatable, Sendable {
     }
 }
 
+public enum PlayerLeavingOutcome: String, Codable, Equatable, Sendable {
+    case graduated = "Graduated"
+    case transfer = "Transfer"
+}
+
+public struct PlayerLeavingEntry: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var teamId: String
+    public var teamName: String
+    public var playerName: String
+    public var position: String
+    public var year: String
+    public var overall: Int
+    public var potential: Int
+    public var outcome: PlayerLeavingOutcome
+    public var reason: String
+    public var minutesShare: Double
+    public var expectedMinutesShare: Double
+    public var transferRisk: Double
+    public var loyalty: Double
+    public var greed: Double
+    public var nilDollarsLastYear: Double
+}
+
+public struct PlayersLeavingSummary: Codable, Equatable, Sendable {
+    public var userTeamId: String
+    public var entries: [PlayerLeavingEntry]
+
+    public var userEntries: [PlayerLeavingEntry] {
+        entries.filter { $0.teamId == userTeamId }
+    }
+}
+
 public struct CreateLeagueOptions: Codable, Equatable, Sendable {
     public var userTeamName: String
     public var userTeamId: String?
@@ -443,6 +476,7 @@ struct LeagueStore {
         var conferenceTournaments: [ConferenceTournamentState]?
         var nationalTournament: NationalTournamentState?
         var remainingRegularSeasonGames: Int?
+        var playersLeaving: [PlayerLeavingEntry]?
     }
 
     static let lock = NSLock()

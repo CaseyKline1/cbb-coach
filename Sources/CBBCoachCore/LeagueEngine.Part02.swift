@@ -95,7 +95,8 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
         scheduleGenerated: false,
         conferenceTournaments: nil,
         nationalTournament: nil,
-        remainingRegularSeasonGames: nil
+        remainingRegularSeasonGames: nil,
+        playersLeaving: nil
     )
 
     autoFillUserNonConferenceOpponentsInState(&state, seed: "create:\(options.seed)")

@@ -205,6 +205,9 @@ func buildTeamRoster(teamName: String, prestige: Double, random: inout SeededRan
         player.bio.year = yearCycle[idx % yearCycle.count]
         player.bio.home = ["CA", "TX", "FL", "NY", "NC", "IL", "GA", "PA"][idx % 8]
         player.bio.redshirtUsed = false
+        player.bio.nilDollarsLastYear = 0
+        player.greed = Double(clamp(50 + random.int(-30, 32), min: 5, max: 95))
+        player.loyalty = Double(clamp(52 + random.int(-34, 34), min: 5, max: 98))
 
         let tierAdjustment: Int
         switch idx {

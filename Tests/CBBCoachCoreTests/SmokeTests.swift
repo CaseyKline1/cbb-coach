@@ -506,3 +506,132 @@ func nilBudgetRevenueSharingRules() throws {
     #expect(airForceBudget.donations == 0)
     #expect(airForceBudget.total == 0)
 }
+
+@Test("Players leaving phase includes graduates and personality-weighted transfers")
+func playersLeavingPhaseIncludesGraduatesAndTransfers() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "leaving-phase", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        guard let userIndex = state.teams.firstIndex(where: { $0.teamId == state.userTeamId }) else { return }
+        state.playersLeaving = nil
+        state.status = "completed"
+        state.teams[userIndex].wins = 1
+
+        for idx in state.teams[userIndex].teamModel.players.indices {
+            state.teams[userIndex].teamModel.players[idx].bio.year = idx == 0 ? .sr : .so
+            state.teams[userIndex].teamModel.players[idx].bio.redshirtUsed = idx == 0
+            state.teams[userIndex].teamModel.players[idx].bio.potential = 96
+            state.teams[userIndex].teamModel.players[idx].bio.nilDollarsLastYear = idx >= 5 ? 500_000 : 0
+            state.teams[userIndex].teamModel.players[idx].greed = idx >= 5 ? 96 : 50
+            state.teams[userIndex].teamModel.players[idx].loyalty = idx >= 5 ? 4 : 50
+            makePlayerElite(&state.teams[userIndex].teamModel.players[idx])
+        }
+
+        let userTeam = state.teams[userIndex]
+        let opponent = state.teams.first { $0.teamId != userTeam.teamId } ?? userTeam
+        let boxPlayers = userTeam.teamModel.players.enumerated().map { idx, player in
+            PlayerBoxScore(
+                playerName: player.bio.name,
+                position: player.bio.position.rawValue,
+                minutes: idx < 5 ? 40 : 0,
+                points: idx < 5 ? 10 : 0,
+                fgMade: 0,
+                fgAttempts: 0,
+                threeMade: 0,
+                threeAttempts: 0,
+                ftMade: 0,
+                ftAttempts: 0,
+                rebounds: 0,
+                offensiveRebounds: 0,
+                defensiveRebounds: 0,
+                assists: 0,
+                steals: 0,
+                blocks: 0,
+                turnovers: 0,
+                fouls: 0,
+                plusMinus: nil,
+                energy: nil
+            )
+        }
+        let opponentBox = opponent.teamModel.players.prefix(5).map { player in
+            PlayerBoxScore(
+                playerName: player.bio.name,
+                position: player.bio.position.rawValue,
+                minutes: 40,
+                points: 0,
+                fgMade: 0,
+                fgAttempts: 0,
+                threeMade: 0,
+                threeAttempts: 0,
+                ftMade: 0,
+                ftAttempts: 0,
+                rebounds: 0,
+                offensiveRebounds: 0,
+                defensiveRebounds: 0,
+                assists: 0,
+                steals: 0,
+                blocks: 0,
+                turnovers: 0,
+                fouls: 0,
+                plusMinus: nil,
+                energy: nil
+            )
+        }
+
+        if state.schedule.isEmpty {
+            state.schedule.append(
+                LeagueStore.ScheduledGame(
+                    gameId: "leaving-test",
+                    day: 1,
+                    type: "regular_season",
+                    siteType: "home",
+                    neutralSite: false,
+                    homeTeamId: userTeam.teamId,
+                    homeTeamName: userTeam.teamName,
+                    awayTeamId: opponent.teamId,
+                    awayTeamName: opponent.teamName,
+                    conferenceId: nil,
+                    tournamentRound: nil,
+                    tournamentGameIndex: nil,
+                    completed: false,
+                    result: nil
+                )
+            )
+        }
+        state.schedule[0].completed = true
+        state.schedule[0].homeTeamId = userTeam.teamId
+        state.schedule[0].homeTeamName = userTeam.teamName
+        state.schedule[0].awayTeamId = opponent.teamId
+        state.schedule[0].awayTeamName = opponent.teamName
+        state.schedule[0].result = LeagueStore.GameResult(
+            homeScore: 80,
+            awayScore: 60,
+            winnerTeamId: userTeam.teamId,
+            wentToOvertime: false,
+            boxScore: [
+                TeamBoxScore(name: userTeam.teamName, players: boxPlayers, teamExtras: nil),
+                TeamBoxScore(name: opponent.teamName, players: opponentBox, teamExtras: nil),
+            ]
+        )
+    }
+
+    let summary = getPlayersLeavingSummary(league)
+    let userRows = summary.userEntries
+    #expect(userRows.contains { $0.outcome == .graduated })
+    #expect(userRows.contains { $0.outcome == .transfer })
+    #expect(userRows.filter { $0.outcome == .transfer }.allSatisfy { $0.greed > $0.loyalty })
+}
+
+private func makePlayerElite(_ player: inout Player) {
+    player.skills.shotIQ = 95
+    player.skills.ballHandling = 95
+    player.skills.passingIQ = 95
+    player.shooting.threePointShooting = 95
+    player.shooting.midrangeShot = 95
+    player.shooting.closeShot = 95
+    player.defense.perimeterDefense = 95
+    player.defense.postDefense = 95
+    player.rebounding.defensiveRebound = 95
+    player.athleticism.speed = 95
+    player.athleticism.agility = 95
+}

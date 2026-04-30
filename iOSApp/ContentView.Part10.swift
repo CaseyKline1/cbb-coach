@@ -221,6 +221,7 @@ struct SeasonRecapView: View {
     let conferenceNamesById: [String: String]
     let bracket: NationalTournamentBracket?
     let nilBudgetSummary: NILBudgetSummary?
+    let playersLeavingSummary: PlayersLeavingSummary?
     let roster: [UserRosterPlayerSummary]
     let teamRostersByName: [String: [UserRosterPlayerSummary]]
 
@@ -244,6 +245,7 @@ struct SeasonRecapView: View {
         conferenceNamesById: [String: String],
         bracket: NationalTournamentBracket?,
         nilBudgetSummary: NILBudgetSummary?,
+        playersLeavingSummary: PlayersLeavingSummary?,
         roster: [UserRosterPlayerSummary],
         teamRostersByName: [String: [UserRosterPlayerSummary]]
     ) {
@@ -256,6 +258,7 @@ struct SeasonRecapView: View {
         self.conferenceNamesById = conferenceNamesById
         self.bracket = bracket
         self.nilBudgetSummary = nilBudgetSummary
+        self.playersLeavingSummary = playersLeavingSummary
         self.roster = roster
         self.teamRostersByName = teamRostersByName
         _selectedConferenceId = State(initialValue: userConferenceId ?? standingsByConference.keys.sorted().first ?? "")
@@ -366,7 +369,7 @@ struct SeasonRecapView: View {
                     }
 
                     NavigationLink {
-                        OffseasonScheduleView(nilBudgetSummary: nilBudgetSummary)
+                        OffseasonScheduleView(nilBudgetSummary: nilBudgetSummary, playersLeavingSummary: playersLeavingSummary)
                     } label: {
                         Text("Offseason Schedule")
                             .frame(maxWidth: .infinity)
@@ -637,6 +640,12 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
             id: "nil-budgets",
             title: "NIL Budgets",
             detail: "Reveal next season's revenue sharing and donor pool.",
+            status: .completed
+        ),
+        OffseasonSchedulePhase(
+            id: "players-leaving",
+            title: "Players Leaving",
+            detail: "Seniors graduate and transfer risks decide whether to move on.",
             status: .current
         ),
     ]
@@ -644,6 +653,7 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
 
 struct OffseasonScheduleView: View {
     let nilBudgetSummary: NILBudgetSummary?
+    let playersLeavingSummary: PlayersLeavingSummary?
 
     private let phases = OffseasonSchedulePhase.initialPhases
 
@@ -663,6 +673,13 @@ struct OffseasonScheduleView: View {
                     if phase.id == "nil-budgets" {
                         NavigationLink {
                             NILBudgetView(summary: nilBudgetSummary)
+                        } label: {
+                            offseasonPhaseRow(phase, number: index + 1)
+                        }
+                        .buttonStyle(.plain)
+                    } else if phase.id == "players-leaving" {
+                        NavigationLink {
+                            PlayersLeavingView(summary: playersLeavingSummary)
                         } label: {
                             offseasonPhaseRow(phase, number: index + 1)
                         }
@@ -706,7 +723,7 @@ struct OffseasonScheduleView: View {
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 8)
-                        if phase.id == "nil-budgets" {
+                        if phase.id == "nil-budgets" || phase.id == "players-leaving" {
                             Image(systemName: "chevron.right")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
@@ -937,6 +954,135 @@ struct NILBudgetView: View {
 
     private func scoreText(_ value: Double) -> String {
         String(format: "%.1f", value)
+    }
+}
+
+struct PlayersLeavingView: View {
+    let summary: PlayersLeavingSummary?
+
+    private var userRows: [PlayerLeavingEntry] {
+        summary?.userEntries ?? []
+    }
+
+    private var transferRows: [PlayerLeavingEntry] {
+        userRows.filter { $0.outcome == .transfer }
+    }
+
+    private var graduationRows: [PlayerLeavingEntry] {
+        userRows.filter { $0.outcome == .graduated }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GameCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        GameSectionHeader(title: "Players Leaving")
+                        HStack(spacing: 8) {
+                            summaryTile(title: "Graduating", value: "\(graduationRows.count)")
+                            summaryTile(title: "Transfers", value: "\(transferRows.count)")
+                        }
+                    }
+                }
+
+                leavingSection(title: "Graduating Seniors", rows: graduationRows, emptyText: "No seniors are graduating this offseason.")
+                leavingSection(title: "Transfer Decisions", rows: transferRows, emptyText: "No returners decided to transfer.")
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Players Leaving")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func leavingSection(title: String, rows: [PlayerLeavingEntry], emptyText: String) -> some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 10) {
+                GameSectionHeader(title: title)
+                if rows.isEmpty {
+                    Text(emptyText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(rows) { row in
+                            leavingRow(row)
+                            if row.id != rows.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func leavingRow(_ row: PlayerLeavingEntry) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(row.playerName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
+                    Text("\(row.year) \(row.position) | OVR \(row.overall) | POT \(row.potential)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                GamePill(text: row.outcome.rawValue, color: row.outcome == .graduated ? .secondary : AppTheme.warning)
+            }
+
+            Text(row.reason)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if row.outcome == .transfer {
+                HStack(spacing: 8) {
+                    metricChip(title: "MIN", value: percentText(row.minutesShare))
+                    metricChip(title: "EXP", value: percentText(row.expectedMinutesShare))
+                    metricChip(title: "Risk", value: percentText(row.transferRisk))
+                    metricChip(title: "Loy", value: "\(Int(row.loyalty.rounded()))")
+                    metricChip(title: "Greed", value: "\(Int(row.greed.rounded()))")
+                }
+            }
+        }
+        .padding(.vertical, 10)
+    }
+
+    private func summaryTile(title: String, value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.monospacedDigit().weight(.black))
+                .foregroundStyle(AppTheme.ink)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func metricChip(title: String, value: String) -> some View {
+        VStack(spacing: 3) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.black))
+                .foregroundStyle(AppTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func percentText(_ value: Double) -> String {
+        "\(Int((value * 100).rounded()))%"
     }
 }
 
