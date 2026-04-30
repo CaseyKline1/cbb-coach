@@ -42,6 +42,7 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
     public var overall: Int
     public var isStarter: Bool
     public var attributes: [String: Int]?
+    public var draftSlot: Int?
 
     public init(
         playerIndex: Int,
@@ -54,7 +55,8 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
         wingspan: String?,
         overall: Int,
         isStarter: Bool,
-        attributes: [String: Int]?
+        attributes: [String: Int]?,
+        draftSlot: Int? = nil
     ) {
         self.playerIndex = playerIndex
         self.name = name
@@ -67,6 +69,7 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
         self.overall = overall
         self.isStarter = isStarter
         self.attributes = attributes
+        self.draftSlot = draftSlot
     }
 }
 
@@ -349,6 +352,24 @@ public struct SchoolHallOfFameSummary: Codable, Equatable, Sendable {
     }
 }
 
+public struct DraftPickEntry: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var slot: Int
+    public var teamId: String
+    public var teamName: String
+    public var player: UserRosterPlayerSummary
+    public var draftScore: Double
+}
+
+public struct DraftSummary: Codable, Equatable, Sendable {
+    public var userTeamId: String
+    public var picks: [DraftPickEntry]
+
+    public var userPicks: [DraftPickEntry] {
+        picks.filter { $0.teamId == userTeamId }
+    }
+}
+
 public struct CreateLeagueOptions: Codable, Equatable, Sendable {
     public var userTeamName: String
     public var userTeamId: String?
@@ -499,6 +520,7 @@ struct LeagueStore {
         var remainingRegularSeasonGames: Int?
         var playersLeaving: [PlayerLeavingEntry]?
         var schoolHallOfFame: [SchoolHallOfFameEntry]?
+        var draftPicks: [DraftPickEntry]?
     }
 
     static let lock = NSLock()

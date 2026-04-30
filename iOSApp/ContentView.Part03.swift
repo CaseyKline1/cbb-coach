@@ -21,6 +21,7 @@ extension CollegeLeagueHomeView {
         nationalBracket = getNationalTournamentBracket(league)
         nilBudgetSummary = getNILBudgetSummary(league)
         playersLeavingSummary = getPlayersLeavingSummary(league)
+        draftSummary = getDraftSummary(league)
         hallOfFameSummary = getSchoolHallOfFameSummary(league)
         if includeDeferredData {
             applyDeferredRefresh(Self.buildDeferredRefreshData(for: league))

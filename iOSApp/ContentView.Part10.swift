@@ -222,6 +222,7 @@ struct SeasonRecapView: View {
     let bracket: NationalTournamentBracket?
     let nilBudgetSummary: NILBudgetSummary?
     let playersLeavingSummary: PlayersLeavingSummary?
+    let draftSummary: DraftSummary?
     let hallOfFameSummary: SchoolHallOfFameSummary?
     let roster: [UserRosterPlayerSummary]
     let teamRostersByName: [String: [UserRosterPlayerSummary]]
@@ -247,6 +248,7 @@ struct SeasonRecapView: View {
         bracket: NationalTournamentBracket?,
         nilBudgetSummary: NILBudgetSummary?,
         playersLeavingSummary: PlayersLeavingSummary?,
+        draftSummary: DraftSummary?,
         hallOfFameSummary: SchoolHallOfFameSummary?,
         roster: [UserRosterPlayerSummary],
         teamRostersByName: [String: [UserRosterPlayerSummary]]
@@ -261,6 +263,7 @@ struct SeasonRecapView: View {
         self.bracket = bracket
         self.nilBudgetSummary = nilBudgetSummary
         self.playersLeavingSummary = playersLeavingSummary
+        self.draftSummary = draftSummary
         self.hallOfFameSummary = hallOfFameSummary
         self.roster = roster
         self.teamRostersByName = teamRostersByName
@@ -375,6 +378,7 @@ struct SeasonRecapView: View {
                         OffseasonScheduleView(
                             nilBudgetSummary: nilBudgetSummary,
                             playersLeavingSummary: playersLeavingSummary,
+                            draftSummary: draftSummary,
                             hallOfFameSummary: hallOfFameSummary,
                             games: games,
                             teamRostersByName: teamRostersByName
@@ -655,6 +659,12 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
             id: "players-leaving",
             title: "Players Leaving",
             detail: "Seniors graduate and transfer risks decide whether to move on.",
+            status: .completed
+        ),
+        OffseasonSchedulePhase(
+            id: "draft",
+            title: "Draft",
+            detail: "The top 60 draft entrants come off the board.",
             status: .current
         ),
     ]
@@ -663,6 +673,7 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
 struct OffseasonScheduleView: View {
     let nilBudgetSummary: NILBudgetSummary?
     let playersLeavingSummary: PlayersLeavingSummary?
+    let draftSummary: DraftSummary?
     let hallOfFameSummary: SchoolHallOfFameSummary?
     let games: [LeagueGameSummary]
     let teamRostersByName: [String: [UserRosterPlayerSummary]]
@@ -697,6 +708,13 @@ struct OffseasonScheduleView: View {
                                 games: games,
                                 teamRostersByName: teamRostersByName
                             )
+                        } label: {
+                            offseasonPhaseRow(phase, number: index + 1)
+                        }
+                        .buttonStyle(.plain)
+                    } else if phase.id == "draft" {
+                        NavigationLink {
+                            DraftView(summary: draftSummary, games: games)
                         } label: {
                             offseasonPhaseRow(phase, number: index + 1)
                         }
@@ -740,7 +758,7 @@ struct OffseasonScheduleView: View {
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 8)
-                        if phase.id == "nil-budgets" || phase.id == "players-leaving" {
+                        if phase.id == "nil-budgets" || phase.id == "players-leaving" || phase.id == "draft" {
                             Image(systemName: "chevron.right")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
@@ -1233,6 +1251,110 @@ struct SchoolHallOfFameView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 12)
+    }
+}
+
+struct DraftView: View {
+    let summary: DraftSummary?
+    let games: [LeagueGameSummary]
+
+    private var picks: [DraftPickEntry] {
+        summary?.picks ?? []
+    }
+
+    private var userPicks: [DraftPickEntry] {
+        summary?.userPicks ?? []
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GameCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        GameSectionHeader(title: "Draft")
+                        HStack(spacing: 8) {
+                            summaryTile(title: "Picks", value: "\(picks.count)")
+                            summaryTile(title: "Your Players", value: "\(userPicks.count)")
+                        }
+                    }
+                }
+
+                if !userPicks.isEmpty {
+                    draftSection(title: "Your Draft Picks", rows: userPicks)
+                }
+                draftSection(title: "Top 60", rows: picks)
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Draft")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func draftSection(title: String, rows: [DraftPickEntry]) -> some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 10) {
+                GameSectionHeader(title: title)
+                if rows.isEmpty {
+                    Text("No players were drafted.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(rows) { pick in
+                            draftRow(pick)
+                            if pick.id != rows.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func draftRow(_ pick: DraftPickEntry) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("#\(pick.slot)")
+                .font(.callout.monospacedDigit().weight(.black))
+                .foregroundStyle(AppTheme.accent)
+                .frame(width: 42, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 3) {
+                NavigationLink {
+                    PlayerCardDetailView(player: pick.player, games: games, teamName: pick.teamName)
+                } label: {
+                    Text(pick.player.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.accent)
+                }
+                .buttonStyle(.plain)
+                Text("\(pick.player.year) \(pick.player.position) | \(pick.teamName) | OVR \(pick.player.overall)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+            Text(String(format: "%.1f", pick.draftScore))
+                .font(.caption.monospacedDigit().weight(.bold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 10)
+    }
+
+    private func summaryTile(title: String, value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.monospacedDigit().weight(.black))
+                .foregroundStyle(AppTheme.ink)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

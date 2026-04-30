@@ -181,6 +181,11 @@ struct PlayerCardDetailView: View {
                         Text(headerSubtitle)
                             .font(.subheadline)
                             .foregroundStyle(.primary)
+                        if let draftSlot = player.draftSlot {
+                            Text("Draft: #\(draftSlot)")
+                                .font(.subheadline.monospacedDigit().weight(.bold))
+                                .foregroundStyle(AppTheme.accent)
+                        }
                         if let measurements = measurementsLine {
                             Text(measurements)
                                 .font(.subheadline)

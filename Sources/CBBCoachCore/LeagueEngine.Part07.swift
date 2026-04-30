@@ -88,12 +88,36 @@ public func getSchoolHallOfFameSummary(_ league: LeagueState) -> SchoolHallOfFam
         if state.playersLeaving == nil {
             state.playersLeaving = calculatePlayersLeaving(state)
         }
+        if state.draftPicks == nil {
+            state.draftPicks = calculateDraftPicks(state)
+        }
         if state.schoolHallOfFame == nil {
             state.schoolHallOfFame = calculateSchoolHallOfFame(state)
         }
         return SchoolHallOfFameSummary(userTeamId: state.userTeamId, entries: state.schoolHallOfFame ?? [])
     }) else {
         return SchoolHallOfFameSummary(userTeamId: "", entries: [])
+    }
+    return summary
+}
+
+public func getDraftSummary(_ league: LeagueState) -> DraftSummary {
+    guard let summary = LeagueStore.update(league.handle, { state -> DraftSummary in
+        guard state.status == "completed" else {
+            return DraftSummary(userTeamId: state.userTeamId, picks: state.draftPicks ?? [])
+        }
+        if state.playersLeaving == nil {
+            state.playersLeaving = calculatePlayersLeaving(state)
+        }
+        if state.draftPicks == nil {
+            state.draftPicks = calculateDraftPicks(state)
+        }
+        if state.schoolHallOfFame != nil {
+            state.schoolHallOfFame = calculateSchoolHallOfFame(state)
+        }
+        return DraftSummary(userTeamId: state.userTeamId, picks: state.draftPicks ?? [])
+    }) else {
+        return DraftSummary(userTeamId: "", picks: [])
     }
     return summary
 }
@@ -206,15 +230,17 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
 func calculateSchoolHallOfFame(_ state: LeagueStore.State) -> [SchoolHallOfFameEntry] {
     let honorsByTeamAndPlayer = hallHonorsByTeamAndPlayer(state)
     let leaving = state.playersLeaving ?? calculatePlayersLeaving(state)
+    let draftSlotByPlayerId = Dictionary(uniqueKeysWithValues: (state.draftPicks ?? calculateDraftPicks(state)).map { ($0.id, $0.slot) })
     var entries: [SchoolHallOfFameEntry] = []
 
     for departure in leaving where departure.outcome == .graduated {
         guard let honors = honorsByTeamAndPlayer[departure.teamId]?[departure.playerName], !honors.isEmpty else { continue }
         guard let team = state.teams.first(where: { $0.teamId == departure.teamId }) else { continue }
-        guard let playerSummary = departure.player ?? rosterSummaryPlayers(
+        guard var playerSummary = departure.player ?? rosterSummaryPlayers(
             from: team.teamModel,
             lineupNames: Set(team.teamModel.lineup.map(\.bio.name))
         ).first(where: { $0.name == departure.playerName }) else { continue }
+        playerSummary.draftSlot = draftSlotByPlayerId["\(departure.teamId):\(departure.playerName)"]
 
         entries.append(
             SchoolHallOfFameEntry(
@@ -236,6 +262,124 @@ func calculateSchoolHallOfFame(_ state: LeagueStore.State) -> [SchoolHallOfFameE
         if lhs.player.overall != rhs.player.overall { return lhs.player.overall > rhs.player.overall }
         return lhs.player.name < rhs.player.name
     }
+}
+
+func calculateDraftPicks(_ state: LeagueStore.State) -> [DraftPickEntry] {
+    let leaving = state.playersLeaving ?? calculatePlayersLeaving(state)
+    let statsByTeamAndPlayer = Dictionary(grouping: buildHallCandidateStats(state), by: \.teamId)
+        .mapValues { rows in
+            Dictionary(rows.map { ($0.playerName, $0) }, uniquingKeysWith: { first, second in
+                first.awardScore >= second.awardScore ? first : second
+            })
+        }
+    let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
+
+    let candidates = leaving.compactMap { departure -> (departure: PlayerLeavingEntry, score: Double, boardScore: Double)? in
+        guard departure.outcome == .graduated else { return nil }
+        guard let player = departure.player else { return nil }
+        let stats = statsByTeamAndPlayer[departure.teamId]?[departure.playerName]
+        let score = draftScore(
+            player: player,
+            stats: stats,
+            seed: "\(state.optionsSeed):draft:\(departure.teamId):\(departure.playerName)"
+        )
+        let variance = deterministicDraftRoll(state: state, teamId: departure.teamId, playerName: departure.playerName, salt: "board") * 9.0
+        let teamPrestige = teamById[departure.teamId]?.prestige ?? 0.5
+        let boardScore = score + variance + teamPrestige * 2.0
+        return (departure, score, boardScore)
+    }
+    .sorted { lhs, rhs in
+        if lhs.boardScore != rhs.boardScore { return lhs.boardScore > rhs.boardScore }
+        return lhs.departure.playerName < rhs.departure.playerName
+    }
+
+    return candidates.prefix(60).enumerated().map { index, row in
+        var player = row.departure.player ?? UserRosterPlayerSummary(
+            playerIndex: -1,
+            name: row.departure.playerName,
+            position: row.departure.position,
+            year: row.departure.year,
+            home: nil,
+            height: nil,
+            weight: nil,
+            wingspan: nil,
+            overall: row.departure.overall,
+            isStarter: false,
+            attributes: ["potential": row.departure.potential]
+        )
+        player.draftSlot = index + 1
+        return DraftPickEntry(
+            id: "\(row.departure.teamId):\(row.departure.playerName)",
+            slot: index + 1,
+            teamId: row.departure.teamId,
+            teamName: row.departure.teamName,
+            player: player,
+            draftScore: row.score
+        )
+    }
+}
+
+private func draftScore(player: UserRosterPlayerSummary, stats: HallCandidateStat?, seed: String) -> Double {
+    let potential = Double(player.attributes?["potential"] ?? player.overall)
+    let overallScore = Double(player.overall)
+    let productionScore = clamp((stats?.awardScore ?? 0) / 36.0, min: 0, max: 1) * 100
+    let youthScore = draftYouthScore(player.year)
+    let measurementScore = draftMeasurementScore(position: player.position, height: player.height, wingspan: player.wingspan)
+    var random = SeededRandom(seed: hashString(seed))
+    let privateWorkout = (random.nextUnit() - 0.5) * 4.0
+
+    return clamp(
+        overallScore * 0.48
+            + potential * 0.22
+            + productionScore * 0.18
+            + youthScore * 0.06
+            + measurementScore * 0.06
+            + privateWorkout,
+        min: 0,
+        max: 110
+    )
+}
+
+private func draftYouthScore(_ year: String) -> Double {
+    switch year.uppercased() {
+    case "FR": return 100
+    case "SO": return 82
+    case "JR": return 60
+    case "SR": return 34
+    default: return 48
+    }
+}
+
+private func draftMeasurementScore(position: String, height: String?, wingspan: String?) -> Double {
+    let heightInches = parseMeasurementInches(height)
+    let wingspanInches = parseMeasurementInches(wingspan)
+    let target = draftMeasurementTarget(position)
+    let heightScore = heightInches.map { clamp((Double($0) - Double(target.height - 4)) / 8.0, min: 0, max: 1) } ?? 0.45
+    let wingspanScore = wingspanInches.map { clamp((Double($0) - Double(target.wingspan - 4)) / 9.0, min: 0, max: 1) } ?? 0.45
+    return (heightScore * 0.45 + wingspanScore * 0.55) * 100
+}
+
+private func draftMeasurementTarget(_ position: String) -> (height: Int, wingspan: Int) {
+    switch normalizeHallPosition(position) {
+    case "PG": return (74, 77)
+    case "SG": return (77, 80)
+    case "SF": return (80, 83)
+    case "PF": return (82, 86)
+    case "C": return (84, 88)
+    default: return (79, 82)
+    }
+}
+
+private func parseMeasurementInches(_ value: String?) -> Int? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+    let normalized = trimmed
+        .replacingOccurrences(of: "'", with: "-")
+        .replacingOccurrences(of: "\"", with: "")
+    let parts = normalized.split(separator: "-", maxSplits: 1)
+    if parts.count == 2, let feet = Int(parts[0]), let inches = Int(parts[1]) {
+        return feet * 12 + inches
+    }
+    return Int(trimmed)
 }
 
 private func hallHonorsByTeamAndPlayer(_ state: LeagueStore.State) -> [String: [String: [String]]] {
@@ -391,6 +535,11 @@ private func deterministicPersonalityRoll(_ player: Player, teamId: String, salt
 
 private func deterministicLeavingRoll(state: LeagueStore.State, teamId: String, playerName: String, salt: String) -> Double {
     var random = SeededRandom(seed: hashString("\(state.optionsSeed):leaving:\(state.currentDay):\(teamId):\(playerName):\(salt)"))
+    return random.nextUnit()
+}
+
+private func deterministicDraftRoll(state: LeagueStore.State, teamId: String, playerName: String, salt: String) -> Double {
+    var random = SeededRandom(seed: hashString("\(state.optionsSeed):draft:\(state.currentDay):\(teamId):\(playerName):\(salt)"))
     return random.nextUnit()
 }
 

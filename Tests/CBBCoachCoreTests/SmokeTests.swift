@@ -622,6 +622,35 @@ func playersLeavingPhaseIncludesGraduatesAndTransfers() throws {
     #expect(userRows.filter { $0.outcome == .transfer }.allSatisfy { $0.greed > $0.loyalty })
 }
 
+@Test("Draft selects up to 60 entrants and annotates player cards")
+func draftSelectsTopEntrantsAndAnnotatesPlayers() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "draft-phase", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.playersLeaving = nil
+        state.draftPicks = nil
+        state.schoolHallOfFame = nil
+        for teamIdx in state.teams.indices {
+            state.teams[teamIdx].wins = 1
+            for idx in state.teams[teamIdx].teamModel.players.indices {
+                if idx < 3 {
+                    state.teams[teamIdx].teamModel.players[idx].bio.year = .sr
+                    state.teams[teamIdx].teamModel.players[idx].bio.redshirtUsed = true
+                    state.teams[teamIdx].teamModel.players[idx].bio.potential = 88 + (idx % 3)
+                } else {
+                    state.teams[teamIdx].teamModel.players[idx].bio.year = .so
+                }
+            }
+        }
+    }
+
+    let draft = getDraftSummary(league)
+    #expect(draft.picks.count == 60)
+    #expect(draft.picks.map(\.slot) == Array(1...60))
+    #expect(draft.picks.allSatisfy { $0.player.draftSlot == $0.slot })
+}
+
 private func makePlayerElite(_ player: inout Player) {
     player.skills.shotIQ = 95
     player.skills.ballHandling = 95
