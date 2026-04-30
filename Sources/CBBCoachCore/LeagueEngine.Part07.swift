@@ -533,12 +533,15 @@ private func hallHonorsByTeamAndPlayer(_ state: LeagueStore.State) -> [String: [
     let conferenceIds = Set(state.teams.map(\.conferenceId))
     let conferenceNameById = Dictionary(state.teams.map { ($0.conferenceId, $0.conferenceName) }, uniquingKeysWith: { first, _ in first })
     for conferenceId in conferenceIds {
-        let firstTeam = eligible.filter { stat in
+        let conferencePlayers = eligible.filter { stat in
             state.teams.first(where: { $0.teamId == stat.teamId })?.conferenceId == conferenceId
-        }.prefix(5)
+        }
         let conferenceName = conferenceNameById[conferenceId] ?? conferenceId
-        for player in firstTeam {
+        for player in conferencePlayers.prefix(5) {
             add(player, honor: "First Team All-\(conferenceName)")
+        }
+        for player in conferencePlayers.dropFirst(5).prefix(5) {
+            add(player, honor: "Second Team All-\(conferenceName)")
         }
     }
 

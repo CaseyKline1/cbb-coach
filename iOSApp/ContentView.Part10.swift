@@ -323,11 +323,14 @@ struct SeasonRecapView: View {
         ]
     }
 
-    private var selectedAllConference: [SeasonPlayerStat] {
-        eligibleStats
+    private var selectedAllConferenceTeams: [(team: String, players: [SeasonPlayerStat])] {
+        let top = Array(eligibleStats
             .filter { $0.conferenceId == selectedConferenceId }
-            .prefix(15)
-            .map { $0 }
+            .prefix(10))
+        return [
+            ("First Team", Array(top.prefix(5))),
+            ("Second Team", Array(top.dropFirst(5).prefix(5))),
+        ]
     }
 
     private var userAwardLines: [String] {
@@ -338,11 +341,23 @@ struct SeasonRecapView: View {
             players.filter { $0.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame }
                 .map { "\($0.playerName): \(team) All-American" }
         }
-        let conference = eligibleStats
-            .filter { $0.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame && $0.conferenceId == userConferenceId }
-            .prefix(15)
-            .map { "\($0.playerName): All-\(conferenceTitle($0.conferenceId ?? userConferenceId ?? ""))" }
+        let conference = selectedUserAllConferenceTeams.flatMap { team, players in
+            players
+                .filter { $0.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame }
+                .map { "\($0.playerName): \(team) All-\(conferenceTitle($0.conferenceId ?? userConferenceId ?? ""))" }
+        }
         return national + americans + conference
+    }
+
+    private var selectedUserAllConferenceTeams: [(team: String, players: [SeasonPlayerStat])] {
+        guard let userConferenceId else { return [] }
+        let top = Array(eligibleStats
+            .filter { $0.conferenceId == userConferenceId }
+            .prefix(10))
+        return [
+            ("First Team", Array(top.prefix(5))),
+            ("Second Team", Array(top.dropFirst(5).prefix(5))),
+        ]
     }
 
     private var userStanding: ConferenceStanding? {
@@ -459,7 +474,9 @@ struct SeasonRecapView: View {
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            playerListCard(title: "All-\(conferenceTitle(selectedConferenceId))", stats: selectedAllConference)
+            ForEach(selectedAllConferenceTeams, id: \.team) { section in
+                playerListCard(title: "\(section.team) All-\(conferenceTitle(selectedConferenceId))", stats: section.players)
+            }
         }
     }
 

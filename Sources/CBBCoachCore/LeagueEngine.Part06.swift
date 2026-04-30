@@ -315,7 +315,7 @@ private func calculateNILAwardsByTeamId(_ state: LeagueStore.State) -> [String: 
 
     let byConference = Dictionary(grouping: eligible, by: \.conferenceId)
     for players in byConference.values {
-        for player in players.prefix(15) {
+        for player in players.prefix(10) {
             add(player.teamId) { $0.allConference += 1 }
         }
     }
