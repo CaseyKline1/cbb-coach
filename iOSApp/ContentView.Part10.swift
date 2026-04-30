@@ -1303,10 +1303,13 @@ struct DraftView: View {
     let summary: DraftSummary?
     let games: [LeagueGameSummary]
     let onAdvance: () -> Void
+    private let userSchoolGold = Color(red: 0.96, green: 0.68, blue: 0.18)
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                draftListCard
+
                 Button {
                     onAdvance()
                 } label: {
@@ -1320,6 +1323,72 @@ struct DraftView: View {
         .background(AppTheme.background)
         .navigationTitle("Draft")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var draftListCard: some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 0) {
+                GameSectionHeader(title: "Draft Results")
+
+                if picks.isEmpty {
+                    Text("Draft results are not available yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 8)
+                } else {
+                    ForEach(Array(picks.enumerated()), id: \.element.id) { index, pick in
+                        VStack(spacing: 0) {
+                            HStack(alignment: .top, spacing: 10) {
+                                Text(formattedDraftSlot(pick.slot))
+                                    .font(.title3.weight(.bold))
+                                    .foregroundStyle(AppTheme.ink)
+                                    .frame(width: 80, alignment: .leading)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(pick.player.name)
+                                        .font(.title3.weight(.semibold))
+                                        .foregroundStyle(isUserSchoolPick(pick) ? userSchoolGold : AppTheme.ink)
+
+                                    Text(playerDetail(for: pick))
+                                        .font(.title3)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                Text(String(format: "%.1f", pick.draftScore))
+                                    .font(.title3.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 12)
+
+                            if index < picks.count - 1 {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var picks: [DraftPickEntry] {
+        (summary?.picks ?? []).sorted { $0.slot < $1.slot }
+    }
+
+    private func isUserSchoolPick(_ pick: DraftPickEntry) -> Bool {
+        guard let userTeamId = summary?.userTeamId, !userTeamId.isEmpty else { return false }
+        return pick.teamId == userTeamId
+    }
+
+    private func playerDetail(for pick: DraftPickEntry) -> String {
+        "\(pick.player.year) \(pick.player.position) | \(pick.teamName) | OVR \(pick.player.overall)"
+    }
+
+    private func formattedDraftSlot(_ slot: Int) -> String {
+        let clamped = max(1, slot)
+        let round = ((clamped - 1) / 30) + 1
+        let pickInRound = ((clamped - 1) % 30) + 1
+        return String(format: "%d.%02d", round, pickInRound)
     }
 }
 
