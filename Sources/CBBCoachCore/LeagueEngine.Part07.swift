@@ -573,6 +573,10 @@ private func nilIntrinsicValue(
     team: LeagueStore.TeamState,
     teamBudget: Double
 ) -> Double {
+    if let cap = walkOnLevelNILCap(overall: overall) {
+        return cap
+    }
+
     let quality = clamp((Double(overall) - 54) / 42, min: 0, max: 1)
     let upside = clamp((Double(player.bio.potential) - Double(overall) + 8) / 24, min: 0, max: 1)
     let production = clamp((stats?.awardScore ?? 0) / 42, min: 0, max: 1)
@@ -609,6 +613,8 @@ private func initialNILDemand(
     returningDiscount: Double,
     seed: String
 ) -> Double {
+    guard intrinsicValue > 1_000 else { return 0 }
+
     let greedFactor = clamp(greed / 100, min: 0, max: 1)
     let loyaltyFactor = clamp(loyalty / 100, min: 0, max: 1)
     let variance = 0.91 + deterministicNILValueRoll(seed: seed) * 0.20
@@ -661,6 +667,8 @@ private func nilRetentionPriority(overall: Int, potential: Int, value: Double, p
 }
 
 private func portalAskingPrice(intrinsicValue: Double, greed: Double, loyalty: Double) -> Double {
+    guard intrinsicValue > 1_000 else { return 0 }
+
     let greedFactor = clamp(greed / 100, min: 0, max: 1)
     let loyaltyFactor = clamp(loyalty / 100, min: 0, max: 1)
     let eliteTail = clamp((intrinsicValue - 1_800_000) / 2_500_000, min: 0, max: 1)
@@ -669,6 +677,10 @@ private func portalAskingPrice(intrinsicValue: Double, greed: Double, loyalty: D
 }
 
 private func transferIntrinsicFallback(_ departure: PlayerLeavingEntry) -> Double {
+    if let cap = walkOnLevelNILCap(overall: departure.overall) {
+        return cap
+    }
+
     let quality = clamp((Double(departure.overall) - 54) / 42, min: 0, max: 1)
     let upside = clamp((Double(departure.potential) - Double(departure.overall) + 8) / 24, min: 0, max: 1)
     let lastYear = departure.nilDollarsLastYear
@@ -680,6 +692,10 @@ private func transferIntrinsicFallback(_ departure: PlayerLeavingEntry) -> Doubl
         + upside * quality * 260_000
     let premium = 1.0 + pow(eliteTier, 1.7) * 0.58 + pow(nationalStarTier, 2.0) * 0.82
     return roundToNearestThousand(max(base * premium, lastYear * 0.85))
+}
+
+private func walkOnLevelNILCap(overall: Int) -> Double? {
+    overall <= 50 ? 0 : nil
 }
 
 private func applyNILRetentionContract(_ state: inout LeagueStore.State, row: NILNegotiationEntry) {
