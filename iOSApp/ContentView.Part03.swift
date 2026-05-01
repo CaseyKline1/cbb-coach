@@ -119,17 +119,42 @@ extension CollegeLeagueHomeView {
     }
 
     @discardableResult
-    func advanceOffseasonSchedule() -> LeagueOffseasonProgress? {
+    func advanceOffseasonSchedule(refreshLeague: Bool = true) -> LeagueOffseasonProgress? {
         guard var currentLeague = league else { return nil }
         guard let progress = advanceOffseason(&currentLeague) else { return nil }
         league = currentLeague
-        refreshFromLeague(currentLeague)
+        offseasonProgress = progress
+        if refreshLeague {
+            refreshAfterOffseasonAdvance(currentLeague, progress: progress)
+        }
         statusText = offseasonStatusText(for: progress.stage)
         return progress
     }
 
+    private func refreshAfterOffseasonAdvance(_ league: LeagueState, progress: LeagueOffseasonProgress) {
+        switch progress.stage {
+        case .seasonRecap, .schedule:
+            break
+        case .nilBudgets:
+            nilBudgetSummary = getNILBudgetSummary(league)
+        case .playersLeaving:
+            playersLeavingSummary = getPlayersLeavingSummary(league)
+        case .draft:
+            draftSummary = getDraftSummary(league)
+            hallOfFameSummary = getSchoolHallOfFameSummary(league)
+        case .playerRetention:
+            nilRetentionSummary = getNILRetentionSummary(league)
+        case .transferPortal:
+            nilRetentionSummary = getNILRetentionSummary(league)
+            transferPortalSummary = getTransferPortalSummary(league)
+        case .complete:
+            refreshFromLeague(league, includeDeferredData: false)
+            refreshDeferredDataFromLeague(league)
+        }
+    }
+
     func advanceToOffseasonScheduleFromRecap() {
-        let progress = advanceOffseasonSchedule()
+        let progress = advanceOffseasonSchedule(refreshLeague: false)
         if progress?.stage == .schedule {
             navigationPath.append(.offseasonSchedule)
         }
@@ -193,21 +218,20 @@ extension CollegeLeagueHomeView {
         guard var currentLeague = league else { return }
         _ = CBBCoachCore.submitNILRetentionOffer(&currentLeague, negotiationId: negotiationId)
         league = currentLeague
-        refreshFromLeague(currentLeague, includeDeferredData: false)
+        nilRetentionSummary = getNILRetentionSummary(currentLeague)
     }
 
     func meetNILRetentionDemand(negotiationId: String) {
         guard var currentLeague = league else { return }
         _ = CBBCoachCore.meetNILRetentionDemand(&currentLeague, negotiationId: negotiationId)
         league = currentLeague
-        refreshFromLeague(currentLeague, includeDeferredData: false)
+        nilRetentionSummary = getNILRetentionSummary(currentLeague)
     }
 
     func delegateNILRetention() {
         guard var currentLeague = league else { return }
         nilRetentionSummary = CBBCoachCore.delegateNILRetentionToAssistants(&currentLeague)
         league = currentLeague
-        refreshFromLeague(currentLeague, includeDeferredData: false)
     }
 }
 
