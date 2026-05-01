@@ -435,7 +435,7 @@ private func resolveCPUNILRetention(
     var rows = rows
     let rowIndexesByTeam = Dictionary(grouping: rows.indices, by: { rows[$0].teamId })
     for team in state.teams where team.teamId != state.userTeamId {
-        var remaining = max(0, (budgetByTeam[team.teamId] ?? 0) * 0.82)
+        var remaining = max(0, (budgetByTeam[team.teamId] ?? 0) * 0.38)
         let indexes = (rowIndexesByTeam[team.teamId] ?? []).sorted {
             if rows[$0].priority != rows[$1].priority { return rows[$0].priority > rows[$1].priority }
             return rows[$0].playerName < rows[$1].playerName
@@ -582,13 +582,16 @@ private func nilIntrinsicValue(
     case .c, .big:
         positionMultiplier = 1.03
     }
+    let eliteTier = clamp((Double(overall) - 86) / 12, min: 0, max: 1)
+    let nationalStarTier = clamp((Double(overall) - 92) / 7, min: 0, max: 1)
+    let elitePremium = 1.0 + pow(eliteTier, 1.7) * 0.48 + pow(nationalStarTier, 2.0) * 0.72
     let base = 18_000
         + pow(quality, 1.45) * 520_000
         + pow(max(quality, production), 2.15) * 1_050_000
         + production * 480_000
         + upside * quality * 210_000
-    let market = base * (0.70 + prestige * 0.42) * (0.72 + budgetSignal * 0.34) * positionMultiplier
-    return clamp(roundToNearestThousand(market), min: 3_000, max: 2_750_000)
+    let market = base * (0.70 + prestige * 0.42) * (0.72 + budgetSignal * 0.34) * positionMultiplier * elitePremium
+    return clamp(roundToNearestThousand(market), min: 3_000, max: 4_350_000)
 }
 
 private func initialNILDemand(
@@ -653,15 +656,23 @@ private func nilRetentionPriority(overall: Int, potential: Int, value: Double, p
 private func portalAskingPrice(intrinsicValue: Double, greed: Double, loyalty: Double) -> Double {
     let greedFactor = clamp(greed / 100, min: 0, max: 1)
     let loyaltyFactor = clamp(loyalty / 100, min: 0, max: 1)
-    return roundToNearestThousand(intrinsicValue * (1.03 + greedFactor * 0.30 - loyaltyFactor * 0.06))
+    let eliteTail = clamp((intrinsicValue - 1_800_000) / 2_500_000, min: 0, max: 1)
+    let multiplier = 1.03 + greedFactor * 0.30 - loyaltyFactor * 0.06 + pow(eliteTail, 1.6) * 0.14
+    return min(5_000_000, roundToNearestThousand(intrinsicValue * multiplier))
 }
 
 private func transferIntrinsicFallback(_ departure: PlayerLeavingEntry) -> Double {
     let quality = clamp((Double(departure.overall) - 54) / 42, min: 0, max: 1)
     let upside = clamp((Double(departure.potential) - Double(departure.overall) + 8) / 24, min: 0, max: 1)
     let lastYear = departure.nilDollarsLastYear
-    let base = 15_000 + pow(quality, 1.55) * 440_000 + pow(quality, 2.2) * 780_000 + upside * quality * 180_000
-    return roundToNearestThousand(max(base, lastYear * 0.85))
+    let eliteTier = clamp((Double(departure.overall) - 86) / 12, min: 0, max: 1)
+    let nationalStarTier = clamp((Double(departure.overall) - 92) / 7, min: 0, max: 1)
+    let base = 15_000
+        + pow(quality, 1.55) * 520_000
+        + pow(quality, 2.2) * 1_150_000
+        + upside * quality * 260_000
+    let premium = 1.0 + pow(eliteTier, 1.7) * 0.58 + pow(nationalStarTier, 2.0) * 0.82
+    return min(4_350_000, roundToNearestThousand(max(base * premium, lastYear * 0.85)))
 }
 
 private func applyNILRetentionContract(_ state: inout LeagueStore.State, row: NILNegotiationEntry) {

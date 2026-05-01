@@ -877,6 +877,76 @@ func eliteUnderclassDraftProspectsEnterDuringPlayersLeaving() throws {
     #expect(draftEntrants.allSatisfy { $0.reason.contains("draft prospect") })
 }
 
+@Test("NIL retention generates realistic spend and portal volume")
+func nilRetentionBalanceSimulation() throws {
+    var portalPerTeam: [Double] = []
+    var spendRates: [Double] = []
+    var majorBudgets: [Double] = []
+    var topAsks: [Double] = []
+    var absoluteTopAsk = 0.0
+
+    for iteration in 1...12 {
+        var league = try createD1League(options: CreateLeagueOptions(
+            userTeamName: ["Duke", "UConn", "Kansas", "Kentucky"][iteration % 4],
+            seed: "nil-balance-\(iteration)",
+            totalRegularSeasonGames: 1
+        ))
+
+        _ = LeagueStore.update(league.handle) { state in
+            state.status = "completed"
+            state.offseasonStage = .playerRetention
+            state.playersLeaving = nil
+            state.draftPicks = nil
+            state.nilRetention = nil
+            state.transferPortal = nil
+            state.nilRetentionFinalized = false
+
+            for teamIndex in state.teams.indices {
+                let roll = deterministicTestRoll(seed: "\(state.optionsSeed):record:\(state.teams[teamIndex].teamId)")
+                state.teams[teamIndex].wins = Int((12 + roll * 21).rounded())
+                state.teams[teamIndex].losses = max(1, 34 - state.teams[teamIndex].wins)
+                state.teams[teamIndex].conferenceWins = max(0, state.teams[teamIndex].wins - 10)
+                state.teams[teamIndex].conferenceLosses = max(1, state.teams[teamIndex].losses - 4)
+            }
+        }
+
+        _ = delegateNILRetentionToAssistants(&league)
+        _ = advanceOffseason(&league)
+
+        let budgets = getNILBudgetSummary(league)
+        let retention = getNILRetentionSummary(league)
+        let portal = getTransferPortalSummary(league)
+        let nationalBudget = budgets.teams.reduce(0.0) { $0 + $1.total }
+        let acceptedSpend = retention.entries.filter { $0.status == .accepted }.reduce(0.0) { $0 + $1.offer }
+        let majors = budgets.teams
+            .filter { ["acc", "big-ten", "big-12", "sec"].contains($0.conferenceId) || $0.total >= 5_000_000 }
+            .map(\.total)
+
+        portalPerTeam.append(Double(portal.entries.count) / Double(max(1, budgets.teams.count)))
+        spendRates.append(acceptedSpend / max(1, nationalBudget))
+        majorBudgets.append(average(majors))
+        topAsks.append(portal.entries.map(\.askingPrice).max() ?? 0)
+        absoluteTopAsk = max(absoluteTopAsk, portal.entries.map(\.askingPrice).max() ?? 0)
+    }
+
+    let avgPortalPerTeam = average(portalPerTeam)
+    let avgSpendRate = average(spendRates)
+    let avgMajorBudget = average(majorBudgets)
+    let avgTopAsk = average(topAsks)
+    print("NIL balance avg: portal/team=\(avgPortalPerTeam), retentionSpend=\(avgSpendRate), majorBudget=\(avgMajorBudget), topAsk=\(avgTopAsk), absoluteTopAsk=\(absoluteTopAsk)")
+
+    #expect(avgPortalPerTeam >= 4.6)
+    #expect(avgPortalPerTeam <= 7.8)
+    #expect(avgSpendRate >= 0.25)
+    #expect(avgSpendRate <= 0.58)
+    #expect(avgMajorBudget >= 2_000_000)
+    #expect(avgMajorBudget <= 9_000_000)
+    #expect(avgTopAsk >= 2_200_000)
+    #expect(avgTopAsk <= 4_600_000)
+    #expect(absoluteTopAsk >= 4_000_000)
+    #expect(absoluteTopAsk <= 5_000_000)
+}
+
 private func makePlayerElite(_ player: inout Player) {
     player.skills.shotIQ = 95
     player.skills.ballHandling = 95
@@ -903,4 +973,14 @@ private func makePlayerReplacementLevel(_ player: inout Player) {
     player.rebounding.defensiveRebound = 40
     player.athleticism.speed = 40
     player.athleticism.agility = 40
+}
+
+private func deterministicTestRoll(seed: String) -> Double {
+    var random = SeededRandom(seed: hashString(seed))
+    return random.nextUnit()
+}
+
+private func average(_ values: [Double]) -> Double {
+    guard !values.isEmpty else { return 0 }
+    return values.reduce(0, +) / Double(values.count)
 }
