@@ -210,7 +210,7 @@ private func nilDonations(
     let successAmount = successScore * 2_000_000
     let awardAmount = awardScore * 650_000
     let variance = 0.82 + deterministicNILRoll(seed: "\(optionsSeed):nil:\(team.teamId)") * 0.36
-    let donationScale = 0.60
+    let donationScale = 0.75
     return max(0, (prestigeBase + successAmount + awardAmount) * fundraisingMultiplier * variance * donationScale)
 }
 
@@ -231,7 +231,7 @@ private func nilSuccessScore(
     let tournamentWinScore = Double(nationalTournamentWins) * 0.34
     let finalFourScore = nationalTournamentWins >= 4 ? 0.8 : 0
     let runnerUpScore = nationalTournamentWins >= 5 ? 0.7 : 0
-    let championshipScore = nationalChampion ? 2.4 : 0
+    let championshipScore = nationalChampion ? 1.5 : 0
     let conferenceTournamentScore = conferenceTournamentChampion ? 0.7 : 0
     let regularSeasonTitleScore = regularSeasonChampion ? 0.55 : 0
 
