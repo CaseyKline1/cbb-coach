@@ -205,10 +205,10 @@ private func nilDonations(
     awardScore: Double,
     optionsSeed: String
 ) -> Double {
-    let prestigeBase = pow(clamp(team.prestige, min: 0, max: 1), 1.15) * 2_200_000
+    let prestigeBase = pow(clamp(team.prestige, min: 0, max: 1), 1.05) * 2_700_000
     let fundraisingMultiplier = 0.48 + clamp(fundraisingScore, min: 0, max: 1) * 1.12
-    let successAmount = successScore * 2_000_000
-    let awardAmount = awardScore * 650_000
+    let successAmount = successScore * 1_350_000
+    let awardAmount = awardScore * 550_000
     let variance = 0.82 + deterministicNILRoll(seed: "\(optionsSeed):nil:\(team.teamId)") * 0.36
     let donationScale = 0.75
     return max(0, (prestigeBase + successAmount + awardAmount) * fundraisingMultiplier * variance * donationScale)

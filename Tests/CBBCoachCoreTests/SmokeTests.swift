@@ -579,6 +579,41 @@ func nilBudgetRevenueSharingRules() throws {
     #expect(airForceBudget.total == 0)
 }
 
+@Test("NIL donations are strongly shaped by school prestige")
+func nilDonationsFavorPrestige() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "nil-prestige-factor"))
+
+    let serviceAcademies = Set(["Air Force", "Army", "Navy"])
+    let selectedIndexes = LeagueStore.update(league.handle) { state -> [Int] in
+        let candidates = state.teams.indices.filter { !serviceAcademies.contains(state.teams[$0].teamName) }
+        let highPrestigeIndex = candidates[0]
+        let lowPrestigeIndex = candidates[1]
+
+        for index in [highPrestigeIndex, lowPrestigeIndex] {
+            state.teams[index].wins = 18
+            state.teams[index].losses = 16
+            state.teams[index].conferenceWins = 9
+            state.teams[index].conferenceLosses = 9
+            state.teams[index].teamModel.coachingStaff.headCoach.skills.fundraising = 50
+        }
+
+        state.teams[highPrestigeIndex].prestige = 0.95
+        state.teams[lowPrestigeIndex].prestige = 0.25
+        return [highPrestigeIndex, lowPrestigeIndex]
+    }
+
+    let indexes = try #require(selectedIndexes)
+    let state = try #require(LeagueStore.get(league.handle))
+    let highPrestigeTeamId = state.teams[indexes[0]].teamId
+    let lowPrestigeTeamId = state.teams[indexes[1]].teamId
+
+    let summary = getNILBudgetSummary(league)
+    let highPrestigeBudget = try #require(summary.teams.first { $0.teamId == highPrestigeTeamId })
+    let lowPrestigeBudget = try #require(summary.teams.first { $0.teamId == lowPrestigeTeamId })
+
+    #expect(highPrestigeBudget.donations >= lowPrestigeBudget.donations * 2.5)
+}
+
 @Test("Players leaving phase includes graduates and personality-weighted transfers")
 func playersLeavingPhaseIncludesGraduatesAndTransfers() throws {
     let league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "leaving-phase", totalRegularSeasonGames: 1))
