@@ -223,6 +223,8 @@ struct SeasonRecapView: View {
     let nilBudgetSummary: NILBudgetSummary?
     let playersLeavingSummary: PlayersLeavingSummary?
     let draftSummary: DraftSummary?
+    let nilRetentionSummary: NILRetentionSummary?
+    let transferPortalSummary: TransferPortalSummary?
     let hallOfFameSummary: SchoolHallOfFameSummary?
     let roster: [UserRosterPlayerSummary]
     let teamRostersByName: [String: [UserRosterPlayerSummary]]
@@ -250,6 +252,8 @@ struct SeasonRecapView: View {
         nilBudgetSummary: NILBudgetSummary?,
         playersLeavingSummary: PlayersLeavingSummary?,
         draftSummary: DraftSummary?,
+        nilRetentionSummary: NILRetentionSummary?,
+        transferPortalSummary: TransferPortalSummary?,
         hallOfFameSummary: SchoolHallOfFameSummary?,
         roster: [UserRosterPlayerSummary],
         teamRostersByName: [String: [UserRosterPlayerSummary]],
@@ -266,6 +270,8 @@ struct SeasonRecapView: View {
         self.nilBudgetSummary = nilBudgetSummary
         self.playersLeavingSummary = playersLeavingSummary
         self.draftSummary = draftSummary
+        self.nilRetentionSummary = nilRetentionSummary
+        self.transferPortalSummary = transferPortalSummary
         self.hallOfFameSummary = hallOfFameSummary
         self.roster = roster
         self.teamRostersByName = teamRostersByName
@@ -669,8 +675,22 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
             id: "draft",
             title: "Draft",
             detail: "The top 60 draft entrants come off the board.",
-            window: "Final Event",
+            window: "After Leaving",
             stage: .draft
+        ),
+        OffseasonSchedulePhase(
+            id: "player-retention",
+            title: "Player Retention",
+            detail: "Negotiate one-year NIL deals with returning players.",
+            window: "After Draft",
+            stage: .playerRetention
+        ),
+        OffseasonSchedulePhase(
+            id: "transfer-portal",
+            title: "Transfer Portal",
+            detail: "Unsigned players and transfer departures enter the national market.",
+            window: "Final Event",
+            stage: .transferPortal
         ),
     ]
 }
@@ -680,6 +700,8 @@ struct OffseasonScheduleView: View {
     let nilBudgetSummary: NILBudgetSummary?
     let playersLeavingSummary: PlayersLeavingSummary?
     let draftSummary: DraftSummary?
+    let nilRetentionSummary: NILRetentionSummary?
+    let transferPortalSummary: TransferPortalSummary?
     let hallOfFameSummary: SchoolHallOfFameSummary?
     let games: [LeagueGameSummary]
     let teamRostersByName: [String: [UserRosterPlayerSummary]]
@@ -702,6 +724,10 @@ struct OffseasonScheduleView: View {
         case .playersLeaving:
             return "Advance to Draft"
         case .draft:
+            return "Advance to Player Retention"
+        case .playerRetention:
+            return "Advance to Transfer Portal"
+        case .transferPortal:
             return "Complete Offseason Schedule"
         case .complete:
             return "Offseason Schedule Complete"
@@ -1313,7 +1339,7 @@ struct DraftView: View {
                 Button {
                     onAdvance()
                 } label: {
-                    Text("Complete Offseason")
+                    Text("Advance to Player Retention")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GameButtonStyle(variant: .primary))
@@ -1389,6 +1415,373 @@ struct DraftView: View {
         let round = ((clamped - 1) / 30) + 1
         let pickInRound = ((clamped - 1) % 30) + 1
         return String(format: "%d.%02d", round, pickInRound)
+    }
+}
+
+struct NILRetentionView: View {
+    let summary: NILRetentionSummary?
+    let games: [LeagueGameSummary]
+    let onSetOffer: (String, Double) -> Void
+    let onSubmitOffer: (String) -> Void
+    let onMeetDemand: (String) -> Void
+    let onDelegate: () -> Void
+    let onAdvance: () -> Void
+
+    private var budget: NILRetentionBudgetSummary {
+        summary?.budget ?? NILRetentionBudgetSummary(total: 0, allocated: 0, remaining: 0)
+    }
+
+    private var rows: [NILNegotiationEntry] {
+        (summary?.userEntries ?? []).sorted {
+            if $0.status != $1.status { return statusSort($0.status) < statusSort($1.status) }
+            if $0.priority != $1.priority { return $0.priority > $1.priority }
+            return $0.playerName < $1.playerName
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                budgetCard
+
+                Button {
+                    onDelegate()
+                } label: {
+                    Text("Delegate to Assistants")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GameButtonStyle(variant: .secondary))
+
+                if rows.isEmpty {
+                    GameCard {
+                        Text("No returning players need NIL negotiations.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    GameCard {
+                        VStack(spacing: 0) {
+                            ForEach(rows) { row in
+                                retentionRow(row)
+                                if row.id != rows.last?.id {
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button {
+                    onAdvance()
+                } label: {
+                    Text("Advance to Transfer Portal")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GameButtonStyle(variant: .primary))
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Player Retention")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var budgetCard: some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 10) {
+                GameSectionHeader(title: "NIL Budget")
+                HStack(spacing: 8) {
+                    summaryTile(title: "TOTAL", value: moneyText(budget.total))
+                    summaryTile(title: "SIGNED", value: moneyText(budget.allocated))
+                    summaryTile(title: "LEFT", value: moneyText(budget.remaining))
+                }
+            }
+        }
+    }
+
+    private func retentionRow(_ row: NILNegotiationEntry) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    NavigationLink {
+                        PlayerCardDetailView(player: playerProfile(row), games: games, teamName: row.teamName)
+                    } label: {
+                        Text(row.playerName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.accent)
+                    }
+                    .buttonStyle(.plain)
+                    Text("\(row.year) \(row.position) | OVR \(row.overall) | POT \(row.potential)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                GamePill(text: statusText(row.status), color: statusColor(row.status))
+            }
+
+            HStack(spacing: 8) {
+                metricChip(title: "VALUE", value: moneyText(row.intrinsicValue))
+                metricChip(title: "LAST", value: moneyText(row.lastYearAmount))
+                metricChip(title: "ASK", value: moneyText(row.demand))
+                metricChip(title: "DISC", value: "\(Int((row.returningDiscount * 100).rounded()))%")
+            }
+
+            HStack(spacing: 8) {
+                metricChip(title: "LOY", value: "\(Int(row.loyalty.rounded()))")
+                metricChip(title: "GREED", value: "\(Int(row.greed.rounded()))")
+                metricChip(title: "OFFER", value: moneyText(row.offer))
+            }
+
+            if row.status == .open {
+                Slider(
+                    value: Binding(
+                        get: { row.offer },
+                        set: { onSetOffer(row.id, $0) }
+                    ),
+                    in: 0...max(row.demand * 1.25, 100_000),
+                    step: 5_000
+                )
+                HStack(spacing: 8) {
+                    Button("Offer") {
+                        onSubmitOffer(row.id)
+                    }
+                    .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
+
+                    Button("Meet Ask") {
+                        onMeetDemand(row.id)
+                    }
+                    .buttonStyle(GameButtonStyle(variant: .primary, size: .compact))
+                }
+            }
+
+            if !row.responseText.isEmpty {
+                Text(row.responseText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func summaryTile(title: String, value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.black))
+                .foregroundStyle(AppTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func metricChip(title: String, value: String) -> some View {
+        VStack(spacing: 3) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.black))
+                .foregroundStyle(AppTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func statusSort(_ status: NILNegotiationStatus) -> Int {
+        switch status {
+        case .open: return 0
+        case .accepted: return 1
+        case .portal: return 2
+        }
+    }
+
+    private func statusText(_ status: NILNegotiationStatus) -> String {
+        switch status {
+        case .open: return "OPEN"
+        case .accepted: return "SIGNED"
+        case .portal: return "PORTAL"
+        }
+    }
+
+    private func statusColor(_ status: NILNegotiationStatus) -> Color {
+        switch status {
+        case .open: return AppTheme.accent
+        case .accepted: return AppTheme.success
+        case .portal: return AppTheme.warning
+        }
+    }
+
+    private func playerProfile(_ row: NILNegotiationEntry) -> UserRosterPlayerSummary {
+        row.player ?? UserRosterPlayerSummary(
+            playerIndex: row.playerIndex,
+            name: row.playerName,
+            position: row.position,
+            year: row.year,
+            home: nil,
+            height: nil,
+            weight: nil,
+            wingspan: nil,
+            overall: row.overall,
+            isStarter: false,
+            attributes: ["potential": row.potential]
+        )
+    }
+
+    private func moneyText(_ amount: Double) -> String {
+        if amount >= 1_000_000 {
+            return "$\(String(format: "%.1f", amount / 1_000_000))M"
+        }
+        return "$\(Int(amount / 1_000).formatted())K"
+    }
+}
+
+struct TransferPortalView: View {
+    let summary: TransferPortalSummary?
+    let games: [LeagueGameSummary]
+    let onAdvance: () -> Void
+
+    private var rows: [TransferPortalEntry] {
+        (summary?.entries ?? []).sorted {
+            if $0.overall != $1.overall { return $0.overall > $1.overall }
+            return $0.askingPrice > $1.askingPrice
+        }
+    }
+
+    private var userRows: [TransferPortalEntry] {
+        summary?.userEntries ?? []
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GameCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        GameSectionHeader(title: "Transfer Portal")
+                        HStack(spacing: 8) {
+                            summaryTile(title: "NATIONAL", value: "\(rows.count)")
+                            summaryTile(title: "FROM YOU", value: "\(userRows.count)")
+                            summaryTile(title: "AVG ASK", value: moneyText(average(rows.map(\.askingPrice))))
+                        }
+                    }
+                }
+
+                portalSection(title: "Your Departures", rows: userRows, emptyText: "No unsigned players from your roster entered the portal.")
+                portalSection(title: "Top Portal Players", rows: Array(rows.prefix(80)), emptyText: "The portal is empty.")
+
+                Button {
+                    onAdvance()
+                } label: {
+                    Text("Complete Offseason Schedule")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GameButtonStyle(variant: .primary))
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Transfer Portal")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func portalSection(title: String, rows: [TransferPortalEntry], emptyText: String) -> some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 10) {
+                GameSectionHeader(title: title)
+                if rows.isEmpty {
+                    Text(emptyText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(rows) { row in
+                            portalRow(row)
+                            if row.id != rows.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func portalRow(_ row: TransferPortalEntry) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                NavigationLink {
+                    PlayerCardDetailView(player: playerProfile(row), games: games, teamName: row.previousTeamName)
+                } label: {
+                    Text(row.playerName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.accent)
+                }
+                .buttonStyle(.plain)
+                Spacer(minLength: 8)
+                Text(moneyText(row.askingPrice))
+                    .font(.subheadline.monospacedDigit().weight(.bold))
+                    .foregroundStyle(AppTheme.ink)
+            }
+            Text("\(row.year) \(row.position) | \(row.previousTeamName) | OVR \(row.overall) | POT \(row.potential)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(row.reason)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 10)
+    }
+
+    private func summaryTile(title: String, value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.black))
+                .foregroundStyle(AppTheme.ink)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func playerProfile(_ row: TransferPortalEntry) -> UserRosterPlayerSummary {
+        row.player ?? UserRosterPlayerSummary(
+            playerIndex: -1,
+            name: row.playerName,
+            position: row.position,
+            year: row.year,
+            home: nil,
+            height: nil,
+            weight: nil,
+            wingspan: nil,
+            overall: row.overall,
+            isStarter: false,
+            attributes: ["potential": row.potential]
+        )
+    }
+
+    private func average(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 0 }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    private func moneyText(_ amount: Double) -> String {
+        if amount >= 1_000_000 {
+            return "$\(String(format: "%.1f", amount / 1_000_000))M"
+        }
+        return "$\(Int(amount / 1_000).formatted())K"
     }
 }
 

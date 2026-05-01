@@ -425,6 +425,12 @@ public struct NILRetentionBudgetSummary: Codable, Equatable, Sendable {
     public var total: Double
     public var allocated: Double
     public var remaining: Double
+
+    public init(total: Double, allocated: Double, remaining: Double) {
+        self.total = total
+        self.allocated = allocated
+        self.remaining = remaining
+    }
 }
 
 public struct NILRetentionSummary: Codable, Equatable, Sendable {

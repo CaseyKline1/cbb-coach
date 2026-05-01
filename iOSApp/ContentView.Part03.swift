@@ -22,6 +22,8 @@ extension CollegeLeagueHomeView {
         nilBudgetSummary = getNILBudgetSummary(league)
         playersLeavingSummary = getPlayersLeavingSummary(league)
         draftSummary = getDraftSummary(league)
+        nilRetentionSummary = getNILRetentionSummary(league)
+        transferPortalSummary = getTransferPortalSummary(league)
         hallOfFameSummary = getSchoolHallOfFameSummary(league)
         offseasonProgress = getOffseasonProgress(league)
         if includeDeferredData {
@@ -150,6 +152,10 @@ extension CollegeLeagueHomeView {
             return .playersLeaving
         case .draft:
             return .draft
+        case .playerRetention:
+            return .playerRetention
+        case .transferPortal:
+            return .transferPortal
         case .schedule, .complete:
             return nil
         }
@@ -167,9 +173,41 @@ extension CollegeLeagueHomeView {
             return "Advanced to players leaving."
         case .draft:
             return "Advanced to draft."
+        case .playerRetention:
+            return "Advanced to player retention."
+        case .transferPortal:
+            return "Advanced to transfer portal."
         case .complete:
             return "Offseason schedule complete."
         }
+    }
+
+    func setNILRetentionOffer(negotiationId: String, offer: Double) {
+        guard var currentLeague = league else { return }
+        _ = CBBCoachCore.setNILRetentionOffer(&currentLeague, negotiationId: negotiationId, offer: offer)
+        league = currentLeague
+        nilRetentionSummary = getNILRetentionSummary(currentLeague)
+    }
+
+    func submitNILRetentionOffer(negotiationId: String) {
+        guard var currentLeague = league else { return }
+        _ = CBBCoachCore.submitNILRetentionOffer(&currentLeague, negotiationId: negotiationId)
+        league = currentLeague
+        refreshFromLeague(currentLeague, includeDeferredData: false)
+    }
+
+    func meetNILRetentionDemand(negotiationId: String) {
+        guard var currentLeague = league else { return }
+        _ = CBBCoachCore.meetNILRetentionDemand(&currentLeague, negotiationId: negotiationId)
+        league = currentLeague
+        refreshFromLeague(currentLeague, includeDeferredData: false)
+    }
+
+    func delegateNILRetention() {
+        guard var currentLeague = league else { return }
+        nilRetentionSummary = CBBCoachCore.delegateNILRetentionToAssistants(&currentLeague)
+        league = currentLeague
+        refreshFromLeague(currentLeague, includeDeferredData: false)
     }
 }
 
@@ -271,6 +309,8 @@ enum LeagueMenuDestination: Hashable {
     case nilBudgets
     case playersLeaving
     case draft
+    case playerRetention
+    case transferPortal
     case bracket
     case roster
     case schedule

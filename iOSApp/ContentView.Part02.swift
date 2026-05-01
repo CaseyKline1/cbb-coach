@@ -65,6 +65,8 @@ struct CollegeLeagueHomeView: View {
     @State var nilBudgetSummary: NILBudgetSummary?
     @State var playersLeavingSummary: PlayersLeavingSummary?
     @State var draftSummary: DraftSummary?
+    @State var nilRetentionSummary: NILRetentionSummary?
+    @State var transferPortalSummary: TransferPortalSummary?
     @State var hallOfFameSummary: SchoolHallOfFameSummary?
     @State var offseasonProgress: LeagueOffseasonProgress?
     @State var completedLeagueGames: [LeagueGameSummary] = []
@@ -218,6 +220,8 @@ struct CollegeLeagueHomeView: View {
                         nilBudgetSummary: nilBudgetSummary,
                         playersLeavingSummary: playersLeavingSummary,
                         draftSummary: draftSummary,
+                        nilRetentionSummary: nilRetentionSummary,
+                        transferPortalSummary: transferPortalSummary,
                         hallOfFameSummary: hallOfFameSummary,
                         roster: roster,
                         teamRostersByName: teamRostersByName,
@@ -229,6 +233,8 @@ struct CollegeLeagueHomeView: View {
                         nilBudgetSummary: nilBudgetSummary,
                         playersLeavingSummary: playersLeavingSummary,
                         draftSummary: draftSummary,
+                        nilRetentionSummary: nilRetentionSummary,
+                        transferPortalSummary: transferPortalSummary,
                         hallOfFameSummary: hallOfFameSummary,
                         games: completedLeagueGames,
                         teamRostersByName: teamRostersByName,
@@ -250,6 +256,22 @@ struct CollegeLeagueHomeView: View {
                 case .draft:
                     DraftView(
                         summary: draftSummary,
+                        games: completedLeagueGames,
+                        onAdvance: advanceOffseasonScheduleAndNavigate
+                    )
+                case .playerRetention:
+                    NILRetentionView(
+                        summary: nilRetentionSummary,
+                        games: completedLeagueGames,
+                        onSetOffer: setNILRetentionOffer,
+                        onSubmitOffer: submitNILRetentionOffer,
+                        onMeetDemand: meetNILRetentionDemand,
+                        onDelegate: delegateNILRetention,
+                        onAdvance: advanceOffseasonScheduleAndNavigate
+                    )
+                case .transferPortal:
+                    TransferPortalView(
+                        summary: transferPortalSummary,
                         games: completedLeagueGames,
                         onAdvance: advanceOffseasonScheduleAndNavigate
                     )
@@ -340,6 +362,8 @@ struct CollegeLeagueHomeView: View {
                     nilBudgetSummary: nilBudgetSummary,
                     playersLeavingSummary: playersLeavingSummary,
                     draftSummary: draftSummary,
+                    nilRetentionSummary: nilRetentionSummary,
+                    transferPortalSummary: transferPortalSummary,
                     hallOfFameSummary: hallOfFameSummary,
                     roster: roster,
                     teamRostersByName: teamRostersByName,
@@ -352,6 +376,8 @@ struct CollegeLeagueHomeView: View {
                     nilBudgetSummary: nilBudgetSummary,
                     playersLeavingSummary: playersLeavingSummary,
                     draftSummary: draftSummary,
+                    nilRetentionSummary: nilRetentionSummary,
+                    transferPortalSummary: transferPortalSummary,
                     hallOfFameSummary: hallOfFameSummary,
                     games: completedLeagueGames,
                     teamRostersByName: teamRostersByName,
