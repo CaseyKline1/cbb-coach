@@ -175,6 +175,8 @@ public enum LeagueOffseasonStage: String, Codable, Equatable, Sendable {
     case nilBudgets
     case playersLeaving
     case draft
+    case playerRetention
+    case transferPortal
     case complete
 }
 
@@ -389,6 +391,78 @@ public struct DraftSummary: Codable, Equatable, Sendable {
     }
 }
 
+public enum NILNegotiationStatus: String, Codable, Equatable, Sendable {
+    case open = "Open"
+    case accepted = "Accepted"
+    case portal = "Portal"
+}
+
+public struct NILNegotiationEntry: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var teamId: String
+    public var teamName: String
+    public var player: UserRosterPlayerSummary?
+    public var playerIndex: Int
+    public var playerName: String
+    public var position: String
+    public var year: String
+    public var overall: Int
+    public var potential: Int
+    public var intrinsicValue: Double
+    public var demand: Double
+    public var offer: Double
+    public var lastYearAmount: Double
+    public var rounds: Int
+    public var status: NILNegotiationStatus
+    public var responseText: String
+    public var loyalty: Double
+    public var greed: Double
+    public var returningDiscount: Double
+    public var priority: Double
+}
+
+public struct NILRetentionBudgetSummary: Codable, Equatable, Sendable {
+    public var total: Double
+    public var allocated: Double
+    public var remaining: Double
+}
+
+public struct NILRetentionSummary: Codable, Equatable, Sendable {
+    public var userTeamId: String
+    public var budget: NILRetentionBudgetSummary
+    public var entries: [NILNegotiationEntry]
+
+    public var userEntries: [NILNegotiationEntry] {
+        entries.filter { $0.teamId == userTeamId }
+    }
+}
+
+public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var previousTeamId: String
+    public var previousTeamName: String
+    public var player: UserRosterPlayerSummary?
+    public var playerName: String
+    public var position: String
+    public var year: String
+    public var overall: Int
+    public var potential: Int
+    public var askingPrice: Double
+    public var intrinsicValue: Double
+    public var reason: String
+    public var loyalty: Double
+    public var greed: Double
+}
+
+public struct TransferPortalSummary: Codable, Equatable, Sendable {
+    public var userTeamId: String
+    public var entries: [TransferPortalEntry]
+
+    public var userEntries: [TransferPortalEntry] {
+        entries.filter { $0.previousTeamId == userTeamId }
+    }
+}
+
 public struct CreateLeagueOptions: Codable, Equatable, Sendable {
     public var userTeamName: String
     public var userTeamId: String?
@@ -541,6 +615,9 @@ struct LeagueStore {
         var playersLeaving: [PlayerLeavingEntry]?
         var schoolHallOfFame: [SchoolHallOfFameEntry]?
         var draftPicks: [DraftPickEntry]?
+        var nilRetention: [NILNegotiationEntry]?
+        var transferPortal: [TransferPortalEntry]?
+        var nilRetentionFinalized: Bool?
     }
 
     static let lock = NSLock()
