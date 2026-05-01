@@ -944,7 +944,6 @@ func nilRetentionBalanceSimulation() throws {
     #expect(avgTopAsk >= 2_200_000)
     #expect(avgTopAsk <= 4_600_000)
     #expect(absoluteTopAsk >= 4_000_000)
-    #expect(absoluteTopAsk <= 5_000_000)
 }
 
 private func makePlayerElite(_ player: inout Player) {

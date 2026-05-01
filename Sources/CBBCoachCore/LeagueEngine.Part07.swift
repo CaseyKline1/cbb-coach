@@ -591,7 +591,7 @@ private func nilIntrinsicValue(
         + production * 480_000
         + upside * quality * 210_000
     let market = base * (0.70 + prestige * 0.42) * (0.72 + budgetSignal * 0.34) * positionMultiplier * elitePremium
-    return clamp(roundToNearestThousand(market), min: 3_000, max: 4_350_000)
+    return max(3_000, roundToNearestThousand(market))
 }
 
 private func initialNILDemand(
@@ -658,7 +658,7 @@ private func portalAskingPrice(intrinsicValue: Double, greed: Double, loyalty: D
     let loyaltyFactor = clamp(loyalty / 100, min: 0, max: 1)
     let eliteTail = clamp((intrinsicValue - 1_800_000) / 2_500_000, min: 0, max: 1)
     let multiplier = 1.03 + greedFactor * 0.30 - loyaltyFactor * 0.06 + pow(eliteTail, 1.6) * 0.14
-    return min(5_000_000, roundToNearestThousand(intrinsicValue * multiplier))
+    return roundToNearestThousand(intrinsicValue * multiplier)
 }
 
 private func transferIntrinsicFallback(_ departure: PlayerLeavingEntry) -> Double {
@@ -672,7 +672,7 @@ private func transferIntrinsicFallback(_ departure: PlayerLeavingEntry) -> Doubl
         + pow(quality, 2.2) * 1_150_000
         + upside * quality * 260_000
     let premium = 1.0 + pow(eliteTier, 1.7) * 0.58 + pow(nationalStarTier, 2.0) * 0.82
-    return min(4_350_000, roundToNearestThousand(max(base * premium, lastYear * 0.85)))
+    return roundToNearestThousand(max(base * premium, lastYear * 0.85))
 }
 
 private func applyNILRetentionContract(_ state: inout LeagueStore.State, row: NILNegotiationEntry) {
