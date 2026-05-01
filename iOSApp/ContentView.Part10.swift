@@ -1350,30 +1350,43 @@ struct DraftView: View {
                         .foregroundStyle(.secondary)
                         .padding(.top, 8)
                 } else {
+                    HStack(spacing: 8) {
+                        draftHeader("Pick", width: 42, alignment: .leading)
+                        draftHeader("Player", alignment: .leading)
+                        draftHeader("Score", width: 38, alignment: .trailing)
+                    }
+                    .padding(.top, 2)
+                    .padding(.bottom, 6)
+
                     ForEach(Array(picks.enumerated()), id: \.element.id) { index, pick in
                         VStack(spacing: 0) {
-                            HStack(alignment: .top, spacing: 10) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text(formattedDraftSlot(pick.slot))
-                                    .font(.title3.weight(.bold))
+                                    .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
                                     .foregroundStyle(AppTheme.ink)
-                                    .frame(width: 80, alignment: .leading)
+                                    .frame(width: 42, alignment: .leading)
 
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading, spacing: 1) {
                                     Text(pick.player.name)
-                                        .font(.title3.weight(.semibold))
+                                        .font(.system(size: 14, weight: .semibold))
                                         .foregroundStyle(isUserSchoolPick(pick) ? userSchoolGold : AppTheme.ink)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
 
                                     Text(playerDetail(for: pick))
-                                        .font(.title3)
+                                        .font(.system(size: 11, weight: .regular))
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
                                 Text(String(format: "%.1f", pick.draftScore))
-                                    .font(.title3.weight(.semibold).monospacedDigit())
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
                                     .foregroundStyle(.secondary)
+                                    .frame(width: 38, alignment: .trailing)
                             }
-                            .padding(.vertical, 12)
+                            .padding(.vertical, 6)
 
                             if index < picks.count - 1 {
                                 Divider()
@@ -1383,6 +1396,20 @@ struct DraftView: View {
                 }
             }
         }
+        .dynamicTypeSize(.xSmall ... .large)
+    }
+
+    private func draftHeader(
+        _ title: String,
+        width: CGFloat? = nil,
+        alignment: Alignment
+    ) -> some View {
+        Text(title)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .frame(width: width, alignment: alignment)
+            .frame(maxWidth: width == nil ? .infinity : nil, alignment: alignment)
     }
 
     private var picks: [DraftPickEntry] {
