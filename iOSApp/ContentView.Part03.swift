@@ -163,7 +163,20 @@ extension CollegeLeagueHomeView {
     func advanceOffseasonScheduleAndNavigate() {
         guard let progress = advanceOffseasonSchedule() else { return }
         if let destination = destination(forOffseasonStage: progress.stage) {
+            replaceCurrentOffseasonDestination(with: destination)
+        }
+    }
+
+    private func replaceCurrentOffseasonDestination(with destination: LeagueMenuDestination) {
+        guard let currentDestination = navigationPath.last,
+              currentDestination.isOffseasonWorkflowDestination
+        else {
             navigationPath.append(destination)
+            return
+        }
+
+        if currentDestination != destination {
+            navigationPath[navigationPath.count - 1] = destination
         }
     }
 
@@ -359,6 +372,15 @@ enum LeagueMenuDestination: Hashable {
     case coachingStaff
     case hallOfFame
     case boxScore(String)
+
+    var isOffseasonWorkflowDestination: Bool {
+        switch self {
+        case .seasonRecap, .offseasonSchedule, .nilBudgets, .playersLeaving, .draft, .playerRetention, .transferPortal:
+            return true
+        case .bracket, .roster, .schedule, .rotation, .playerStats, .teamStats, .statLeaders, .standings, .rankings, .coachingStaff, .hallOfFame, .boxScore:
+            return false
+        }
+    }
 }
 
 struct StatChip: View {
