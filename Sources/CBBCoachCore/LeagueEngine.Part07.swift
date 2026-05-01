@@ -470,6 +470,11 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
     let mandatoryDepartureIds = Set(departures
         .filter { $0.outcome == .graduated || $0.outcome == .draft || $0.outcome == .transfer }
         .map { playerKey(teamId: $0.teamId, playerName: $0.playerName) })
+    let rosterPlayerById = Dictionary(uniqueKeysWithValues: state.teams.flatMap { team in
+        team.teamModel.players.map { player in
+            (playerKey(teamId: team.teamId, playerName: player.bio.name), player)
+        }
+    })
 
     func appendPortalEntry(_ entry: TransferPortalEntry) {
         if portalIds.insert(entry.id).inserted {
@@ -489,6 +494,7 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
                 previousTeamId: departure.teamId,
                 previousTeamName: departure.teamName,
                 player: departure.player,
+                playerModel: rosterPlayerById[playerKey(teamId: departure.teamId, playerName: departure.playerName)],
                 playerName: departure.playerName,
                 position: departure.position,
                 year: departure.year,
@@ -510,6 +516,7 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
                 previousTeamId: row.teamId,
                 previousTeamName: row.teamName,
                 player: row.player,
+                playerModel: rosterPlayerById[playerKey(teamId: row.teamId, playerName: row.playerName)],
                 playerName: row.playerName,
                 position: row.position,
                 year: row.year,
@@ -705,6 +712,199 @@ private func roundToNearestThousand(_ value: Double) -> Double {
     (value / 1_000).rounded() * 1_000
 }
 
+private let offseasonRosterTarget = 13
+
+private func completeTransferPortalAndStartNewYear(_ state: inout LeagueStore.State) {
+    finalizeNILRetentionAndBuildPortalIfNeeded(&state)
+    applyTransferPortalCommits(&state)
+    startNextSeasonAfterOffseason(&state)
+}
+
+private func applyTransferPortalCommits(_ state: inout LeagueStore.State) {
+    guard var portal = state.transferPortal, !portal.isEmpty else { return }
+
+    let orderedIndexes = portal.indices.sorted {
+        if portal[$0].overall != portal[$1].overall { return portal[$0].overall > portal[$1].overall }
+        if portal[$0].askingPrice != portal[$1].askingPrice { return portal[$0].askingPrice > portal[$1].askingPrice }
+        return portal[$0].playerName < portal[$1].playerName
+    }
+
+    for portalIndex in orderedIndexes {
+        guard portal[portalIndex].committedTeamId == nil else { continue }
+        guard let destinationIndex = transferPortalDestinationIndex(for: portal[portalIndex], state: state) else { continue }
+
+        var player = transferPortalPlayer(from: portal[portalIndex], seed: "\(state.optionsSeed):portal-player:\(portal[portalIndex].id)")
+        player.bio.nilDollarsLastYear = portal[portalIndex].askingPrice
+        state.teams[destinationIndex].teamModel.players.append(player)
+        state.teams[destinationIndex].teamModel.lineup.append(player)
+        portal[portalIndex].committedTeamId = state.teams[destinationIndex].teamId
+        portal[portalIndex].committedTeamName = state.teams[destinationIndex].teamName
+    }
+
+    state.transferPortal = portal
+}
+
+private func transferPortalDestinationIndex(for entry: TransferPortalEntry, state: LeagueStore.State) -> Int? {
+    let candidates = state.teams.indices.filter { state.teams[$0].teamId != entry.previousTeamId }
+    guard !candidates.isEmpty else { return nil }
+
+    func score(_ index: Int) -> Double {
+        let team = state.teams[index]
+        let rosterCount = team.teamModel.players.count
+        let need = Double(max(0, offseasonRosterTarget - rosterCount)) * 120
+        let capacity = rosterCount < offseasonRosterTarget ? 40 : Double(max(0, 15 - rosterCount)) * 4
+        let prestigeFit = team.prestige * 18
+        let roleFit = transferPositionNeedScore(entry.position, players: team.teamModel.players) * 14
+        let sameSchoolPenalty: Double = team.teamId == entry.previousTeamId ? -500 : 0
+        let variance = deterministicNILValueRoll(seed: "\(state.optionsSeed):portal-destination:\(entry.id):\(team.teamId)") * 20
+        let total = need + capacity + prestigeFit + roleFit
+        return total + variance + sameSchoolPenalty
+    }
+
+    return candidates.max {
+        let lhsScore = score($0)
+        let rhsScore = score($1)
+        if lhsScore != rhsScore { return lhsScore < rhsScore }
+        return state.teams[$0].teamName > state.teams[$1].teamName
+    }
+}
+
+private func transferPositionNeedScore(_ position: String, players: [Player]) -> Double {
+    let normalized = normalizeHallPosition(position)
+    let current = players.filter { normalizeHallPosition($0.bio.position.rawValue) == normalized }.count
+    let target: Int
+    switch normalized {
+    case "PG": target = 2
+    case "SG", "SF", "PF": target = 3
+    case "C": target = 2
+    default: target = 2
+    }
+    return Double(max(0, target - current))
+}
+
+private func transferPortalPlayer(from entry: TransferPortalEntry, seed: String) -> Player {
+    if let player = entry.playerModel {
+        return player
+    }
+
+    var random = SeededRandom(seed: hashString(seed))
+    var player = createPlayer()
+    player.bio.name = entry.playerName
+    player.bio.position = PlayerPosition(rawValue: entry.position) ?? .wing
+    player.bio.year = PlayerYear(rawValue: entry.year) ?? .so
+    player.bio.home = entry.player?.home ?? ""
+    player.bio.potential = entry.potential
+    player.bio.redshirtUsed = false
+    player.bio.nilDollarsLastYear = entry.askingPrice
+    player.greed = entry.greed
+    player.loyalty = entry.loyalty
+    applyRatings(&player, base: entry.overall, random: &random)
+
+    let height = entry.player?.height.flatMap(parseMeasurementInches) ?? sampleHeightInches(for: player.bio.position, random: &random)
+    player.size.height = formatHeight(inches: height)
+    player.size.weight = entry.player?.weight ?? "\(sampleWeightPounds(for: player.bio.position, heightInches: height, random: &random))"
+    let wingspan = entry.player?.wingspan.flatMap(parseMeasurementInches) ?? height + sampleWingspanDelta(for: player.bio.position, random: &random)
+    player.size.wingspan = formatHeight(inches: wingspan)
+    return player
+}
+
+private func startNextSeasonAfterOffseason(_ state: inout LeagueStore.State) {
+    for teamIndex in state.teams.indices {
+        let completedGames = max(1, state.teams[teamIndex].wins + state.teams[teamIndex].losses)
+        state.teams[teamIndex].lastYearResult = clamp(Double(state.teams[teamIndex].wins) / Double(completedGames), min: 0, max: 1)
+
+        for playerIndex in state.teams[teamIndex].teamModel.players.indices {
+            advancePlayerClassForNewSeason(&state.teams[teamIndex].teamModel.players[playerIndex])
+        }
+        fillWalkOnsIfNeeded(team: &state.teams[teamIndex], seed: "\(state.optionsSeed):walkon:\(state.teams[teamIndex].teamId):\(state.currentDay)")
+        state.teams[teamIndex].teamModel.lineup = state.teams[teamIndex].teamModel.players
+    }
+
+    state.status = "in_progress"
+    state.currentDay = 0
+    state.schedule = []
+    state.userGameHistory = []
+    state.scheduleGenerated = false
+    state.conferenceTournaments = nil
+    state.nationalTournament = nil
+    state.remainingRegularSeasonGames = nil
+    state.offseasonStage = nil
+    state.playersLeaving = nil
+    state.schoolHallOfFame = nil
+    state.draftPicks = nil
+    state.nilRetention = nil
+    state.transferPortal = nil
+    state.nilRetentionFinalized = nil
+    state.userSelectedOpponentIds = []
+    resetTeamRecords(&state)
+    autoFillUserNonConferenceOpponentsInState(&state, seed: "new-season:\(state.optionsSeed):\(state.currentDay)")
+    generateSeasonScheduleInState(&state)
+}
+
+private func advancePlayerClassForNewSeason(_ player: inout Player) {
+    switch player.bio.year {
+    case .hs:
+        player.bio.year = .fr
+    case .fr:
+        player.bio.year = .so
+    case .so:
+        player.bio.year = .jr
+    case .jr:
+        player.bio.year = .sr
+    case .sr:
+        player.bio.year = .sr
+        player.bio.redshirtUsed = true
+    case .graduated:
+        break
+    }
+    player.condition.energy = 100
+    player.condition.clutchTime = false
+    player.condition.fouledOut = false
+    player.condition.possessionRole = nil
+}
+
+private func fillWalkOnsIfNeeded(team: inout LeagueStore.TeamState, seed: String) {
+    var random = SeededRandom(seed: hashString(seed))
+    var usedNames = Set(team.teamModel.players.map(\.bio.name))
+    while team.teamModel.players.count < offseasonRosterTarget {
+        let index = team.teamModel.players.count
+        let player = generateWalkOnPlayer(teamName: team.teamName, rosterIndex: index, usedNames: &usedNames, random: &random)
+        team.teamModel.players.append(player)
+    }
+}
+
+private func generateWalkOnPlayer(teamName: String, rosterIndex: Int, usedNames: inout Set<String>, random: inout SeededRandom) -> Player {
+    let positionCycle: [PlayerPosition] = [.pg, .sg, .sf, .pf, .c, .cg, .wing, .f, .big, .sg, .pf, .pg, .c]
+    var player = createPlayer()
+    var name = ""
+    repeat {
+        let first = rosterFirstNames[random.int(0, rosterFirstNames.count - 1)]
+        let last = rosterLastNames[random.int(0, rosterLastNames.count - 1)]
+        name = "\(first) \(last)"
+    } while usedNames.contains(name)
+    usedNames.insert(name)
+
+    player.bio.name = name
+    player.bio.position = positionCycle[rosterIndex % positionCycle.count]
+    player.bio.year = [.fr, .so, .jr][random.int(0, 2)]
+    player.bio.home = ["CA", "TX", "FL", "NY", "NC", "IL", "GA", "PA"][random.int(0, 7)]
+    player.bio.redshirtUsed = false
+    player.bio.nilDollarsLastYear = 0
+    player.greed = Double(clamp(35 + random.int(-12, 12), min: 5, max: 65))
+    player.loyalty = Double(clamp(62 + random.int(-18, 20), min: 25, max: 95))
+
+    let base = clamp(35 + random.int(-6, 7), min: 25, max: 46)
+    player.bio.potential = clamp(base + random.int(-2, 8), min: 25, max: 52)
+    applyRatings(&player, base: base, random: &random)
+
+    let height = sampleHeightInches(for: player.bio.position, random: &random)
+    player.size.height = formatHeight(inches: height)
+    player.size.weight = "\(sampleWeightPounds(for: player.bio.position, heightInches: height, random: &random))"
+    player.size.wingspan = formatHeight(inches: height + sampleWingspanDelta(for: player.bio.position, random: &random))
+    player.condition.energy = 100
+    return player
+}
+
 @discardableResult
 public func advanceOffseason(_ league: inout LeagueState) -> LeagueOffseasonProgress? {
     LeagueStore.update(league.handle) { state -> LeagueOffseasonProgress? in
@@ -739,7 +939,8 @@ public func advanceOffseason(_ league: inout LeagueState) -> LeagueOffseasonProg
             finalizeNILRetentionAndBuildPortalIfNeeded(&state)
             state.offseasonStage = .transferPortal
         case .transferPortal:
-            state.offseasonStage = .complete
+            completeTransferPortalAndStartNewYear(&state)
+            return LeagueOffseasonProgress(stage: .complete)
         case .complete:
             break
         }

@@ -99,7 +99,10 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
         offseasonStage: nil,
         playersLeaving: nil,
         schoolHallOfFame: nil,
-        draftPicks: nil
+        draftPicks: nil,
+        nilRetention: nil,
+        transferPortal: nil,
+        nilRetentionFinalized: nil
     )
 
     autoFillUserNonConferenceOpponentsInState(&state, seed: "create:\(options.seed)")

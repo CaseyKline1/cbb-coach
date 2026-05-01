@@ -946,6 +946,90 @@ func nilRetentionBalanceSimulation() throws {
     #expect(absoluteTopAsk >= 4_000_000)
 }
 
+@Test("Completing transfer portal starts next year and fills walk-ons")
+func transferPortalCompletionStartsNextYearAndFillsWalkOns() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "portal-new-year", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .transferPortal
+        state.playersLeaving = nil
+        state.nilRetention = []
+        state.transferPortal = []
+        state.nilRetentionFinalized = true
+        for teamIndex in state.teams.indices {
+            state.teams[teamIndex].wins = teamIndex % 2 == 0 ? 20 : 8
+            state.teams[teamIndex].losses = teamIndex % 2 == 0 ? 10 : 22
+            state.teams[teamIndex].teamModel.players = Array(state.teams[teamIndex].teamModel.players.prefix(4))
+            state.teams[teamIndex].teamModel.lineup = state.teams[teamIndex].teamModel.players
+        }
+    }
+
+    let progress = advanceOffseason(&league)
+    #expect(progress?.stage == .complete)
+
+    let state = try #require(LeagueStore.get(league.handle))
+    #expect(state.status == "in_progress")
+    #expect(state.currentDay == 0)
+    #expect(state.scheduleGenerated)
+    #expect(state.schedule.isEmpty == false)
+    #expect(state.teams.allSatisfy { $0.teamModel.players.count >= 13 })
+    #expect(state.teams.contains { team in
+        team.teamModel.players.contains { player in
+            player.bio.nilDollarsLastYear == 0 && playerOverall(player) <= 50
+        }
+    })
+}
+
+@Test("Transfer portal entrants commit to new schools before next season")
+func transferPortalEntrantsCommitToNewSchoolsBeforeNextSeason() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "portal-commit", totalRegularSeasonGames: 1))
+    var portalPlayer = createPlayer()
+    portalPlayer.bio.name = "Portal Guard"
+    portalPlayer.bio.position = .pg
+    portalPlayer.bio.year = .so
+    portalPlayer.bio.potential = 74
+    var random = SeededRandom(seed: 44)
+    applyRatings(&portalPlayer, base: 70, random: &random)
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .transferPortal
+        state.playersLeaving = nil
+        state.nilRetention = []
+        state.nilRetentionFinalized = true
+        let previousTeam = state.teams[0]
+        state.transferPortal = [
+            TransferPortalEntry(
+                id: "synthetic:portal-guard",
+                previousTeamId: previousTeam.teamId,
+                previousTeamName: previousTeam.teamName,
+                playerModel: portalPlayer,
+                playerName: portalPlayer.bio.name,
+                position: portalPlayer.bio.position.rawValue,
+                year: portalPlayer.bio.year.rawValue,
+                overall: playerOverall(portalPlayer),
+                potential: portalPlayer.bio.potential,
+                askingPrice: 125_000,
+                intrinsicValue: 115_000,
+                reason: "Testing portal commit.",
+                loyalty: 40,
+                greed: 55
+            )
+        ]
+    }
+
+    _ = advanceOffseason(&league)
+
+    let state = try #require(LeagueStore.get(league.handle))
+    let destination = try #require(state.teams.first { team in
+        team.teamId != state.teams[0].teamId && team.teamModel.players.contains { $0.bio.name == "Portal Guard" }
+    })
+    let committed = try #require(destination.teamModel.players.first { $0.bio.name == "Portal Guard" })
+    #expect(committed.bio.year == .jr)
+    #expect(committed.bio.nilDollarsLastYear == 125_000)
+}
+
 private func makePlayerElite(_ player: inout Player) {
     player.skills.shotIQ = 95
     player.skills.ballHandling = 95

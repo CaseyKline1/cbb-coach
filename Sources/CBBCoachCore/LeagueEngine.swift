@@ -447,7 +447,10 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var previousTeamId: String
     public var previousTeamName: String
+    public var committedTeamId: String? = nil
+    public var committedTeamName: String? = nil
     public var player: UserRosterPlayerSummary?
+    public var playerModel: Player? = nil
     public var playerName: String
     public var position: String
     public var year: String
