@@ -970,8 +970,8 @@ func nilRetentionBalanceSimulation() throws {
     let avgTopAsk = average(topAsks)
     print("NIL balance avg: portal/team=\(avgPortalPerTeam), retentionSpend=\(avgSpendRate), majorBudget=\(avgMajorBudget), topAsk=\(avgTopAsk), absoluteTopAsk=\(absoluteTopAsk)")
 
-    #expect(avgPortalPerTeam >= 4.2)
-    #expect(avgPortalPerTeam <= 7.8)
+    #expect(avgPortalPerTeam >= 2.5)
+    #expect(avgPortalPerTeam <= 6.5)
     #expect(avgSpendRate >= 0.25)
     #expect(avgSpendRate <= 0.58)
     #expect(avgMajorBudget >= 2_000_000)
@@ -979,6 +979,54 @@ func nilRetentionBalanceSimulation() throws {
     #expect(avgTopAsk >= 2_200_000)
     #expect(avgTopAsk <= 4_600_000)
     #expect(absoluteTopAsk >= 4_000_000)
+}
+
+@Test("NIL asks fall off sharply below true superstar tier")
+func nilAsksFallOffBelowSuperstarTier() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "nil-tier-curve", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .playerRetention
+        state.playersLeaving = []
+        state.draftPicks = []
+        state.nilRetention = nil
+        state.transferPortal = nil
+        state.nilRetentionFinalized = false
+
+        guard let userIndex = state.teams.firstIndex(where: { $0.teamId == state.userTeamId }) else { return }
+        var random = SeededRandom(seed: 822)
+
+        state.teams[userIndex].teamModel.players[0].bio.name = "Good Starter"
+        state.teams[userIndex].teamModel.players[0].bio.year = .so
+        state.teams[userIndex].teamModel.players[0].bio.potential = 84
+        state.teams[userIndex].teamModel.players[0].greed = 50
+        state.teams[userIndex].teamModel.players[0].loyalty = 50
+        state.teams[userIndex].teamModel.players[0].bio.nilDollarsLastYear = 0
+        applyRatings(&state.teams[userIndex].teamModel.players[0], base: 82, random: &random)
+
+        state.teams[userIndex].teamModel.players[1].bio.name = "National Superstar"
+        state.teams[userIndex].teamModel.players[1].bio.year = .so
+        state.teams[userIndex].teamModel.players[1].bio.potential = 99
+        state.teams[userIndex].teamModel.players[1].greed = 70
+        state.teams[userIndex].teamModel.players[1].loyalty = 30
+        state.teams[userIndex].teamModel.players[1].bio.nilDollarsLastYear = 0
+        makePlayerElite(&state.teams[userIndex].teamModel.players[1])
+
+        state.teams[userIndex].teamModel.lineup = state.teams[userIndex].teamModel.players
+    }
+
+    let retention = getNILRetentionSummary(league)
+    let goodStarter = try #require(retention.userEntries.first { $0.playerName == "Good Starter" })
+    let superstar = try #require(retention.userEntries.first { $0.playerName == "National Superstar" })
+
+    #expect(goodStarter.overall >= 78)
+    #expect(goodStarter.overall < 88)
+    #expect(goodStarter.demand >= 350_000)
+    #expect(goodStarter.demand <= 1_250_000)
+    #expect(superstar.overall >= 94)
+    #expect(superstar.demand >= 2_000_000)
+    #expect(superstar.demand >= goodStarter.demand * 2.4)
 }
 
 @Test("Walk-on level players have zero NIL value and asks")
