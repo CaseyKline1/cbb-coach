@@ -499,7 +499,7 @@ struct SeasonRecapView: View {
                     NavigationLink {
                         playerCard(for: stat)
                     } label: {
-                        AppTableTextCell(text: stat.playerName, width: 166, alignment: .leading, foreground: AppTheme.accent)
+                        AppTableTextCell(text: stat.playerName, width: 166, alignment: .leading, foreground: AppTheme.ink)
                     }
                     .buttonStyle(.plain)
                     AppTableTextCell(text: "\(stat.games)", width: 36)
@@ -534,7 +534,7 @@ struct SeasonRecapView: View {
                                 } label: {
                                     Text(stat.playerName)
                                         .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(AppTheme.accent)
+                                        .foregroundStyle(AppTheme.ink)
                                 }
                                 .buttonStyle(.plain)
                                 Text("\(stat.position) • \(stat.teamName)")
@@ -563,7 +563,7 @@ struct SeasonRecapView: View {
                     } label: {
                         Text(stat.playerName)
                             .font(.headline.weight(.bold))
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.ink)
                     }
                     .buttonStyle(.plain)
                     Text("\(stat.position) • \(stat.teamName) • \(format(stat.pointsPerGame)) PPG, \(format(stat.reboundsPerGame)) RPG, \(format(stat.assistsPerGame)) APG")
@@ -653,7 +653,6 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
     let id: String
     let title: String
     let detail: String
-    let window: String
     let stage: LeagueOffseasonStage
 
     static let initialPhases: [OffseasonSchedulePhase] = [
@@ -661,35 +660,30 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
             id: "nil-budgets",
             title: "NIL Budgets",
             detail: "Reveal next season's revenue sharing and donor pool.",
-            window: "Next",
             stage: .nilBudgets
         ),
         OffseasonSchedulePhase(
             id: "players-leaving",
             title: "Players Leaving",
             detail: "Seniors graduate and transfer risks decide whether to move on.",
-            window: "After NIL",
             stage: .playersLeaving
         ),
         OffseasonSchedulePhase(
             id: "draft",
             title: "Draft",
             detail: "The top 60 draft entrants come off the board.",
-            window: "After Leaving",
             stage: .draft
         ),
         OffseasonSchedulePhase(
             id: "player-retention",
             title: "Player Retention",
             detail: "Negotiate one-year NIL deals with returning players.",
-            window: "After Draft",
             stage: .playerRetention
         ),
         OffseasonSchedulePhase(
             id: "transfer-portal",
             title: "Transfer Portal",
             detail: "Unsigned players and transfer departures enter the national market.",
-            window: "Final Event",
             stage: .transferPortal
         ),
     ]
@@ -759,7 +753,6 @@ struct OffseasonScheduleView: View {
 
                 HStack(alignment: .center, spacing: 0) {
                     scheduleHeader("Order", width: 48, alignment: .leading)
-                    scheduleHeader("Window", width: 88, alignment: .leading)
                     scheduleHeader("Event", alignment: .leading)
                 }
                 .padding(.vertical, 8)
@@ -774,11 +767,6 @@ struct OffseasonScheduleView: View {
                                 .font(.caption.monospacedDigit().weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .frame(width: 48, alignment: .leading)
-
-                            Text(phase.window)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 88, alignment: .leading)
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(phase.title)
