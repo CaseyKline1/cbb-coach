@@ -102,6 +102,9 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
         draftPicks: nil,
         nilRetention: nil,
         transferPortal: nil,
+        transferPortalWeek: nil,
+        transferPortalUserTargets: nil,
+        transferPortalUserOffers: nil,
         nilRetentionFinalized: nil
     )
 

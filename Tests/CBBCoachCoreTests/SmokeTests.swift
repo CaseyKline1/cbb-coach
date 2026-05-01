@@ -1095,7 +1095,17 @@ func transferPortalEntrantsCommitToNewSchoolsBeforeNextSeason() throws {
         ]
     }
 
-    _ = advanceOffseason(&league)
+    let initialPortal = getTransferPortalSummary(league)
+    #expect(initialPortal.week == 1)
+    #expect(initialPortal.entries.contains { $0.playerName == "Portal Guard" })
+
+    let firstWeek = advanceOffseason(&league)
+    #expect(firstWeek?.stage == .transferPortal)
+    #expect(getTransferPortalSummary(league).week == 2)
+
+    while getOffseasonProgress(league)?.stage == .transferPortal {
+        _ = advanceOffseason(&league)
+    }
 
     let state = try #require(LeagueStore.get(league.handle))
     let destination = try #require(state.teams.first { team in

@@ -1843,6 +1843,8 @@ struct NILRetentionView: View {
 struct TransferPortalView: View {
     let summary: TransferPortalSummary?
     let games: [LeagueGameSummary]
+    let onSetTargeted: (String, Bool) -> Void
+    let onSetOffer: (String, Double) -> Void
     let onAdvance: () -> Void
 
     private var rows: [TransferPortalEntry] {
@@ -1856,6 +1858,30 @@ struct TransferPortalView: View {
         summary?.userEntries ?? []
     }
 
+    private var targetedRows: [TransferPortalEntry] {
+        summary?.targetedEntries ?? []
+    }
+
+    private var committedRows: [TransferPortalEntry] {
+        rows.filter { $0.committedTeamId != nil }
+    }
+
+    private var activeRows: [TransferPortalEntry] {
+        rows.filter { $0.committedTeamId == nil }
+    }
+
+    private var targetIds: Set<String> {
+        Set(summary?.userTargetIds ?? [])
+    }
+
+    private var portalWeekText: String {
+        guard let summary else { return "Week 1" }
+        if summary.week > summary.maxWeeks {
+            return "Signing Day"
+        }
+        return "Week \(summary.week) of \(summary.maxWeeks)"
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -1865,18 +1891,27 @@ struct TransferPortalView: View {
                         HStack(spacing: 8) {
                             summaryTile(title: "NATIONAL", value: "\(rows.count)")
                             summaryTile(title: "FROM YOU", value: "\(userRows.count)")
-                            summaryTile(title: "AVG ASK", value: moneyText(average(rows.map(\.askingPrice))))
+                            summaryTile(title: "TARGETS", value: "\(targetedRows.count)")
+                        }
+                        HStack(spacing: 8) {
+                            summaryTile(title: "PERIOD", value: portalWeekText)
+                            summaryTile(title: "REMAINING", value: moneyText(summary?.budget.remaining ?? 0))
+                            summaryTile(title: "COMMITS", value: "\(committedRows.count)")
                         }
                     }
                 }
 
+                portalSection(title: "Your Board", rows: targetedRows, emptyText: "No portal targets selected.")
                 portalSection(title: "Your Departures", rows: userRows, emptyText: "No unsigned players from your roster entered the portal.")
-                portalSection(title: "Top Portal Players", rows: Array(rows.prefix(80)), emptyText: "The portal is empty.")
+                portalSection(title: "Available Portal Players", rows: Array(activeRows.prefix(100)), emptyText: "The portal is empty.")
+                if !committedRows.isEmpty {
+                    portalSection(title: "Committed Portal Players", rows: Array(committedRows.prefix(80)), emptyText: "No portal players have committed yet.")
+                }
 
                 Button {
                     onAdvance()
                 } label: {
-                    Text("Complete Offseason Schedule")
+                    Text((summary?.week ?? 1) > (summary?.maxWeeks ?? 4) ? "Complete Offseason Schedule" : "Advance Portal Week")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GameButtonStyle(variant: .primary))
@@ -1911,7 +1946,12 @@ struct TransferPortalView: View {
     }
 
     private func portalRow(_ row: TransferPortalEntry) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let isTargeted = targetIds.contains(row.id)
+        let offer = summary?.userOffers[row.id] ?? 0
+        let isUserDeparture = row.previousTeamId == summary?.userTeamId
+        let canRecruit = !isUserDeparture && row.committedTeamId == nil
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 NavigationLink {
                     PlayerCardDetailView(player: playerProfile(row), games: games, teamName: row.previousTeamName)
@@ -1929,9 +1969,57 @@ struct TransferPortalView: View {
             Text("\(row.year) \(row.position) | \(row.previousTeamName) | OVR \(row.overall) | POT \(row.potential)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let committed = row.committedTeamName {
+                Text("Committed to \(committed)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.success)
+            } else if !row.finalistTeamNames.isEmpty {
+                Text("Finalists: \(row.finalistTeamNames.joined(separator: ", "))")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.warning)
+            } else if let userInterest = row.interestByTeamId[summary?.userTeamId ?? ""] {
+                Text("Your interest: \(Int(userInterest.rounded()))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Text(row.reason)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            if canRecruit {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Button {
+                            onSetTargeted(row.id, !isTargeted)
+                        } label: {
+                            Label(isTargeted ? "Remove" : "Target", systemImage: isTargeted ? "minus.circle" : "plus.circle")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(GameButtonStyle(variant: isTargeted ? .secondary : .primary, size: .compact))
+
+                        Button {
+                            onSetOffer(row.id, max(0, offer - 50_000))
+                        } label: {
+                            Image(systemName: "minus")
+                                .frame(width: 34)
+                        }
+                        .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
+                        .disabled(!isTargeted || offer <= 0)
+
+                        Text(moneyText(offer))
+                            .font(.caption.monospacedDigit().weight(.bold))
+                            .frame(minWidth: 74)
+
+                        Button {
+                            onSetOffer(row.id, offer + 50_000)
+                        } label: {
+                            Image(systemName: "plus")
+                                .frame(width: 34)
+                        }
+                        .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
+                        .disabled(!isTargeted && (summary?.userTargetIds.count ?? 0) >= 8)
+                    }
+                }
+            }
         }
         .padding(.vertical, 10)
     }

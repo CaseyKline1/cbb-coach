@@ -449,6 +449,9 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     public var previousTeamName: String
     public var committedTeamId: String? = nil
     public var committedTeamName: String? = nil
+    public var finalistTeamIds: [String] = []
+    public var finalistTeamNames: [String] = []
+    public var interestByTeamId: [String: Double] = [:]
     public var player: UserRosterPlayerSummary?
     public var playerModel: Player? = nil
     public var playerName: String
@@ -461,14 +464,119 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     public var reason: String
     public var loyalty: Double
     public var greed: Double
+
+    public init(
+        id: String,
+        previousTeamId: String,
+        previousTeamName: String,
+        committedTeamId: String? = nil,
+        committedTeamName: String? = nil,
+        finalistTeamIds: [String] = [],
+        finalistTeamNames: [String] = [],
+        interestByTeamId: [String: Double] = [:],
+        player: UserRosterPlayerSummary? = nil,
+        playerModel: Player? = nil,
+        playerName: String,
+        position: String,
+        year: String,
+        overall: Int,
+        potential: Int,
+        askingPrice: Double,
+        intrinsicValue: Double,
+        reason: String,
+        loyalty: Double,
+        greed: Double
+    ) {
+        self.id = id
+        self.previousTeamId = previousTeamId
+        self.previousTeamName = previousTeamName
+        self.committedTeamId = committedTeamId
+        self.committedTeamName = committedTeamName
+        self.finalistTeamIds = finalistTeamIds
+        self.finalistTeamNames = finalistTeamNames
+        self.interestByTeamId = interestByTeamId
+        self.player = player
+        self.playerModel = playerModel
+        self.playerName = playerName
+        self.position = position
+        self.year = year
+        self.overall = overall
+        self.potential = potential
+        self.askingPrice = askingPrice
+        self.intrinsicValue = intrinsicValue
+        self.reason = reason
+        self.loyalty = loyalty
+        self.greed = greed
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, previousTeamId, previousTeamName, committedTeamId, committedTeamName
+        case finalistTeamIds, finalistTeamNames, interestByTeamId
+        case player, playerModel, playerName, position, year, overall, potential
+        case askingPrice, intrinsicValue, reason, loyalty, greed
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(String.self, forKey: .id),
+            previousTeamId: try container.decode(String.self, forKey: .previousTeamId),
+            previousTeamName: try container.decode(String.self, forKey: .previousTeamName),
+            committedTeamId: try container.decodeIfPresent(String.self, forKey: .committedTeamId),
+            committedTeamName: try container.decodeIfPresent(String.self, forKey: .committedTeamName),
+            finalistTeamIds: try container.decodeIfPresent([String].self, forKey: .finalistTeamIds) ?? [],
+            finalistTeamNames: try container.decodeIfPresent([String].self, forKey: .finalistTeamNames) ?? [],
+            interestByTeamId: try container.decodeIfPresent([String: Double].self, forKey: .interestByTeamId) ?? [:],
+            player: try container.decodeIfPresent(UserRosterPlayerSummary.self, forKey: .player),
+            playerModel: try container.decodeIfPresent(Player.self, forKey: .playerModel),
+            playerName: try container.decode(String.self, forKey: .playerName),
+            position: try container.decode(String.self, forKey: .position),
+            year: try container.decode(String.self, forKey: .year),
+            overall: try container.decode(Int.self, forKey: .overall),
+            potential: try container.decode(Int.self, forKey: .potential),
+            askingPrice: try container.decode(Double.self, forKey: .askingPrice),
+            intrinsicValue: try container.decode(Double.self, forKey: .intrinsicValue),
+            reason: try container.decode(String.self, forKey: .reason),
+            loyalty: try container.decode(Double.self, forKey: .loyalty),
+            greed: try container.decode(Double.self, forKey: .greed)
+        )
+    }
 }
 
 public struct TransferPortalSummary: Codable, Equatable, Sendable {
     public var userTeamId: String
     public var entries: [TransferPortalEntry]
+    public var week: Int
+    public var maxWeeks: Int
+    public var userTargetIds: [String]
+    public var userOffers: [String: Double]
+    public var budget: NILRetentionBudgetSummary
 
     public var userEntries: [TransferPortalEntry] {
         entries.filter { $0.previousTeamId == userTeamId }
+    }
+
+    public var targetedEntries: [TransferPortalEntry] {
+        let targets = Set(userTargetIds)
+        return entries.filter { targets.contains($0.id) }
+    }
+
+    public init(
+        userTeamId: String,
+        entries: [TransferPortalEntry],
+        week: Int = 1,
+        maxWeeks: Int = 4,
+        userTargetIds: [String] = [],
+        userOffers: [String: Double] = [:],
+        budget: NILRetentionBudgetSummary = NILRetentionBudgetSummary(total: 0, allocated: 0, remaining: 0)
+    ) {
+        self.userTeamId = userTeamId
+        self.entries = entries
+        self.week = week
+        self.maxWeeks = maxWeeks
+        self.userTargetIds = userTargetIds
+        self.userOffers = userOffers
+        self.budget = budget
     }
 }
 
@@ -626,6 +734,9 @@ struct LeagueStore {
         var draftPicks: [DraftPickEntry]?
         var nilRetention: [NILNegotiationEntry]?
         var transferPortal: [TransferPortalEntry]?
+        var transferPortalWeek: Int?
+        var transferPortalUserTargets: [String]?
+        var transferPortalUserOffers: [String: Double]?
         var nilRetentionFinalized: Bool?
     }
 

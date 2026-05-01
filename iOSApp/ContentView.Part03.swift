@@ -233,6 +233,18 @@ extension CollegeLeagueHomeView {
         nilRetentionSummary = CBBCoachCore.delegateNILRetentionToAssistants(&currentLeague)
         league = currentLeague
     }
+
+    func setTransferPortalTargeted(entryId: String, targeted: Bool) {
+        guard var currentLeague = league else { return }
+        transferPortalSummary = CBBCoachCore.setTransferPortalTargeted(&currentLeague, entryId: entryId, targeted: targeted)
+        league = currentLeague
+    }
+
+    func setTransferPortalOffer(entryId: String, offer: Double) {
+        guard var currentLeague = league else { return }
+        transferPortalSummary = CBBCoachCore.setTransferPortalOffer(&currentLeague, entryId: entryId, offer: offer)
+        league = currentLeague
+    }
 }
 
 enum SkipAheadTarget {

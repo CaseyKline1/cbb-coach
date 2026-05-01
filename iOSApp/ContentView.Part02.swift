@@ -273,6 +273,8 @@ struct CollegeLeagueHomeView: View {
                     TransferPortalView(
                         summary: transferPortalSummary,
                         games: completedLeagueGames,
+                        onSetTargeted: setTransferPortalTargeted,
+                        onSetOffer: setTransferPortalOffer,
                         onAdvance: advanceOffseasonScheduleAndNavigate
                     )
                 case .roster:
