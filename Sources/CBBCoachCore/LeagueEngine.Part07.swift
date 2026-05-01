@@ -903,14 +903,18 @@ private func nilIntrinsicValue(
     case .c, .big:
         positionMultiplier = 1.03
     }
-    let eliteTier = clamp((Double(overall) - 86) / 12, min: 0, max: 1)
-    let nationalStarTier = clamp((Double(overall) - 92) / 7, min: 0, max: 1)
-    let elitePremium = 1.0 + pow(eliteTier, 1.7) * 0.48 + pow(nationalStarTier, 2.0) * 0.72
+    let highMajorStarterTier = clamp((Double(overall) - 78) / 10, min: 0, max: 1)
+    let eliteTier = clamp((Double(overall) - 88) / 8, min: 0, max: 1)
+    let nationalStarTier = clamp((Double(overall) - 92) / 6, min: 0, max: 1)
+    let elitePremium = 1.0
+        + pow(highMajorStarterTier, 2.4) * 0.12
+        + pow(eliteTier, 2.0) * 0.45
+        + pow(nationalStarTier, 2.15) * 0.95
     let base = 18_000
-        + pow(quality, 1.45) * 520_000
-        + pow(max(quality, production), 2.15) * 1_050_000
-        + production * 480_000
-        + upside * quality * 210_000
+        + pow(quality, 1.75) * 420_000
+        + pow(max(quality, production), 3.05) * 940_000
+        + production * 330_000
+        + upside * quality * 170_000
     let market = base * (0.70 + prestige * 0.42) * (0.72 + budgetSignal * 0.34) * positionMultiplier * elitePremium
     return max(3_000, roundToNearestThousand(market))
 }
@@ -981,8 +985,8 @@ private func portalAskingPrice(intrinsicValue: Double, greed: Double, loyalty: D
 
     let greedFactor = clamp(greed / 100, min: 0, max: 1)
     let loyaltyFactor = clamp(loyalty / 100, min: 0, max: 1)
-    let eliteTail = clamp((intrinsicValue - 1_800_000) / 2_500_000, min: 0, max: 1)
-    let multiplier = 1.03 + greedFactor * 0.30 - loyaltyFactor * 0.06 + pow(eliteTail, 1.6) * 0.14
+    let eliteTail = clamp((intrinsicValue - 1_900_000) / 2_100_000, min: 0, max: 1)
+    let multiplier = 1.00 + greedFactor * 0.26 - loyaltyFactor * 0.07 + pow(eliteTail, 1.45) * 0.18
     return roundToNearestThousand(intrinsicValue * multiplier)
 }
 
@@ -994,13 +998,17 @@ private func transferIntrinsicFallback(_ departure: PlayerLeavingEntry) -> Doubl
     let quality = clamp((Double(departure.overall) - 54) / 42, min: 0, max: 1)
     let upside = clamp((Double(departure.potential) - Double(departure.overall) + 8) / 24, min: 0, max: 1)
     let lastYear = departure.nilDollarsLastYear
-    let eliteTier = clamp((Double(departure.overall) - 86) / 12, min: 0, max: 1)
-    let nationalStarTier = clamp((Double(departure.overall) - 92) / 7, min: 0, max: 1)
+    let highMajorStarterTier = clamp((Double(departure.overall) - 78) / 10, min: 0, max: 1)
+    let eliteTier = clamp((Double(departure.overall) - 88) / 8, min: 0, max: 1)
+    let nationalStarTier = clamp((Double(departure.overall) - 92) / 6, min: 0, max: 1)
     let base = 15_000
-        + pow(quality, 1.55) * 520_000
-        + pow(quality, 2.2) * 1_150_000
-        + upside * quality * 260_000
-    let premium = 1.0 + pow(eliteTier, 1.7) * 0.58 + pow(nationalStarTier, 2.0) * 0.82
+        + pow(quality, 1.85) * 420_000
+        + pow(quality, 3.1) * 1_020_000
+        + upside * quality * 210_000
+    let premium = 1.0
+        + pow(highMajorStarterTier, 2.4) * 0.10
+        + pow(eliteTier, 2.0) * 0.50
+        + pow(nationalStarTier, 2.15) * 1.00
     return roundToNearestThousand(max(base * premium, lastYear * 0.85))
 }
 
