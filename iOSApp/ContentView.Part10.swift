@@ -1406,6 +1406,183 @@ struct DraftView: View {
     }
 }
 
+struct NILOfferAmountControl: View {
+    let amount: Int
+    let minimum: Int
+    let maximum: Int
+    let postSecondFireSpeedMultiplier: Double
+    let onSetAmount: (Int) -> Void
+
+    @Environment(\.isEnabled) private var isViewEnabled
+    @State private var localAmount: Int?
+
+    private var displayedAmount: Int {
+        clamped(localAmount ?? amount)
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            amountButton(title: "-$", delta: -5_000)
+
+            Text(moneyText(Double(displayedAmount)))
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .frame(minWidth: 54, alignment: .center)
+                .foregroundStyle(AppTheme.ink)
+
+            amountButton(title: "+$", delta: 5_000)
+        }
+        .onChange(of: amount) { _, newValue in
+            localAmount = clamped(newValue)
+        }
+        .onChange(of: maximum) { _, _ in
+            localAmount = displayedAmount
+        }
+        .onAppear {
+            localAmount = displayedAmount
+        }
+    }
+
+    @ViewBuilder
+    private func amountButton(title: String, delta: Int) -> some View {
+        let isControlEnabled = isEnabled(for: delta)
+        HoldRepeatButton(
+            action: { adjust(by: delta) },
+            isEnabled: isControlEnabled,
+            initialRepeatDelay: 0.01,
+            holdRepeatInterval: 0.005,
+            postSecondFireSpeedMultiplier: postSecondFireSpeedMultiplier
+        ) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .frame(minWidth: 24)
+        }
+        .foregroundStyle((isViewEnabled && isControlEnabled) ? AppTheme.accent : .secondary.opacity(0.45))
+    }
+
+    private func adjust(by delta: Int) {
+        let next = clamped(displayedAmount + delta)
+        guard next != displayedAmount else { return }
+        localAmount = next
+        onSetAmount(next)
+    }
+
+    private func isEnabled(for delta: Int) -> Bool {
+        let next = displayedAmount + delta
+        if delta > 0 {
+            return displayedAmount < maximum && next <= maximum
+        }
+        if delta < 0 {
+            return displayedAmount > minimum && next >= minimum
+        }
+        return false
+    }
+
+    private func clamped(_ value: Int) -> Int {
+        min(max(value, minimum), maximum)
+    }
+
+    private func moneyText(_ amount: Double) -> String {
+        if amount >= 1_000_000 {
+            return "$\(String(format: "%.1f", amount / 1_000_000))M"
+        }
+        return "$\(Int(amount / 1_000).formatted())K"
+    }
+}
+
+struct HoldRepeatButton<Label: View>: View {
+    let action: () -> Void
+    let isEnabled: Bool
+    private let holdRepeatInterval: TimeInterval
+    private let initialRepeatDelay: TimeInterval
+    private let postSecondFireSpeedMultiplier: Double
+    @ViewBuilder let label: () -> Label
+
+    @State private var holdTask: Task<Void, Never>?
+    @State private var isHolding = false
+    @State private var holdSessionID: UInt64 = 0
+    @Environment(\.isEnabled) private var isViewEnabled
+
+    init(
+        action: @escaping () -> Void,
+        isEnabled: Bool,
+        initialRepeatDelay: TimeInterval = 0.4,
+        holdRepeatInterval: TimeInterval = 0.06,
+        postSecondFireSpeedMultiplier: Double = 1.0,
+        @ViewBuilder label: @escaping () -> Label
+    ) {
+        self.action = action
+        self.isEnabled = isEnabled
+        self.initialRepeatDelay = initialRepeatDelay
+        self.holdRepeatInterval = max(0.03, holdRepeatInterval)
+        self.postSecondFireSpeedMultiplier = max(1.0, postSecondFireSpeedMultiplier)
+        self.label = label
+    }
+
+    var body: some View {
+        label()
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard isEnabled && isViewEnabled else {
+                            stopHoldRepeat()
+                            return
+                        }
+                        startHoldRepeat()
+                    }
+                    .onEnded { _ in
+                        stopHoldRepeat()
+                    }
+            )
+            .onChange(of: isEnabled) { _, enabled in
+                if !enabled { stopHoldRepeat() }
+            }
+            .onChange(of: isViewEnabled) { _, enabled in
+                if !enabled { stopHoldRepeat() }
+            }
+            .onDisappear {
+                stopHoldRepeat()
+            }
+    }
+
+    private func startHoldRepeat() {
+        guard !isHolding else { return }
+        isHolding = true
+        holdSessionID &+= 1
+        let sessionID = holdSessionID
+        action()
+
+        let initialDelayNanos = UInt64(max(0.0, initialRepeatDelay) * 1_000_000_000)
+        let acceleratedIntervalNanos = UInt64(max(0.03, holdRepeatInterval / postSecondFireSpeedMultiplier) * 1_000_000_000)
+
+        holdTask?.cancel()
+        holdTask = Task {
+            if initialDelayNanos > 0 {
+                try? await Task.sleep(nanoseconds: initialDelayNanos)
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard sessionID == holdSessionID, isHolding, isEnabled, isViewEnabled else { return }
+                action()
+            }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: acceleratedIntervalNanos)
+                await MainActor.run {
+                    guard sessionID == holdSessionID, isHolding, isEnabled, isViewEnabled else { return }
+                    action()
+                }
+            }
+        }
+    }
+
+    private func stopHoldRepeat() {
+        holdSessionID &+= 1
+        isHolding = false
+        holdTask?.cancel()
+        holdTask = nil
+    }
+}
+
 struct NILRetentionView: View {
     let summary: NILRetentionSummary?
     let games: [LeagueGameSummary]
@@ -1488,7 +1665,9 @@ struct NILRetentionView: View {
     }
 
     private func retentionRow(_ row: NILNegotiationEntry) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let maximumOffer = Int(max(row.demand * 1.25, 100_000).rounded())
+
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
                     NavigationLink {
@@ -1521,13 +1700,14 @@ struct NILRetentionView: View {
             }
 
             if row.status == .open {
-                Slider(
-                    value: Binding(
-                        get: { row.offer },
-                        set: { onSetOffer(row.id, $0) }
-                    ),
-                    in: 0...max(row.demand * 1.25, 100_000),
-                    step: 5_000
+                NILOfferAmountControl(
+                    amount: Int(row.offer.rounded()),
+                    minimum: 0,
+                    maximum: maximumOffer,
+                    postSecondFireSpeedMultiplier: 1,
+                    onSetAmount: { amount in
+                        onSetOffer(row.id, Double(amount))
+                    }
                 )
                 HStack(spacing: 8) {
                     Button("Offer") {
