@@ -443,6 +443,17 @@ public struct NILRetentionSummary: Codable, Equatable, Sendable {
     }
 }
 
+public struct TransferPortalPlayerStats: Codable, Equatable, Sendable {
+    public var games: Int
+    public var minutesPerGame: Double
+    public var pointsPerGame: Double
+    public var reboundsPerGame: Double
+    public var assistsPerGame: Double
+    public var stealsPerGame: Double
+    public var blocksPerGame: Double
+    public var fieldGoalPercentage: Double
+}
+
 public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var previousTeamId: String
@@ -454,6 +465,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     public var interestByTeamId: [String: Double] = [:]
     public var player: UserRosterPlayerSummary?
     public var playerModel: Player? = nil
+    public var stats: TransferPortalPlayerStats? = nil
     public var playerName: String
     public var position: String
     public var year: String
@@ -476,6 +488,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
         interestByTeamId: [String: Double] = [:],
         player: UserRosterPlayerSummary? = nil,
         playerModel: Player? = nil,
+        stats: TransferPortalPlayerStats? = nil,
         playerName: String,
         position: String,
         year: String,
@@ -497,6 +510,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
         self.interestByTeamId = interestByTeamId
         self.player = player
         self.playerModel = playerModel
+        self.stats = stats
         self.playerName = playerName
         self.position = position
         self.year = year
@@ -512,7 +526,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, previousTeamId, previousTeamName, committedTeamId, committedTeamName
         case finalistTeamIds, finalistTeamNames, interestByTeamId
-        case player, playerModel, playerName, position, year, overall, potential
+        case player, playerModel, stats, playerName, position, year, overall, potential
         case askingPrice, intrinsicValue, reason, loyalty, greed
     }
 
@@ -529,6 +543,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
             interestByTeamId: try container.decodeIfPresent([String: Double].self, forKey: .interestByTeamId) ?? [:],
             player: try container.decodeIfPresent(UserRosterPlayerSummary.self, forKey: .player),
             playerModel: try container.decodeIfPresent(Player.self, forKey: .playerModel),
+            stats: try container.decodeIfPresent(TransferPortalPlayerStats.self, forKey: .stats),
             playerName: try container.decode(String.self, forKey: .playerName),
             position: try container.decode(String.self, forKey: .position),
             year: try container.decode(String.self, forKey: .year),

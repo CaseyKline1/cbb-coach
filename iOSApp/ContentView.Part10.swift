@@ -1125,7 +1125,7 @@ struct PlayersLeavingView: View {
                     } label: {
                         Text(row.playerName)
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(isHallOfFamer(row) ? hallGold : AppTheme.accent)
+                            .foregroundStyle(isHallOfFamer(row) ? hallGold : AppTheme.ink)
                     }
                     .buttonStyle(.plain)
                     Text("\(row.year) \(row.position) | OVR \(row.overall) | POT \(row.potential)")
@@ -1702,7 +1702,7 @@ struct NILRetentionView: View {
                     } label: {
                         Text(row.playerName)
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.ink)
                     }
                     .buttonStyle(.plain)
                     Text("\(row.year) \(row.position) | OVR \(row.overall) | POT \(row.potential)")
@@ -1841,18 +1841,37 @@ struct NILRetentionView: View {
 }
 
 struct TransferPortalView: View {
+    private enum PortalTableColumn: String, Hashable {
+        case target, player, position, year, previous, overall, potential, points, rebounds, assists, minutes, ask, status
+    }
+
+    private enum BoardTableColumn: String, Hashable {
+        case player, position, overall, points, ask, offer, interest, finalists, status, actions
+    }
+
+    private enum PortalStatusFilter: String, CaseIterable, Hashable {
+        case all = "All"
+        case available = "Available"
+        case targeted = "Board"
+        case committed = "Committed"
+        case previousTeam = "From You"
+    }
+
     let summary: TransferPortalSummary?
     let games: [LeagueGameSummary]
     let onSetTargeted: (String, Bool) -> Void
     let onSetOffer: (String, Double) -> Void
     let onAdvance: () -> Void
 
-    private var rows: [TransferPortalEntry] {
-        (summary?.entries ?? []).sorted {
-            if $0.overall != $1.overall { return $0.overall > $1.overall }
-            return $0.askingPrice > $1.askingPrice
-        }
-    }
+    @State private var searchText = ""
+    @State private var positionFilter = "All"
+    @State private var statusFilter: PortalStatusFilter = .available
+    @State private var sortColumn: PortalTableColumn = .overall
+    @State private var isAscending = false
+    @State private var boardSortColumn: BoardTableColumn = .overall
+    @State private var boardIsAscending = false
+
+    private var rows: [TransferPortalEntry] { summary?.entries ?? [] }
 
     private var userRows: [TransferPortalEntry] {
         summary?.userEntries ?? []
@@ -1870,8 +1889,51 @@ struct TransferPortalView: View {
         rows.filter { $0.committedTeamId == nil }
     }
 
+    private var availableRows: [TransferPortalEntry] {
+        activeRows.filter { $0.previousTeamId != summary?.userTeamId }
+    }
+
     private var targetIds: Set<String> {
         Set(summary?.userTargetIds ?? [])
+    }
+
+    private var positionOptions: [(label: String, value: String)] {
+        let positions = Set(rows.map(\.position))
+        return [("All", "All")] + positions.sorted().map { ($0, $0) }
+    }
+
+    private var filteredPortalRows: [TransferPortalEntry] {
+        sortedPortalRows(rows.filter { row in
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let matchesSearch = query.isEmpty
+                || row.playerName.localizedCaseInsensitiveContains(query)
+                || row.previousTeamName.localizedCaseInsensitiveContains(query)
+            let matchesPosition = positionFilter == "All" || row.position == positionFilter
+            let matchesStatus: Bool
+            switch statusFilter {
+            case .all:
+                matchesStatus = true
+            case .available:
+                matchesStatus = row.committedTeamId == nil && row.previousTeamId != summary?.userTeamId
+            case .targeted:
+                matchesStatus = targetIds.contains(row.id)
+            case .committed:
+                matchesStatus = row.committedTeamId != nil
+            case .previousTeam:
+                matchesStatus = row.previousTeamId == summary?.userTeamId
+            }
+            return matchesSearch && matchesPosition && matchesStatus
+        })
+    }
+
+    private var sortedBoardRows: [TransferPortalEntry] {
+        targetedRows.sorted { lhs, rhs in
+            let comparison = compareBoard(lhs: lhs, rhs: rhs, column: boardSortColumn)
+            if comparison == .orderedSame {
+                return lhs.playerName.localizedCaseInsensitiveCompare(rhs.playerName) == .orderedAscending
+            }
+            return boardIsAscending ? comparison == .orderedAscending : comparison == .orderedDescending
+        }
     }
 
     private var portalWeekText: String {
@@ -1882,6 +1944,47 @@ struct TransferPortalView: View {
         return "Week \(summary.week) of \(summary.maxWeeks)"
     }
 
+    private var portalColumns: [AppTableColumn<PortalTableColumn>] {
+        [
+            .init(id: .target, title: "BD", width: 42),
+            .init(id: .player, title: "PLAYER", width: 136, alignment: .leading),
+            .init(id: .position, title: "POS", width: 42),
+            .init(id: .year, title: "YR", width: 34),
+            .init(id: .previous, title: "FROM", width: 112, alignment: .leading),
+            .init(id: .overall, title: "OVR", width: 42),
+            .init(id: .potential, title: "POT", width: 42),
+            .init(id: .points, title: "PTS", width: 46),
+            .init(id: .rebounds, title: "REB", width: 46),
+            .init(id: .assists, title: "AST", width: 46),
+            .init(id: .minutes, title: "MIN", width: 46),
+            .init(id: .ask, title: "ASK", width: 72),
+            .init(id: .status, title: "STATUS", width: 118, alignment: .leading),
+        ]
+    }
+
+    private var boardColumns: [AppTableColumn<BoardTableColumn>] {
+        [
+            .init(id: .player, title: "PLAYER", width: 136, alignment: .leading),
+            .init(id: .position, title: "POS", width: 42),
+            .init(id: .overall, title: "OVR", width: 42),
+            .init(id: .points, title: "PTS", width: 46),
+            .init(id: .ask, title: "ASK", width: 72),
+            .init(id: .offer, title: "OFFER", width: 86),
+            .init(id: .interest, title: "INT", width: 46),
+            .init(id: .finalists, title: "FINALISTS", width: 150, alignment: .leading),
+            .init(id: .status, title: "STATUS", width: 96, alignment: .leading),
+            .init(id: .actions, title: "", width: 140),
+        ]
+    }
+
+    private var portalTableRows: [(id: AnyHashable, data: TransferPortalEntry)] {
+        filteredPortalRows.map { (id: AnyHashable($0.id), data: $0) }
+    }
+
+    private var boardTableRows: [(id: AnyHashable, data: TransferPortalEntry)] {
+        sortedBoardRows.map { (id: AnyHashable($0.id), data: $0) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -1890,7 +1993,7 @@ struct TransferPortalView: View {
                         GameSectionHeader(title: "Transfer Portal")
                         HStack(spacing: 8) {
                             summaryTile(title: "NATIONAL", value: "\(rows.count)")
-                            summaryTile(title: "FROM YOU", value: "\(userRows.count)")
+                            summaryTile(title: "AVAILABLE", value: "\(availableRows.count)")
                             summaryTile(title: "TARGETS", value: "\(targetedRows.count)")
                         }
                         HStack(spacing: 8) {
@@ -1901,12 +2004,8 @@ struct TransferPortalView: View {
                     }
                 }
 
-                portalSection(title: "Your Board", rows: targetedRows, emptyText: "No portal targets selected.")
-                portalSection(title: "Your Departures", rows: userRows, emptyText: "No unsigned players from your roster entered the portal.")
-                portalSection(title: "Available Portal Players", rows: Array(activeRows.prefix(100)), emptyText: "The portal is empty.")
-                if !committedRows.isEmpty {
-                    portalSection(title: "Committed Portal Players", rows: Array(committedRows.prefix(80)), emptyText: "No portal players have committed yet.")
-                }
+                boardSection
+                portalTableSection
 
                 Button {
                     onAdvance()
@@ -1923,21 +2022,36 @@ struct TransferPortalView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func portalSection(title: String, rows: [TransferPortalEntry], emptyText: String) -> some View {
+    private var boardSection: some View {
         GameCard {
             VStack(alignment: .leading, spacing: 10) {
-                GameSectionHeader(title: title)
-                if rows.isEmpty {
-                    Text(emptyText)
+                GameSectionHeader(title: "Recruiting Board")
+                Text("\(targetedRows.count)/8 targets")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                if sortedBoardRows.isEmpty {
+                    Text("Add portal players from the table below to build your board.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
-                    VStack(spacing: 0) {
-                        ForEach(rows) { row in
-                            portalRow(row)
-                            if row.id != rows.last?.id {
-                                Divider()
-                            }
+                    AppTable(
+                        columns: boardColumns,
+                        rows: boardTableRows,
+                        sortState: .init(column: boardSortColumn, ascending: boardIsAscending),
+                        onSort: toggleBoardSort
+                    ) { row in
+                        HStack(spacing: 0) {
+                            playerLink(row, width: 136)
+                            AppTableTextCell(text: row.position, width: 42)
+                            AppTableTextCell(text: "\(row.overall)", width: 42)
+                            AppTableTextCell(text: statText(row.stats?.pointsPerGame), width: 46)
+                            AppTableTextCell(text: moneyText(row.askingPrice), width: 72)
+                            AppTableTextCell(text: moneyText(summary?.userOffers[row.id] ?? 0), width: 86)
+                            AppTableTextCell(text: interestText(row), width: 46)
+                            AppTableTextCell(text: finalistsText(row), width: 150, alignment: .leading)
+                            AppTableTextCell(text: statusText(row), width: 96, alignment: .leading)
+                            boardActions(row)
                         }
                     }
                 }
@@ -1945,83 +2059,286 @@ struct TransferPortalView: View {
         }
     }
 
-    private func portalRow(_ row: TransferPortalEntry) -> some View {
-        let isTargeted = targetIds.contains(row.id)
-        let offer = summary?.userOffers[row.id] ?? 0
-        let isUserDeparture = row.previousTeamId == summary?.userTeamId
-        let canRecruit = !isUserDeparture && row.committedTeamId == nil
-
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                NavigationLink {
-                    PlayerCardDetailView(player: playerProfile(row), games: games, teamName: row.previousTeamName)
-                } label: {
-                    Text(row.playerName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppTheme.accent)
-                }
-                .buttonStyle(.plain)
-                Spacer(minLength: 8)
-                Text(moneyText(row.askingPrice))
-                    .font(.subheadline.monospacedDigit().weight(.bold))
-                    .foregroundStyle(AppTheme.ink)
-            }
-            Text("\(row.year) \(row.position) | \(row.previousTeamName) | OVR \(row.overall) | POT \(row.potential)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if let committed = row.committedTeamName {
-                Text("Committed to \(committed)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppTheme.success)
-            } else if !row.finalistTeamNames.isEmpty {
-                Text("Finalists: \(row.finalistTeamNames.joined(separator: ", "))")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.warning)
-            } else if let userInterest = row.interestByTeamId[summary?.userTeamId ?? ""] {
-                Text("Your interest: \(Int(userInterest.rounded()))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Text(row.reason)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            if canRecruit {
-                VStack(alignment: .leading, spacing: 8) {
+    private var portalTableSection: some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 10) {
+                GameSectionHeader(title: "Portal Players")
+                VStack(spacing: 8) {
                     HStack(spacing: 8) {
-                        Button {
-                            onSetTargeted(row.id, !isTargeted)
-                        } label: {
-                            Label(isTargeted ? "Remove" : "Target", systemImage: isTargeted ? "minus.circle" : "plus.circle")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(GameButtonStyle(variant: isTargeted ? .secondary : .primary, size: .compact))
+                        searchField
+                        FilterDropdown(
+                            title: "",
+                            selection: $positionFilter,
+                            options: positionOptions,
+                            isSearchEnabled: false,
+                            isCompact: true
+                        )
+                        .frame(width: 104)
+                    }
+                    FilterDropdown(
+                        title: "",
+                        selection: $statusFilter,
+                        options: PortalStatusFilter.allCases.map { ($0.rawValue, $0) },
+                        isSearchEnabled: false,
+                        isCompact: true
+                    )
+                }
 
-                        Button {
-                            onSetOffer(row.id, max(0, offer - 50_000))
-                        } label: {
-                            Image(systemName: "minus")
-                                .frame(width: 34)
+                if filteredPortalRows.isEmpty {
+                    Text("No portal players match the current filters.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    AppTable(
+                        columns: portalColumns,
+                        rows: portalTableRows,
+                        sortState: .init(column: sortColumn, ascending: isAscending),
+                        onSort: togglePortalSort
+                    ) { row in
+                        HStack(spacing: 0) {
+                            targetButton(row)
+                            playerLink(row, width: 136)
+                            AppTableTextCell(text: row.position, width: 42)
+                            AppTableTextCell(text: row.year, width: 34)
+                            AppTableTextCell(text: row.previousTeamName, width: 112, alignment: .leading)
+                            AppTableTextCell(text: "\(row.overall)", width: 42)
+                            AppTableTextCell(text: "\(row.potential)", width: 42)
+                            AppTableTextCell(text: statText(row.stats?.pointsPerGame), width: 46)
+                            AppTableTextCell(text: statText(row.stats?.reboundsPerGame), width: 46)
+                            AppTableTextCell(text: statText(row.stats?.assistsPerGame), width: 46)
+                            AppTableTextCell(text: statText(row.stats?.minutesPerGame), width: 46)
+                            AppTableTextCell(text: moneyText(row.askingPrice), width: 72)
+                            AppTableTextCell(text: statusText(row), width: 118, alignment: .leading)
                         }
-                        .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
-                        .disabled(!isTargeted || offer <= 0)
-
-                        Text(moneyText(offer))
-                            .font(.caption.monospacedDigit().weight(.bold))
-                            .frame(minWidth: 74)
-
-                        Button {
-                            onSetOffer(row.id, offer + 50_000)
-                        } label: {
-                            Image(systemName: "plus")
-                                .frame(width: 34)
-                        }
-                        .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
-                        .disabled(!isTargeted && (summary?.userTargetIds.count ?? 0) >= 8)
                     }
                 }
             }
         }
-        .padding(.vertical, 10)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            TextField("Search players or schools", text: $searchText)
+                .font(.footnote)
+                .autocorrectionDisabled()
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(UIColor.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.14), lineWidth: 1)
+        )
+    }
+
+    private func playerLink(_ row: TransferPortalEntry, width: CGFloat) -> some View {
+        NavigationLink {
+            PlayerCardDetailView(player: playerProfile(row), games: games, teamName: row.previousTeamName)
+        } label: {
+            Text(row.playerName)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppTheme.accent)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: width, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func targetButton(_ row: TransferPortalEntry) -> some View {
+        let isTargeted = targetIds.contains(row.id)
+        let isUserDeparture = row.previousTeamId == summary?.userTeamId
+        let canRecruit = !isUserDeparture && row.committedTeamId == nil
+        let isBoardFull = !isTargeted && (summary?.userTargetIds.count ?? 0) >= 8
+
+        return Button {
+            onSetTargeted(row.id, !isTargeted)
+        } label: {
+            Image(systemName: isTargeted ? "checkmark.circle.fill" : "plus.circle")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(isTargeted ? AppTheme.success : AppTheme.accent)
+                .frame(width: 42)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canRecruit || isBoardFull)
+        .opacity(canRecruit ? 1 : 0.35)
+        .accessibilityLabel(isTargeted ? "Remove from recruiting board" : "Add to recruiting board")
+    }
+
+    private func boardActions(_ row: TransferPortalEntry) -> some View {
+        let offer = summary?.userOffers[row.id] ?? 0
+        let isOpen = row.committedTeamId == nil && row.previousTeamId != summary?.userTeamId
+
+        return HStack(spacing: 6) {
+            Button {
+                onSetOffer(row.id, max(0, offer - 50_000))
+            } label: {
+                Image(systemName: "minus")
+                    .frame(width: 28)
+            }
+            .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
+            .disabled(!isOpen || offer <= 0)
+
+            Button {
+                onSetOffer(row.id, offer + 50_000)
+            } label: {
+                Image(systemName: "plus")
+                    .frame(width: 28)
+            }
+            .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
+            .disabled(!isOpen)
+
+            Button {
+                onSetTargeted(row.id, false)
+            } label: {
+                Image(systemName: "minus.circle")
+                    .frame(width: 28)
+            }
+        }
+        .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
+        .disabled(!isOpen)
+        .frame(width: 140)
+    }
+
+    private func sortedPortalRows(_ input: [TransferPortalEntry]) -> [TransferPortalEntry] {
+        input.sorted { lhs, rhs in
+            let comparison = comparePortal(lhs: lhs, rhs: rhs, column: sortColumn)
+            if comparison == .orderedSame {
+                return lhs.playerName.localizedCaseInsensitiveCompare(rhs.playerName) == .orderedAscending
+            }
+            return isAscending ? comparison == .orderedAscending : comparison == .orderedDescending
+        }
+    }
+
+    private func togglePortalSort(_ id: PortalTableColumn) {
+        if sortColumn == id {
+            isAscending.toggle()
+        } else {
+            sortColumn = id
+            isAscending = id == .player || id == .position || id == .year || id == .previous || id == .status
+        }
+    }
+
+    private func toggleBoardSort(_ id: BoardTableColumn) {
+        if boardSortColumn == id {
+            boardIsAscending.toggle()
+        } else {
+            boardSortColumn = id
+            boardIsAscending = id == .player || id == .position || id == .finalists || id == .status || id == .actions
+        }
+    }
+
+    private func comparePortal(lhs: TransferPortalEntry, rhs: TransferPortalEntry, column: PortalTableColumn) -> ComparisonResult {
+        switch column {
+        case .target:
+            return numericCompare(lhs: targetIds.contains(lhs.id) ? 1 : 0, rhs: targetIds.contains(rhs.id) ? 1 : 0)
+        case .player:
+            return lhs.playerName.localizedCaseInsensitiveCompare(rhs.playerName)
+        case .position:
+            return lhs.position.localizedCaseInsensitiveCompare(rhs.position)
+        case .year:
+            return lhs.year.localizedCaseInsensitiveCompare(rhs.year)
+        case .previous:
+            return lhs.previousTeamName.localizedCaseInsensitiveCompare(rhs.previousTeamName)
+        case .overall:
+            return numericCompare(lhs: lhs.overall, rhs: rhs.overall)
+        case .potential:
+            return numericCompare(lhs: lhs.potential, rhs: rhs.potential)
+        case .points:
+            return numericCompare(lhs: lhs.stats?.pointsPerGame ?? -1, rhs: rhs.stats?.pointsPerGame ?? -1)
+        case .rebounds:
+            return numericCompare(lhs: lhs.stats?.reboundsPerGame ?? -1, rhs: rhs.stats?.reboundsPerGame ?? -1)
+        case .assists:
+            return numericCompare(lhs: lhs.stats?.assistsPerGame ?? -1, rhs: rhs.stats?.assistsPerGame ?? -1)
+        case .minutes:
+            return numericCompare(lhs: lhs.stats?.minutesPerGame ?? -1, rhs: rhs.stats?.minutesPerGame ?? -1)
+        case .ask:
+            return numericCompare(lhs: lhs.askingPrice, rhs: rhs.askingPrice)
+        case .status:
+            return statusText(lhs).localizedCaseInsensitiveCompare(statusText(rhs))
+        }
+    }
+
+    private func compareBoard(lhs: TransferPortalEntry, rhs: TransferPortalEntry, column: BoardTableColumn) -> ComparisonResult {
+        switch column {
+        case .player:
+            return lhs.playerName.localizedCaseInsensitiveCompare(rhs.playerName)
+        case .position:
+            return lhs.position.localizedCaseInsensitiveCompare(rhs.position)
+        case .overall:
+            return numericCompare(lhs: lhs.overall, rhs: rhs.overall)
+        case .points:
+            return numericCompare(lhs: lhs.stats?.pointsPerGame ?? -1, rhs: rhs.stats?.pointsPerGame ?? -1)
+        case .ask:
+            return numericCompare(lhs: lhs.askingPrice, rhs: rhs.askingPrice)
+        case .offer:
+            return numericCompare(lhs: summary?.userOffers[lhs.id] ?? 0, rhs: summary?.userOffers[rhs.id] ?? 0)
+        case .interest:
+            return numericCompare(lhs: userInterest(lhs), rhs: userInterest(rhs))
+        case .finalists:
+            return finalistsText(lhs).localizedCaseInsensitiveCompare(finalistsText(rhs))
+        case .status:
+            return statusText(lhs).localizedCaseInsensitiveCompare(statusText(rhs))
+        case .actions:
+            return lhs.playerName.localizedCaseInsensitiveCompare(rhs.playerName)
+        }
+    }
+
+    private func numericCompare<T: Comparable>(lhs: T, rhs: T) -> ComparisonResult {
+        if lhs < rhs { return .orderedAscending }
+        if lhs > rhs { return .orderedDescending }
+        return .orderedSame
+    }
+
+    private func userInterest(_ row: TransferPortalEntry) -> Double {
+        row.interestByTeamId[summary?.userTeamId ?? ""] ?? 0
+    }
+
+    private func interestText(_ row: TransferPortalEntry) -> String {
+        let interest = userInterest(row)
+        return interest > 0 ? "\(Int(interest.rounded()))" : "-"
+    }
+
+    private func finalistsText(_ row: TransferPortalEntry) -> String {
+        row.finalistTeamNames.isEmpty ? "-" : row.finalistTeamNames.joined(separator: ", ")
+    }
+
+    private func statusText(_ row: TransferPortalEntry) -> String {
+        if let committed = row.committedTeamName {
+            return "Committed \(committed)"
+        }
+        if row.previousTeamId == summary?.userTeamId {
+            return "From you"
+        }
+        if row.finalistTeamIds.contains(summary?.userTeamId ?? "") {
+            return "Finalist"
+        }
+        if targetIds.contains(row.id) {
+            return "On board"
+        }
+        if row.finalistTeamNames.isEmpty {
+            return "Open"
+        }
+        return "Finalists"
+    }
+
+    private func statText(_ value: Double?) -> String {
+        guard let value else { return "-" }
+        return String(format: "%.1f", value)
     }
 
     private func summaryTile(title: String, value: String) -> some View {

@@ -533,6 +533,12 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
             (playerKey(teamId: team.teamId, playerName: player.bio.name), player)
         }
     })
+    let statsByTeamAndPlayer = Dictionary(grouping: buildHallCandidateStats(state), by: \.teamId)
+        .mapValues { rows in
+            Dictionary(rows.map { ($0.playerName, transferPortalStats(from: $0)) }, uniquingKeysWith: { first, second in
+                first.minutesPerGame >= second.minutesPerGame ? first : second
+            })
+        }
 
     func appendPortalEntry(_ entry: TransferPortalEntry) {
         if portalIds.insert(entry.id).inserted {
@@ -553,6 +559,7 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
                 previousTeamName: departure.teamName,
                 player: departure.player,
                 playerModel: rosterPlayerById[playerKey(teamId: departure.teamId, playerName: departure.playerName)],
+                stats: statsByTeamAndPlayer[departure.teamId]?[departure.playerName],
                 playerName: departure.playerName,
                 position: departure.position,
                 year: departure.year,
@@ -575,6 +582,7 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
                 previousTeamName: row.teamName,
                 player: row.player,
                 playerModel: rosterPlayerById[playerKey(teamId: row.teamId, playerName: row.playerName)],
+                stats: statsByTeamAndPlayer[row.teamId]?[row.playerName],
                 playerName: row.playerName,
                 position: row.position,
                 year: row.year,
@@ -614,6 +622,25 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
         return $0.playerName < $1.playerName
     }
     state.nilRetentionFinalized = true
+}
+
+private func transferPortalStats(from stats: HallCandidateStat) -> TransferPortalPlayerStats {
+    let fieldGoalPercentage: Double
+    if stats.fgAttempts > 0 {
+        fieldGoalPercentage = Double(stats.fgMade) / Double(stats.fgAttempts) * 100
+    } else {
+        fieldGoalPercentage = 0
+    }
+    return TransferPortalPlayerStats(
+        games: stats.games,
+        minutesPerGame: stats.minutesPerGame,
+        pointsPerGame: stats.pointsPerGame,
+        reboundsPerGame: stats.reboundsPerGame,
+        assistsPerGame: stats.assistsPerGame,
+        stealsPerGame: stats.stealsPerGame,
+        blocksPerGame: stats.blocksPerGame,
+        fieldGoalPercentage: fieldGoalPercentage
+    )
 }
 
 private let transferPortalRecruitingWeeks = 4
