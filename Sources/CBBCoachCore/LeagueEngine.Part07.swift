@@ -121,9 +121,6 @@ public func getDraftSummary(_ league: LeagueState) -> DraftSummary {
         if state.draftPicks == nil {
             state.draftPicks = calculateDraftPicks(state)
         }
-        if state.schoolHallOfFame != nil {
-            state.schoolHallOfFame = calculateSchoolHallOfFame(state)
-        }
         return DraftSummary(userTeamId: state.userTeamId, picks: state.draftPicks ?? [])
     }) else {
         return DraftSummary(userTeamId: "", picks: [])
@@ -927,9 +924,6 @@ public func advanceOffseason(_ league: inout LeagueState) -> LeagueOffseasonProg
             }
             if state.draftPicks == nil {
                 state.draftPicks = calculateDraftPicks(state)
-            }
-            if state.schoolHallOfFame == nil {
-                state.schoolHallOfFame = calculateSchoolHallOfFame(state)
             }
             state.offseasonStage = .draft
         case .draft:

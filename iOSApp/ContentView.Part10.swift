@@ -1352,28 +1352,33 @@ struct DraftView: View {
                 } else {
                     ForEach(Array(picks.enumerated()), id: \.element.id) { index, pick in
                         VStack(spacing: 0) {
-                            HStack(alignment: .top, spacing: 10) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text(formattedDraftSlot(pick.slot))
-                                    .font(.title3.weight(.bold))
+                                    .font(.subheadline.monospacedDigit().weight(.bold))
                                     .foregroundStyle(AppTheme.ink)
-                                    .frame(width: 80, alignment: .leading)
+                                    .frame(width: 44, alignment: .leading)
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(pick.player.name)
-                                        .font(.title3.weight(.semibold))
+                                        .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(isUserSchoolPick(pick) ? userSchoolGold : AppTheme.ink)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
 
                                     Text(playerDetail(for: pick))
-                                        .font(.title3)
+                                        .font(.caption)
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
                                 Text(String(format: "%.1f", pick.draftScore))
-                                    .font(.title3.weight(.semibold).monospacedDigit())
+                                    .font(.caption.monospacedDigit().weight(.semibold))
                                     .foregroundStyle(.secondary)
+                                    .frame(width: 36, alignment: .trailing)
                             }
-                            .padding(.vertical, 12)
+                            .padding(.vertical, 8)
 
                             if index < picks.count - 1 {
                                 Divider()

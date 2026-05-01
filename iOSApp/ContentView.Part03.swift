@@ -11,7 +11,12 @@ struct DeferredLeagueRefreshData: Sendable {
 }
 
 extension CollegeLeagueHomeView {
-    func refreshFromLeague(_ league: LeagueState, includeDeferredData: Bool = true) {
+    func refreshFromLeague(
+        _ league: LeagueState,
+        includeDeferredData: Bool = true,
+        includeHallOfFame: Bool = true
+    ) {
+        let currentOffseasonProgress = getOffseasonProgress(league)
         roster = getUserRoster(league)
         schedule = getUserSchedule(league)
         rotationSlots = getUserRotation(league)
@@ -24,8 +29,10 @@ extension CollegeLeagueHomeView {
         draftSummary = getDraftSummary(league)
         nilRetentionSummary = getNILRetentionSummary(league)
         transferPortalSummary = getTransferPortalSummary(league)
-        hallOfFameSummary = getSchoolHallOfFameSummary(league)
-        offseasonProgress = getOffseasonProgress(league)
+        if includeHallOfFame {
+            hallOfFameSummary = getSchoolHallOfFameSummary(league)
+        }
+        offseasonProgress = currentOffseasonProgress
         if includeDeferredData {
             applyDeferredRefresh(Self.buildDeferredRefreshData(for: league))
         }
@@ -123,7 +130,8 @@ extension CollegeLeagueHomeView {
         guard var currentLeague = league else { return nil }
         guard let progress = advanceOffseason(&currentLeague) else { return nil }
         league = currentLeague
-        refreshFromLeague(currentLeague)
+        refreshFromLeague(currentLeague, includeDeferredData: false, includeHallOfFame: false)
+        refreshDeferredDataFromLeague(currentLeague)
         statusText = offseasonStatusText(for: progress.stage)
         return progress
     }
