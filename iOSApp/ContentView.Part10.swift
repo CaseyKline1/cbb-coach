@@ -1449,14 +1449,14 @@ struct NILOfferAmountControl: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            amountButton(title: "-$", delta: -5_000)
+            amountButton(title: "-$", delta: -50_000)
 
             Text(moneyText(Double(displayedAmount)))
                 .font(.caption.monospacedDigit().weight(.semibold))
                 .frame(minWidth: 54, alignment: .center)
                 .foregroundStyle(AppTheme.ink)
 
-            amountButton(title: "+$", delta: 5_000)
+            amountButton(title: "+$", delta: 50_000)
         }
         .onChange(of: amount) { _, newValue in
             localAmount = clamped(newValue)
