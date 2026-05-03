@@ -562,7 +562,14 @@ struct CollegeLeagueHomeView: View {
         skipAheadGameRecaps = []
 
         Task(priority: .userInitiated) {
-            let result = await runSkipAhead(from: startingLeague, target: target)
+            await Task.yield()
+            let result = await Task.detached(priority: .userInitiated) {
+                await Self.runSkipAhead(from: startingLeague, target: target) { recaps in
+                    await MainActor.run {
+                        skipAheadGameRecaps = recaps
+                    }
+                }
+            }.value
             await MainActor.run {
                 league = result.league
                 refreshFromLeague(result.league, includeDeferredData: false)
@@ -577,10 +584,14 @@ struct CollegeLeagueHomeView: View {
         }
     }
 
-    private func runSkipAhead(from league: LeagueState, target: SkipAheadTarget) async -> SkipAheadSimulationResult {
+    private static func runSkipAhead(
+        from league: LeagueState,
+        target: SkipAheadTarget,
+        onRecapsUpdated: @Sendable ([String]) async -> Void
+    ) async -> SkipAheadSimulationResult {
         switch target {
         case .selectionSunday, .offseason:
-            return await runSeasonCheckpointSkipAhead(from: league, target: target)
+            return await runSeasonCheckpointSkipAhead(from: league, target: target, onRecapsUpdated: onRecapsUpdated)
         case .midseason, .endOfRegularSeason:
             break
         }
@@ -624,9 +635,7 @@ struct CollegeLeagueHomeView: View {
                 break
             }
             let snapshot = liveRecaps
-            await MainActor.run {
-                skipAheadGameRecaps = snapshot
-            }
+            await onRecapsUpdated(snapshot)
             await Task.yield()
         }
 
@@ -638,7 +647,11 @@ struct CollegeLeagueHomeView: View {
         )
     }
 
-    private func runSeasonCheckpointSkipAhead(from league: LeagueState, target: SkipAheadTarget) async -> SkipAheadSimulationResult {
+    private static func runSeasonCheckpointSkipAhead(
+        from league: LeagueState,
+        target: SkipAheadTarget,
+        onRecapsUpdated: @Sendable ([String]) async -> Void
+    ) async -> SkipAheadSimulationResult {
         var currentLeague = league
         let userTeamName = getLeagueSummary(league).userTeamName
         let initialCompletedGames = getUserSchedule(currentLeague).filter { $0.completed == true }.count
@@ -653,9 +666,7 @@ struct CollegeLeagueHomeView: View {
             )
         }
 
-        await MainActor.run {
-            skipAheadGameRecaps = recaps
-        }
+        await onRecapsUpdated(recaps)
 
         return SkipAheadSimulationResult(
             league: currentLeague,
