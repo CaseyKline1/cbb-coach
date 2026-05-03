@@ -183,10 +183,7 @@ extension CollegeLeagueHomeView {
         }
 
         if currentDestination != destination {
-            navigationPath.removeLast()
-            DispatchQueue.main.async {
-                navigationPath.append(destination)
-            }
+            navigationPath[navigationPath.count - 1] = destination
         }
     }
 
