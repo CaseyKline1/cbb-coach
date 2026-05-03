@@ -10,6 +10,158 @@ struct DeferredLeagueRefreshData: Sendable {
     let teamStatsById: [String: TeamAggregateStats]
 }
 
+struct OffseasonAdvanceLoadingContext: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let detail: String
+    let roster: [UserRosterPlayerSummary]
+    let portalPlayerCount: Int?
+}
+
+enum OffseasonAdvanceNavigationMode: Sendable {
+    case scheduleFromRecap
+    case stageDestination
+}
+
+struct OffseasonAdvanceLoadingView: View {
+    let context: OffseasonAdvanceLoadingContext
+
+    private var rosterRows: [UserRosterPlayerSummary] {
+        Array(context.roster.sorted { lhs, rhs in
+            if lhs.isStarter != rhs.isStarter { return lhs.isStarter && !rhs.isStarter }
+            if lhs.overall != rhs.overall { return lhs.overall > rhs.overall }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }.prefix(8))
+    }
+
+    private var portalCountText: String {
+        context.portalPlayerCount.map { $0.formatted() } ?? "Calculating"
+    }
+
+    var body: some View {
+        ZStack {
+            AppTheme.background
+                .opacity(0.96)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(AppTheme.accent)
+
+                    Text(context.title)
+                        .font(.title3.weight(.black))
+                        .foregroundStyle(AppTheme.ink)
+
+                    Text(context.detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 8) {
+                    loadingMetric(title: "ROSTER", value: "\(context.roster.count)")
+                    loadingMetric(title: "PORTAL", value: portalCountText)
+                }
+
+                rosterCard
+            }
+            .padding(18)
+        }
+    }
+
+    private var rosterCard: some View {
+        GameCard {
+            VStack(alignment: .leading, spacing: 10) {
+                GameSectionHeader(title: "Current Roster")
+
+                VStack(spacing: 0) {
+                    rosterHeader
+                    ForEach(rosterRows, id: \.playerIndex) { player in
+                        rosterRow(player)
+                        if player.playerIndex != rosterRows.last?.playerIndex {
+                            Divider().opacity(0.45)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var rosterHeader: some View {
+        HStack(spacing: 0) {
+            loadingHeader("Player", width: nil, alignment: .leading)
+            loadingHeader("POS", width: 42)
+            loadingHeader("YR", width: 42)
+            loadingHeader("OVR", width: 46)
+        }
+        .padding(.bottom, 6)
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+    }
+
+    private func rosterRow(_ player: UserRosterPlayerSummary) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Text(player.name)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if player.isStarter {
+                    Text("S")
+                        .font(.caption2.weight(.black))
+                        .foregroundStyle(AppTheme.accent)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(player.position)
+                .font(.caption.monospacedDigit())
+                .frame(width: 42)
+            Text(player.year)
+                .font(.caption.monospacedDigit())
+                .frame(width: 42)
+            Text("\(player.overall)")
+                .font(.caption.monospacedDigit().weight(.bold))
+                .frame(width: 46)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func loadingHeader(_ title: String, width: CGFloat?, alignment: Alignment = .center) -> some View {
+        Text(title)
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.secondary)
+            .frame(width: width, alignment: alignment)
+            .frame(maxWidth: width == nil ? .infinity : nil, alignment: alignment)
+    }
+
+    private func loadingMetric(title: String, value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.monospacedDigit().weight(.black))
+                .foregroundStyle(AppTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+        )
+    }
+}
+
 extension CollegeLeagueHomeView {
     func refreshFromLeague(
         _ league: LeagueState,
@@ -161,17 +313,106 @@ extension CollegeLeagueHomeView {
     }
 
     func advanceToOffseasonScheduleFromRecap() {
-        let progress = advanceOffseasonSchedule(refreshLeague: false)
-        if progress?.stage == .schedule {
-            navigationPath.append(.offseasonSchedule)
-        }
+        startOffseasonAdvance(refreshLeague: false, navigationMode: .scheduleFromRecap)
     }
 
     func advanceOffseasonScheduleAndNavigate() {
-        guard let progress = advanceOffseasonSchedule() else { return }
-        if let destination = destination(forOffseasonStage: progress.stage) {
-            replaceCurrentOffseasonDestination(with: destination)
+        startOffseasonAdvance(refreshLeague: true, navigationMode: .stageDestination)
+    }
+
+    private func startOffseasonAdvance(refreshLeague: Bool, navigationMode: OffseasonAdvanceNavigationMode) {
+        guard offseasonAdvanceLoading == nil else { return }
+        guard let startingLeague = league else { return }
+
+        offseasonAdvanceLoading = offseasonLoadingContext()
+
+        Task(priority: .userInitiated) {
+            await Task.yield()
+            let result = await Self.runOffseasonAdvance(from: startingLeague)
+            await MainActor.run {
+                guard let result else {
+                    offseasonAdvanceLoading = nil
+                    return
+                }
+
+                league = result.league
+                offseasonProgress = result.progress
+                if refreshLeague {
+                    refreshAfterOffseasonAdvance(result.league, progress: result.progress)
+                }
+                statusText = offseasonStatusText(for: result.progress.stage)
+
+                switch navigationMode {
+                case .scheduleFromRecap:
+                    if result.progress.stage == .schedule {
+                        navigationPath.append(.offseasonSchedule)
+                    }
+                case .stageDestination:
+                    if let destination = destination(forOffseasonStage: result.progress.stage) {
+                        replaceCurrentOffseasonDestination(with: destination)
+                    }
+                }
+
+                offseasonAdvanceLoading = nil
+            }
         }
+    }
+
+    private static func runOffseasonAdvance(from league: LeagueState) async -> (league: LeagueState, progress: LeagueOffseasonProgress)? {
+        await Task.detached(priority: .userInitiated) {
+            var currentLeague = league
+            guard let progress = advanceOffseason(&currentLeague) else { return nil }
+            return (currentLeague, progress)
+        }.value
+    }
+
+    private func offseasonLoadingContext() -> OffseasonAdvanceLoadingContext {
+        let currentStage = offseasonProgress?.stage ?? .seasonRecap
+        let title: String
+        let detail: String
+        let portalPlayerCount: Int?
+
+        switch currentStage {
+        case .seasonRecap:
+            title = "Building Offseason Schedule"
+            detail = "Lining up the offseason calendar."
+            portalPlayerCount = nil
+        case .schedule:
+            title = "Calculating NIL Budgets"
+            detail = "Revenue sharing and donor interest are being processed."
+            portalPlayerCount = nil
+        case .nilBudgets:
+            title = "Processing Departures"
+            detail = "Graduations, draft decisions, and transfer risks are being settled."
+            portalPlayerCount = nil
+        case .playersLeaving:
+            title = "Running Draft Phase"
+            detail = "Draft entrants are being evaluated."
+            portalPlayerCount = nil
+        case .draft:
+            title = "Preparing Retention"
+            detail = "Returning-player NIL negotiations are being initialized."
+            portalPlayerCount = nil
+        case .playerRetention:
+            title = "Setting Up Transfer Portal"
+            detail = "National transfer entries, asking prices, and team interest are being generated."
+            portalPlayerCount = nil
+        case .transferPortal:
+            title = "Advancing Transfer Portal"
+            detail = "Offers, finalists, commitments, and the next portal week are being resolved."
+            portalPlayerCount = transferPortalSummary?.entries.count
+        case .complete:
+            title = "Completing Offseason"
+            detail = "Finalizing rosters and opening the next season."
+            portalPlayerCount = transferPortalSummary?.entries.count
+        }
+
+        return OffseasonAdvanceLoadingContext(
+            title: title,
+            detail: detail,
+            roster: roster,
+            portalPlayerCount: portalPlayerCount
+        )
     }
 
     private func replaceCurrentOffseasonDestination(with destination: LeagueMenuDestination) {

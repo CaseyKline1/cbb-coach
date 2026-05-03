@@ -79,8 +79,10 @@ struct CollegeLeagueHomeView: View {
     @State var showingSeasonRecap = false
     @State var showingOffseasonSchedule = false
     @State var navigationPath: [LeagueMenuDestination] = []
+    @State var offseasonAdvanceLoading: OffseasonAdvanceLoadingContext?
 
     var body: some View {
+        ZStack {
         NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -120,7 +122,7 @@ struct CollegeLeagueHomeView: View {
                             }
                         }
                         .buttonStyle(GameButtonStyle(variant: .primary))
-                        .disabled(isSkipAheadInProgress)
+                        .disabled(isSkipAheadInProgress || offseasonAdvanceLoading != nil)
 
                         Button("Skip Ahead") {
                             if hasSkipAheadTargets {
@@ -130,7 +132,7 @@ struct CollegeLeagueHomeView: View {
                             }
                         }
                         .buttonStyle(GameButtonStyle(variant: .secondary))
-                        .disabled(isSkipAheadInProgress)
+                        .disabled(isSkipAheadInProgress || offseasonAdvanceLoading != nil)
                     }
 
                     GameCard {
@@ -200,7 +202,7 @@ struct CollegeLeagueHomeView: View {
                         onCreateNewCoach()
                     }
                     .buttonStyle(GameButtonStyle(variant: .danger, size: .compact))
-                    .disabled(isSkipAheadInProgress)
+                    .disabled(isSkipAheadInProgress || offseasonAdvanceLoading != nil)
                 }
                 .padding(20)
             }
@@ -425,6 +427,13 @@ struct CollegeLeagueHomeView: View {
                         recaps: skipAheadGameRecaps
                     )
                 }
+            }
+        }
+
+            if let offseasonAdvanceLoading {
+                OffseasonAdvanceLoadingView(context: offseasonAdvanceLoading)
+                    .transition(.opacity)
+                    .zIndex(1)
             }
         }
     }
