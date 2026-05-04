@@ -366,6 +366,18 @@ extension CollegeLeagueHomeView {
         }.value
     }
 
+    var retainedRoster: [UserRosterPlayerSummary] {
+        guard let retention = nilRetentionSummary else { return roster }
+        let userTeamId = retention.userTeamId
+        let unretainedNames = Set(
+            retention.entries
+                .filter { $0.teamId == userTeamId && $0.status != .accepted }
+                .map(\.playerName)
+        )
+        guard !unretainedNames.isEmpty else { return roster }
+        return roster.filter { !unretainedNames.contains($0.name) }
+    }
+
     private func offseasonLoadingContext() -> OffseasonAdvanceLoadingContext {
         let currentStage = offseasonProgress?.stage ?? .seasonRecap
         let title: String
@@ -410,7 +422,7 @@ extension CollegeLeagueHomeView {
         return OffseasonAdvanceLoadingContext(
             title: title,
             detail: detail,
-            roster: roster,
+            roster: retainedRoster,
             portalPlayerCount: portalPlayerCount
         )
     }
