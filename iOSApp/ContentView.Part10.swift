@@ -2,6 +2,16 @@ import SwiftUI
 import UniformTypeIdentifiers
 import CBBCoachCore
 
+private func nilMoneyText(_ amount: Double) -> String {
+    if abs(amount) >= 1_000_000 {
+        let millions = amount / 1_000_000
+        let absMillions = abs(millions)
+        let decimals = absMillions >= 99.5 ? 0 : (absMillions >= 9.95 ? 1 : 2)
+        return "$\(String(format: "%.\(decimals)f", millions))M"
+    }
+    return "$\(Int(amount / 1_000).formatted())K"
+}
+
 struct NationalBracketView: View {
     let bracket: NationalTournamentBracket?
     let userTeamId: String?
@@ -1013,10 +1023,7 @@ struct NILBudgetView: View {
     }
 
     private func moneyText(_ amount: Double) -> String {
-        if amount >= 1_000_000 {
-            return "$\(String(format: "%.1f", amount / 1_000_000))M"
-        }
-        return "$\(Int(amount / 1_000).formatted())K"
+        nilMoneyText(amount)
     }
 
     private func percentText(_ value: Double) -> String {
@@ -1509,10 +1516,7 @@ struct NILOfferAmountControl: View {
     }
 
     private func moneyText(_ amount: Double) -> String {
-        if amount >= 1_000_000 {
-            return "$\(String(format: "%.1f", amount / 1_000_000))M"
-        }
-        return "$\(Int(amount / 1_000).formatted())K"
+        nilMoneyText(amount)
     }
 }
 
@@ -1833,10 +1837,7 @@ struct NILRetentionView: View {
     }
 
     private func moneyText(_ amount: Double) -> String {
-        if amount >= 1_000_000 {
-            return "$\(String(format: "%.1f", amount / 1_000_000))M"
-        }
-        return "$\(Int(amount / 1_000).formatted())K"
+        nilMoneyText(amount)
     }
 }
 
@@ -2379,10 +2380,7 @@ struct TransferPortalView: View {
     }
 
     private func moneyText(_ amount: Double) -> String {
-        if amount >= 1_000_000 {
-            return "$\(String(format: "%.1f", amount / 1_000_000))M"
-        }
-        return "$\(Int(amount / 1_000).formatted())K"
+        nilMoneyText(amount)
     }
 }
 
