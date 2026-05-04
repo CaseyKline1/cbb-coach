@@ -451,7 +451,63 @@ public struct TransferPortalPlayerStats: Codable, Equatable, Sendable {
     public var assistsPerGame: Double
     public var stealsPerGame: Double
     public var blocksPerGame: Double
+    public var turnoversPerGame: Double
     public var fieldGoalPercentage: Double
+    public var threePointPercentage: Double
+    public var effectiveFieldGoalPercentage: Double
+    public var assistTurnoverRatio: Double
+
+    public init(
+        games: Int,
+        minutesPerGame: Double,
+        pointsPerGame: Double,
+        reboundsPerGame: Double,
+        assistsPerGame: Double,
+        stealsPerGame: Double,
+        blocksPerGame: Double,
+        turnoversPerGame: Double = 0,
+        fieldGoalPercentage: Double,
+        threePointPercentage: Double = 0,
+        effectiveFieldGoalPercentage: Double = 0,
+        assistTurnoverRatio: Double = 0
+    ) {
+        self.games = games
+        self.minutesPerGame = minutesPerGame
+        self.pointsPerGame = pointsPerGame
+        self.reboundsPerGame = reboundsPerGame
+        self.assistsPerGame = assistsPerGame
+        self.stealsPerGame = stealsPerGame
+        self.blocksPerGame = blocksPerGame
+        self.turnoversPerGame = turnoversPerGame
+        self.fieldGoalPercentage = fieldGoalPercentage
+        self.threePointPercentage = threePointPercentage
+        self.effectiveFieldGoalPercentage = effectiveFieldGoalPercentage
+        self.assistTurnoverRatio = assistTurnoverRatio
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case games, minutesPerGame, pointsPerGame, reboundsPerGame, assistsPerGame
+        case stealsPerGame, blocksPerGame, turnoversPerGame, fieldGoalPercentage
+        case threePointPercentage, effectiveFieldGoalPercentage, assistTurnoverRatio
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            games: try container.decode(Int.self, forKey: .games),
+            minutesPerGame: try container.decode(Double.self, forKey: .minutesPerGame),
+            pointsPerGame: try container.decode(Double.self, forKey: .pointsPerGame),
+            reboundsPerGame: try container.decode(Double.self, forKey: .reboundsPerGame),
+            assistsPerGame: try container.decode(Double.self, forKey: .assistsPerGame),
+            stealsPerGame: try container.decode(Double.self, forKey: .stealsPerGame),
+            blocksPerGame: try container.decode(Double.self, forKey: .blocksPerGame),
+            turnoversPerGame: try container.decodeIfPresent(Double.self, forKey: .turnoversPerGame) ?? 0,
+            fieldGoalPercentage: try container.decode(Double.self, forKey: .fieldGoalPercentage),
+            threePointPercentage: try container.decodeIfPresent(Double.self, forKey: .threePointPercentage) ?? 0,
+            effectiveFieldGoalPercentage: try container.decodeIfPresent(Double.self, forKey: .effectiveFieldGoalPercentage) ?? 0,
+            assistTurnoverRatio: try container.decodeIfPresent(Double.self, forKey: .assistTurnoverRatio) ?? 0
+        )
+    }
 }
 
 public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {

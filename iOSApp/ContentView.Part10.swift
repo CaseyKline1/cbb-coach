@@ -1843,7 +1843,7 @@ struct NILRetentionView: View {
 
 struct TransferPortalView: View {
     private enum PortalTableColumn: String, Hashable {
-        case target, player, position, year, previous, overall, potential, points, rebounds, assists, minutes, ask, status
+        case target, player, position, year, previous, overall, potential, points, rebounds, assists, steals, blocks, turnovers, assistTurnover, fieldGoal, threePoint, effectiveFieldGoal, minutes, ask, status
     }
 
     private enum BoardTableColumn: String, Hashable {
@@ -1957,6 +1957,13 @@ struct TransferPortalView: View {
             .init(id: .points, title: "PTS", width: 46),
             .init(id: .rebounds, title: "REB", width: 46),
             .init(id: .assists, title: "AST", width: 46),
+            .init(id: .steals, title: "STL", width: 46),
+            .init(id: .blocks, title: "BLK", width: 46),
+            .init(id: .turnovers, title: "TO", width: 46),
+            .init(id: .assistTurnover, title: "A:TO", width: 54),
+            .init(id: .fieldGoal, title: "FG%", width: 56),
+            .init(id: .threePoint, title: "3PT%", width: 58),
+            .init(id: .effectiveFieldGoal, title: "EFG%", width: 58),
             .init(id: .minutes, title: "MIN", width: 46),
             .init(id: .ask, title: "ASK", width: 72),
             .init(id: .status, title: "STATUS", width: 118, alignment: .leading),
@@ -2108,6 +2115,13 @@ struct TransferPortalView: View {
                             AppTableTextCell(text: statText(row.stats?.pointsPerGame), width: 46)
                             AppTableTextCell(text: statText(row.stats?.reboundsPerGame), width: 46)
                             AppTableTextCell(text: statText(row.stats?.assistsPerGame), width: 46)
+                            AppTableTextCell(text: statText(row.stats?.stealsPerGame), width: 46)
+                            AppTableTextCell(text: statText(row.stats?.blocksPerGame), width: 46)
+                            AppTableTextCell(text: statText(row.stats?.turnoversPerGame), width: 46)
+                            AppTableTextCell(text: statText(row.stats?.assistTurnoverRatio), width: 54)
+                            AppTableTextCell(text: percentText(row.stats?.fieldGoalPercentage), width: 56)
+                            AppTableTextCell(text: percentText(row.stats?.threePointPercentage), width: 58)
+                            AppTableTextCell(text: percentText(row.stats?.effectiveFieldGoalPercentage), width: 58)
                             AppTableTextCell(text: statText(row.stats?.minutesPerGame), width: 46)
                             AppTableTextCell(text: moneyText(row.askingPrice), width: 72)
                             AppTableTextCell(text: statusText(row), width: 118, alignment: .leading)
@@ -2266,6 +2280,20 @@ struct TransferPortalView: View {
             return numericCompare(lhs: lhs.stats?.reboundsPerGame ?? -1, rhs: rhs.stats?.reboundsPerGame ?? -1)
         case .assists:
             return numericCompare(lhs: lhs.stats?.assistsPerGame ?? -1, rhs: rhs.stats?.assistsPerGame ?? -1)
+        case .steals:
+            return numericCompare(lhs: lhs.stats?.stealsPerGame ?? -1, rhs: rhs.stats?.stealsPerGame ?? -1)
+        case .blocks:
+            return numericCompare(lhs: lhs.stats?.blocksPerGame ?? -1, rhs: rhs.stats?.blocksPerGame ?? -1)
+        case .turnovers:
+            return numericCompare(lhs: lhs.stats?.turnoversPerGame ?? -1, rhs: rhs.stats?.turnoversPerGame ?? -1)
+        case .assistTurnover:
+            return numericCompare(lhs: lhs.stats?.assistTurnoverRatio ?? -1, rhs: rhs.stats?.assistTurnoverRatio ?? -1)
+        case .fieldGoal:
+            return numericCompare(lhs: lhs.stats?.fieldGoalPercentage ?? -1, rhs: rhs.stats?.fieldGoalPercentage ?? -1)
+        case .threePoint:
+            return numericCompare(lhs: lhs.stats?.threePointPercentage ?? -1, rhs: rhs.stats?.threePointPercentage ?? -1)
+        case .effectiveFieldGoal:
+            return numericCompare(lhs: lhs.stats?.effectiveFieldGoalPercentage ?? -1, rhs: rhs.stats?.effectiveFieldGoalPercentage ?? -1)
         case .minutes:
             return numericCompare(lhs: lhs.stats?.minutesPerGame ?? -1, rhs: rhs.stats?.minutesPerGame ?? -1)
         case .ask:
@@ -2341,6 +2369,11 @@ struct TransferPortalView: View {
     private func statText(_ value: Double?) -> String {
         guard let value else { return "-" }
         return String(format: "%.1f", value)
+    }
+
+    private func percentText(_ value: Double?) -> String {
+        guard let value else { return "-" }
+        return value > 0 ? String(format: "%.1f%%", value) : "--"
     }
 
     private func summaryTile(title: String, value: String) -> some View {

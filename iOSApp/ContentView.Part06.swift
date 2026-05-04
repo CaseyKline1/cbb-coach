@@ -242,6 +242,7 @@ struct PlayerCardDetailView: View {
                         .init(id: "fg", title: "FG%", width: 64),
                         .init(id: "three", title: "3PT%", width: 64),
                         .init(id: "ft", title: "FT%", width: 64),
+                        .init(id: "efg", title: "EFG%", width: 64),
                     ]
                     AppTable(columns: columns, rows: careerRows) { row in
                         HStack(spacing: 0) {
@@ -257,6 +258,7 @@ struct PlayerCardDetailView: View {
                             AppTableTextCell(text: pct(row.totals.fgPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.threePct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.ftPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: pct(row.totals.efgPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                         }
                     }
                 }

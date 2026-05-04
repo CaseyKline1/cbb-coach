@@ -21,6 +21,7 @@ private struct HallCandidateStat: Hashable {
     var fgMade: Int = 0
     var fgAttempts: Int = 0
     var threeMade: Int = 0
+    var threeAttempts: Int = 0
     var ftAttempts: Int = 0
 
     var normalizedPosition: String { normalizeHallPosition(position) }
@@ -35,6 +36,16 @@ private struct HallCandidateStat: Hashable {
     var effectiveFieldGoalPercentage: Double {
         guard fgAttempts > 0 else { return 0 }
         return ((Double(fgMade) + 0.5 * Double(threeMade)) / Double(fgAttempts)) * 100
+    }
+
+    var fieldGoalPercentage: Double {
+        guard fgAttempts > 0 else { return 0 }
+        return (Double(fgMade) / Double(fgAttempts)) * 100
+    }
+
+    var threePointPercentage: Double {
+        guard threeAttempts > 0 else { return 0 }
+        return (Double(threeMade) / Double(threeAttempts)) * 100
     }
 
     var assistTurnoverRatio: Double {
@@ -622,12 +633,6 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
 }
 
 private func transferPortalStats(from stats: HallCandidateStat) -> TransferPortalPlayerStats {
-    let fieldGoalPercentage: Double
-    if stats.fgAttempts > 0 {
-        fieldGoalPercentage = Double(stats.fgMade) / Double(stats.fgAttempts) * 100
-    } else {
-        fieldGoalPercentage = 0
-    }
     return TransferPortalPlayerStats(
         games: stats.games,
         minutesPerGame: stats.minutesPerGame,
@@ -636,7 +641,11 @@ private func transferPortalStats(from stats: HallCandidateStat) -> TransferPorta
         assistsPerGame: stats.assistsPerGame,
         stealsPerGame: stats.stealsPerGame,
         blocksPerGame: stats.blocksPerGame,
-        fieldGoalPercentage: fieldGoalPercentage
+        turnoversPerGame: stats.turnoversPerGame,
+        fieldGoalPercentage: stats.fieldGoalPercentage,
+        threePointPercentage: stats.threePointPercentage,
+        effectiveFieldGoalPercentage: stats.effectiveFieldGoalPercentage,
+        assistTurnoverRatio: stats.assistTurnoverRatio
     )
 }
 
@@ -1778,6 +1787,7 @@ private func buildHallCandidateStats(_ state: LeagueStore.State) -> [HallCandida
                 current.fgMade += player.fgMade
                 current.fgAttempts += player.fgAttempts
                 current.threeMade += player.threeMade
+                current.threeAttempts += player.threeAttempts
                 current.ftAttempts += player.ftAttempts
                 totals[key] = current
             }

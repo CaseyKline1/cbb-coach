@@ -277,4 +277,5 @@ struct PlayerCareerTotals: Hashable {
     var fgPct: Double { fgAttempts > 0 ? Double(fgMade) / Double(fgAttempts) : 0 }
     var threePct: Double { threeAttempts > 0 ? Double(threeMade) / Double(threeAttempts) : 0 }
     var ftPct: Double { ftAttempts > 0 ? Double(ftMade) / Double(ftAttempts) : 0 }
+    var efgPct: Double { fgAttempts > 0 ? (Double(fgMade) + 0.5 * Double(threeMade)) / Double(fgAttempts) : 0 }
 }
