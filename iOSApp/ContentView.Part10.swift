@@ -1897,7 +1897,6 @@ struct TransferPortalView: View {
     @State private var boardSortColumn: BoardTableColumn = .overall
     @State private var boardIsAscending = false
     @State private var offerOverrides: [String: Double] = [:]
-    @State private var offerWriteTasks: [String: Task<Void, Never>] = [:]
 
     private var rows: [TransferPortalEntry] { summary?.entries ?? [] }
 
@@ -2004,11 +2003,11 @@ struct TransferPortalView: View {
             .init(id: .overall, title: "OVR", width: 42),
             .init(id: .points, title: "PTS", width: 46),
             .init(id: .ask, title: "ASK", width: 72),
-            .init(id: .offer, title: "OFFER", width: 86),
+            .init(id: .offer, title: "OFFER", width: 140),
             .init(id: .interest, title: "INT", width: 46),
             .init(id: .finalists, title: "FINALISTS", width: 150, alignment: .leading),
             .init(id: .status, title: "STATUS", width: 96, alignment: .leading),
-            .init(id: .actions, title: "", width: 140),
+            .init(id: .actions, title: "", width: 38),
         ]
     }
 
@@ -2082,7 +2081,7 @@ struct TransferPortalView: View {
                             AppTableTextCell(text: "\(row.overall)", width: 42)
                             AppTableTextCell(text: statText(row.stats?.pointsPerGame), width: 46)
                             AppTableTextCell(text: moneyText(row.askingPrice), width: 72)
-                            AppTableTextCell(text: moneyText(displayedOffer(for: row.id)), width: 86)
+                            offerControl(row)
                             AppTableTextCell(text: interestText(row), width: 46)
                             AppTableTextCell(text: finalistsText(row), width: 150, alignment: .leading)
                             AppTableTextCell(text: statusText(row), width: 96, alignment: .leading)
@@ -2223,38 +2222,60 @@ struct TransferPortalView: View {
     }
 
     private func boardActions(_ row: TransferPortalEntry) -> some View {
-        let offer = displayedOffer(for: row.id)
         let isOpen = row.committedTeamId == nil && row.previousTeamId != summary?.userTeamId
 
-        return HStack(spacing: 6) {
-            Button {
-                setOffer(row.id, amount: max(0, offer - 50_000))
-            } label: {
-                Image(systemName: "minus")
-                    .frame(width: 28)
-            }
-            .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
-            .disabled(!isOpen || offer <= 0)
-
-            Button {
-                setOffer(row.id, amount: offer + 50_000)
-            } label: {
-                Image(systemName: "plus")
-                    .frame(width: 28)
-            }
-            .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
-            .disabled(!isOpen)
-
+        return HStack(spacing: 0) {
             Button {
                 onSetTargeted(row.id, false)
             } label: {
                 Image(systemName: "minus.circle")
-                    .frame(width: 28)
+                    .font(.caption.weight(.bold))
+                    .frame(width: 38)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(isOpen ? AppTheme.accent : .secondary.opacity(0.45))
+            .disabled(!isOpen)
+            .accessibilityLabel("Remove from recruiting board")
+        }
+        .frame(width: 38)
+    }
+
+    private func offerControl(_ row: TransferPortalEntry) -> some View {
+        let offer = displayedOffer(for: row.id)
+        let isOpen = row.committedTeamId == nil && row.previousTeamId != summary?.userTeamId
+
+        return HStack(spacing: 3) {
+            portalOfferButton(systemName: "minus", isEnabled: isOpen && offer > 0) {
+                setOffer(row.id, amount: max(0, offer - 50_000))
+            }
+
+            Text(moneyText(offer))
+                .font(.caption.monospacedDigit())
+                .lineLimit(1)
+                .frame(width: 76, alignment: .center)
+
+            portalOfferButton(systemName: "plus", isEnabled: isOpen) {
+                setOffer(row.id, amount: offer + 50_000)
             }
         }
-        .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
-        .disabled(!isOpen)
         .frame(width: 140)
+    }
+
+    private func portalOfferButton(systemName: String, isEnabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 22, height: 24)
+                .background(Color(UIColor.secondarySystemBackground).opacity(isEnabled ? 1 : 0.45))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color(red: 0.81, green: 0.84, blue: 0.89).opacity(isEnabled ? 1 : 0.55), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isEnabled ? AppTheme.ink : .secondary.opacity(0.45))
+        .disabled(!isEnabled)
     }
 
     private func sortedPortalRows(_ input: [TransferPortalEntry]) -> [TransferPortalEntry] {
@@ -2361,12 +2382,7 @@ struct TransferPortalView: View {
 
     private func setOffer(_ entryId: String, amount: Double) {
         offerOverrides[entryId] = amount
-        offerWriteTasks[entryId]?.cancel()
-        offerWriteTasks[entryId] = Task {
-            try? await Task.sleep(nanoseconds: 75_000_000)
-            guard !Task.isCancelled else { return }
-            onSetOffer(entryId, amount)
-        }
+        onSetOffer(entryId, amount)
     }
 
     private func numericCompare<T: Comparable>(lhs: T, rhs: T) -> ComparisonResult {
