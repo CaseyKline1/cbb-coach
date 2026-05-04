@@ -80,6 +80,7 @@ struct CollegeLeagueHomeView: View {
     @State var showingOffseasonSchedule = false
     @State var navigationPath: [LeagueMenuDestination] = []
     @State var offseasonAdvanceLoading: OffseasonAdvanceLoadingContext?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -392,7 +393,23 @@ struct CollegeLeagueHomeView: View {
             }
             .onAppear {
                 if league == nil {
-                    createLeague()
+                    if let restored = LeagueStore.load(expectedTeam: teamName) {
+                        league = restored
+                        refreshFromLeague(restored)
+                        statusText = ""
+                    } else {
+                        createLeague()
+                    }
+                }
+            }
+            .onChange(of: league) { _, newValue in
+                if let newValue {
+                    LeagueStore.save(newValue, teamName: teamName)
+                }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active, let league {
+                    LeagueStore.save(league, teamName: teamName)
                 }
             }
             .confirmationDialog("Skip Ahead", isPresented: $showingSkipAheadOptions, titleVisibility: .visible) {

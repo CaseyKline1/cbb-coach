@@ -26,7 +26,10 @@ struct ContentView: View {
                     CollegeLeagueHomeView(
                         profile: profile,
                         teamName: coachCareerTeam,
-                        onChooseDifferentTeam: { coachCareerTeam = "" },
+                        onChooseDifferentTeam: {
+                            LeagueStore.clear()
+                            coachCareerTeam = ""
+                        },
                         onCreateNewCoach: resetCoachCreation
                     )
                 }
@@ -75,6 +78,7 @@ struct ContentView: View {
     }
 
     private func resetCoachCreation() {
+        LeagueStore.clear()
         coachCareerTeam = ""
         coachAlmaMater = "Independent"
         coachPipelineState = "CA"
