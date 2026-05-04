@@ -716,14 +716,21 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
     let week = state.transferPortalWeek ?? 1
     let userTargets = state.transferPortalUserTargets ?? []
     let userOffers = state.transferPortalUserOffers ?? [:]
-    let cpuPlans = buildCPUTransferPortalPlans(state: state, portal: portal)
+    let budgetByTeam = Dictionary(uniqueKeysWithValues: calculateNILBudgetSummary(state).teams.map { ($0.teamId, $0.total) })
+    let cpuPlans = buildCPUTransferPortalPlans(state: state, portal: portal, budgetByTeam: budgetByTeam)
+    var cpuTeamIdsByEntryId: [String: Set<String>] = [:]
+    for (teamId, entryIds) in cpuPlans {
+        for entryId in entryIds {
+            cpuTeamIdsByEntryId[entryId, default: []].insert(teamId)
+        }
+    }
     let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
     var commitCountByTeam: [String: Int] = [:]
 
     for index in portal.indices {
         guard portal[index].committedTeamId == nil else { continue }
         var entry = portal[index]
-        var activeTeamIds = Set(cpuPlans.filter { $0.value.contains(entry.id) }.map(\.key))
+        var activeTeamIds = cpuTeamIdsByEntryId[entry.id] ?? []
         if userTargets.contains(entry.id), entry.previousTeamId != state.userTeamId {
             activeTeamIds.insert(state.userTeamId)
         }
@@ -737,7 +744,7 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
             guard let team = teamById[teamId] else { continue }
             let priorityIndex = (cpuPlans[teamId] ?? []).firstIndex(of: entry.id) ?? userTargets.firstIndex(of: entry.id) ?? 0
             let userOffer = teamId == state.userTeamId ? userOffers[entry.id, default: 0] : 0
-            let cpuOffer = teamId == state.userTeamId ? 0 : cpuTransferPortalOffer(entry: entry, team: team, state: state)
+            let cpuOffer = teamId == state.userTeamId ? 0 : cpuTransferPortalOffer(entry: entry, team: team, budget: budgetByTeam[teamId] ?? 0)
             let gain = transferPortalWeeklyGain(
                 entry: entry,
                 team: team,
@@ -753,7 +760,7 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
             entry.interestByTeamId[teamId, default: 0] -= 1.0 + deterministicNILValueRoll(seed: "\(state.optionsSeed):portal-decay:\(week):\(entry.id):\(teamId)") * 1.8
         }
 
-        let orderedTeams = transferPortalOrderedTeams(for: entry, userOffers: userOffers, state: state)
+        let orderedTeams = transferPortalOrderedTeams(for: entry, userOffers: userOffers, state: state, budgetByTeam: budgetByTeam)
         if entry.finalistTeamIds.isEmpty,
            week >= 2,
            orderedTeams.count > 1 {
@@ -793,31 +800,62 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
     state.transferPortalWeek = week + 1
 }
 
-private func buildCPUTransferPortalPlans(state: LeagueStore.State, portal: [TransferPortalEntry]) -> [String: [String]] {
+private func buildCPUTransferPortalPlans(
+    state: LeagueStore.State,
+    portal: [TransferPortalEntry],
+    budgetByTeam: [String: Double]
+) -> [String: [String]] {
     var plans: [String: [String]] = [:]
     for team in state.teams where team.teamId != state.userTeamId {
         let needCount = max(2, min(transferPortalMaxUserTargets, offseasonRosterTarget - team.teamModel.players.count + 3))
-        let candidates = portal
-            .filter { $0.previousTeamId != team.teamId && $0.committedTeamId == nil }
-            .sorted { lhs, rhs in
-                let lhsScore = transferPortalFitScore(entry: lhs, team: team, state: state)
-                let rhsScore = transferPortalFitScore(entry: rhs, team: team, state: state)
-                if lhsScore != rhsScore { return lhsScore > rhsScore }
-                return lhs.playerName < rhs.playerName
+        var candidates: [(id: String, playerName: String, score: Double)] = []
+        for entry in portal where entry.previousTeamId != team.teamId && entry.committedTeamId == nil {
+            let candidate = (
+                id: entry.id,
+                playerName: entry.playerName,
+                score: transferPortalFitScore(entry: entry, team: team, state: state, budget: budgetByTeam[team.teamId] ?? 0)
+            )
+            if candidates.count < needCount {
+                candidates.append(candidate)
+                candidates.sort(by: transferPortalWorseCandidate)
+            } else if let weakest = candidates.first,
+                      transferPortalBetterCandidate(candidate, weakest) {
+                candidates[0] = candidate
+                candidates.sort(by: transferPortalWorseCandidate)
             }
-            .prefix(needCount)
-            .map(\.id)
-        plans[team.teamId] = Array(candidates)
+        }
+        plans[team.teamId] = candidates.sorted(by: transferPortalBetterCandidate).map(\.id)
     }
     return plans
 }
 
-private func transferPortalFitScore(entry: TransferPortalEntry, team: LeagueStore.TeamState, state: LeagueStore.State) -> Double {
+private func transferPortalBetterCandidate(
+    _ lhs: (id: String, playerName: String, score: Double),
+    _ rhs: (id: String, playerName: String, score: Double)
+) -> Bool {
+    if lhs.score != rhs.score { return lhs.score > rhs.score }
+    return lhs.playerName < rhs.playerName
+}
+
+private func transferPortalWorseCandidate(
+    _ lhs: (id: String, playerName: String, score: Double),
+    _ rhs: (id: String, playerName: String, score: Double)
+) -> Bool {
+    if lhs.score != rhs.score { return lhs.score < rhs.score }
+    return lhs.playerName > rhs.playerName
+}
+
+private func transferPortalFitScore(
+    entry: TransferPortalEntry,
+    team: LeagueStore.TeamState,
+    state: LeagueStore.State,
+    budget: Double
+) -> Double {
     transferRosterNeedScore(team.teamModel.players.count) * 35
         + transferPositionNeedScore(entry.position, players: team.teamModel.players) * 18
         + team.prestige * 28
         + Double(entry.overall) * 0.75
-        - max(0, entry.askingPrice - cpuTransferPortalOffer(entry: entry, team: team, state: state)) / 45_000
+        - max(0, entry.askingPrice - cpuTransferPortalOffer(entry: entry, team: team, budget: budget)) / 45_000
         + deterministicNILValueRoll(seed: "\(state.optionsSeed):portal-plan:\(entry.id):\(team.teamId)") * 12
 }
 
@@ -827,6 +865,10 @@ private func transferRosterNeedScore(_ rosterCount: Int) -> Double {
 
 private func cpuTransferPortalOffer(entry: TransferPortalEntry, team: LeagueStore.TeamState, state: LeagueStore.State) -> Double {
     let budget = calculateNILBudgetSummary(state).teams.first { $0.teamId == team.teamId }?.total ?? 0
+    return cpuTransferPortalOffer(entry: entry, team: team, budget: budget)
+}
+
+private func cpuTransferPortalOffer(entry: TransferPortalEntry, team: LeagueStore.TeamState, budget: Double) -> Double {
     let need = clamp(transferRosterNeedScore(team.teamModel.players.count) / 5, min: 0, max: 1)
     let prestige = clamp(team.prestige, min: 0, max: 1)
     let willingness = 0.62 + need * 0.18 + prestige * 0.16
@@ -854,12 +896,13 @@ private func transferPortalWeeklyGain(
 private func transferPortalOrderedTeams(
     for entry: TransferPortalEntry,
     userOffers: [String: Double],
-    state: LeagueStore.State
+    state: LeagueStore.State,
+    budgetByTeam: [String: Double]
 ) -> [(teamId: String, score: Double)] {
     let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
     return entry.interestByTeamId.compactMap { teamId, interest in
         guard let team = teamById[teamId], teamId != entry.previousTeamId else { return nil }
-        let offer = teamId == state.userTeamId ? userOffers[entry.id, default: 0] : cpuTransferPortalOffer(entry: entry, team: team, state: state)
+        let offer = teamId == state.userTeamId ? userOffers[entry.id, default: 0] : cpuTransferPortalOffer(entry: entry, team: team, budget: budgetByTeam[teamId] ?? 0)
         let nilScore = entry.askingPrice > 0 ? clamp(offer / max(1, entry.askingPrice), min: 0, max: 1.35) * (10 + entry.greed / 10) : 2
         return (teamId, interest + nilScore)
     }

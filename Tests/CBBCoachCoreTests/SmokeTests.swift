@@ -1164,6 +1164,42 @@ func transferPortalEntrantsCommitToNewSchoolsBeforeNextSeason() throws {
     #expect(committed.bio.nilDollarsLastYear == 125_000)
 }
 
+@Test("D1-sized transfer portal advances to week two")
+func d1SizedTransferPortalAdvancesToWeekTwo() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "portal-week-two", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .playerRetention
+        state.playersLeaving = nil
+        state.draftPicks = nil
+        state.nilRetention = nil
+        state.transferPortal = nil
+        state.nilRetentionFinalized = false
+
+        for teamIndex in state.teams.indices {
+            let roll = deterministicTestRoll(seed: "\(state.optionsSeed):record:\(state.teams[teamIndex].teamId)")
+            state.teams[teamIndex].wins = Int((12 + roll * 21).rounded())
+            state.teams[teamIndex].losses = max(1, 34 - state.teams[teamIndex].wins)
+            state.teams[teamIndex].conferenceWins = max(0, state.teams[teamIndex].wins - 10)
+            state.teams[teamIndex].conferenceLosses = max(1, state.teams[teamIndex].losses - 4)
+        }
+    }
+
+    _ = delegateNILRetentionToAssistants(&league)
+    _ = advanceOffseason(&league)
+
+    let weekOne = getTransferPortalSummary(league)
+    #expect(weekOne.week == 1)
+    #expect(weekOne.entries.count > 1_000)
+
+    let progress = advanceOffseason(&league)
+    let weekTwo = getTransferPortalSummary(league)
+
+    #expect(progress?.stage == .transferPortal)
+    #expect(weekTwo.week == 2)
+}
+
 private func makePlayerElite(_ player: inout Player) {
     player.skills.shotIQ = 95
     player.skills.ballHandling = 95
