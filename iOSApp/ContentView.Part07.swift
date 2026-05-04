@@ -86,6 +86,9 @@ struct ScheduleListView: View {
 struct BoxScoreDetailView: View {
     let game: UserGameSummary
     let userTeamName: String
+    let games: [LeagueGameSummary]
+    let roster: [UserRosterPlayerSummary]
+    let teamRostersByName: [String: [UserRosterPlayerSummary]]
 
     private var homeScore: Int { game.result?.intValue(for: "homeScore") ?? 0 }
     private var awayScore: Int { game.result?.intValue(for: "awayScore") ?? 0 }
@@ -123,19 +126,19 @@ struct BoxScoreDetailView: View {
 
     private func teamSection(_ team: ParsedTeamBoxScore) -> some View {
         let columns: [AppTableColumn<String>] = [
-            .init(id: "player", title: "", width: 140, alignment: .leading),
-            .init(id: "min", title: "MIN", width: 44),
-            .init(id: "pts", title: "PTS", width: 42),
-            .init(id: "reb", title: "REB", width: 42),
-            .init(id: "ast", title: "AST", width: 42),
-            .init(id: "stl", title: "STL", width: 42),
-            .init(id: "blk", title: "BLK", width: 42),
-            .init(id: "to", title: "TO", width: 42),
-            .init(id: "fg", title: "FG", width: 64),
-            .init(id: "three", title: "3PT", width: 64),
-            .init(id: "ft", title: "FT", width: 64),
-            .init(id: "plusMinus", title: "+/-", width: 46),
-            .init(id: "pf", title: "PF", width: 42),
+            .init(id: "player", title: "", width: 130, alignment: .leading),
+            .init(id: "min", title: "MIN", width: 40),
+            .init(id: "pts", title: "PTS", width: 38),
+            .init(id: "reb", title: "REB", width: 38),
+            .init(id: "ast", title: "AST", width: 38),
+            .init(id: "stl", title: "STL", width: 38),
+            .init(id: "blk", title: "BLK", width: 38),
+            .init(id: "to", title: "TO", width: 38),
+            .init(id: "fg", title: "FG", width: 56),
+            .init(id: "three", title: "3PT", width: 56),
+            .init(id: "ft", title: "FT", width: 56),
+            .init(id: "plusMinus", title: "+/-", width: 40),
+            .init(id: "pf", title: "PF", width: 38),
         ]
         let tableRows = Array(team.players.enumerated()).map {
             (id: AnyHashable("\($0.offset)-\($0.element.playerName)"), data: $0.element)
@@ -145,24 +148,42 @@ struct BoxScoreDetailView: View {
             GameSectionHeader(title: team.name)
             AppTable(columns: columns, rows: tableRows) { player in
                 HStack(spacing: 0) {
-                    AppTableTextCell(
-                        text: "\(player.playerName) (\(player.position))",
-                        width: 140,
-                        alignment: .leading,
-                        font: .caption.monospacedDigit()
-                    )
-                    AppTableTextCell(text: "\(Int(player.minutes.rounded()))", width: 44, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.points)", width: 42, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.rebounds)", width: 42, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.assists)", width: 42, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.steals)", width: 42, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.blocks)", width: 42, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.turnovers)", width: 42, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.fgMade)-\(player.fgAttempts)", width: 64, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.threeMade)-\(player.threeAttempts)", width: 64, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.ftMade)-\(player.ftAttempts)", width: 64, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: formatPlusMinus(player.plusMinus), width: 46, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.fouls)", width: 42, font: .caption.monospacedDigit())
+                    HStack(spacing: 0) {
+                        NavigationLink {
+                            PlayerCardDetailView(
+                                player: resolvedPlayer(teamName: team.name, boxLine: player),
+                                games: games,
+                                teamName: team.name
+                            )
+                        } label: {
+                            Text(player.playerName)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+
+                        Text(" (\(player.position))")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
+                    .frame(width: 130, alignment: .leading)
+
+                    AppTableTextCell(text: "\(Int(player.minutes.rounded()))", width: 40, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.points)", width: 38, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.rebounds)", width: 38, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.assists)", width: 38, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.steals)", width: 38, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.blocks)", width: 38, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.turnovers)", width: 38, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.fgMade)-\(player.fgAttempts)", width: 56, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.threeMade)-\(player.threeAttempts)", width: 56, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.ftMade)-\(player.ftAttempts)", width: 56, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: formatPlusMinus(player.plusMinus), width: 40, font: .caption.monospacedDigit())
+                    AppTableTextCell(text: "\(player.fouls)", width: 38, font: .caption.monospacedDigit())
                 }
             }
         }
@@ -171,6 +192,40 @@ struct BoxScoreDetailView: View {
     private func formatPlusMinus(_ value: Int) -> String {
         if value > 0 { return "+\(value)" }
         return "\(value)"
+    }
+
+    private func rosterForTeam(named teamName: String) -> [UserRosterPlayerSummary]? {
+        if let direct = teamRostersByName[teamName] {
+            return direct
+        }
+        return teamRostersByName.first(where: {
+            $0.key.caseInsensitiveCompare(teamName) == .orderedSame
+        })?.value
+    }
+
+    private func resolvedPlayer(teamName: String, boxLine: ParsedPlayerBoxScore) -> UserRosterPlayerSummary {
+        if let teamRoster = rosterForTeam(named: teamName),
+           let match = teamRoster.first(where: { $0.name == boxLine.playerName }) {
+            return match
+        }
+        if teamName == userTeamName,
+           let match = roster.first(where: { $0.name == boxLine.playerName }) {
+            return match
+        }
+
+        return UserRosterPlayerSummary(
+            playerIndex: -1,
+            name: boxLine.playerName,
+            position: boxLine.position,
+            year: "N/A",
+            home: nil,
+            height: nil,
+            weight: nil,
+            wingspan: nil,
+            overall: 0,
+            isStarter: false,
+            attributes: nil
+        )
     }
 }
 

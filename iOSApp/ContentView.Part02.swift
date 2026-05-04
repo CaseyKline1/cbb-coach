@@ -352,7 +352,13 @@ struct CollegeLeagueHomeView: View {
                     )
                 case .boxScore(let gameId):
                     if let game = schedule.first(where: { $0.gameId == gameId }) {
-                        BoxScoreDetailView(game: game, userTeamName: summary?.userTeamName ?? teamName)
+                        BoxScoreDetailView(
+                            game: game,
+                            userTeamName: summary?.userTeamName ?? teamName,
+                            games: completedLeagueGames,
+                            roster: roster,
+                            teamRostersByName: teamRostersByName
+                        )
                     }
                 }
             }
