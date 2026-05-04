@@ -118,6 +118,64 @@ public struct Player: Codable, Equatable, Sendable {
         public var defensiveCoachingModifier: Double = 1
     }
 
+    public struct CareerSeason: Codable, Equatable, Sendable {
+        public var year: String
+        public var teamId: String
+        public var teamName: String
+        public var games: Int
+        public var minutes: Double
+        public var points: Int
+        public var rebounds: Int
+        public var assists: Int
+        public var steals: Int
+        public var blocks: Int
+        public var turnovers: Int
+        public var fgMade: Int
+        public var fgAttempts: Int
+        public var threeMade: Int
+        public var threeAttempts: Int
+        public var ftMade: Int
+        public var ftAttempts: Int
+
+        public init(
+            year: String,
+            teamId: String,
+            teamName: String,
+            games: Int = 0,
+            minutes: Double = 0,
+            points: Int = 0,
+            rebounds: Int = 0,
+            assists: Int = 0,
+            steals: Int = 0,
+            blocks: Int = 0,
+            turnovers: Int = 0,
+            fgMade: Int = 0,
+            fgAttempts: Int = 0,
+            threeMade: Int = 0,
+            threeAttempts: Int = 0,
+            ftMade: Int = 0,
+            ftAttempts: Int = 0
+        ) {
+            self.year = year
+            self.teamId = teamId
+            self.teamName = teamName
+            self.games = games
+            self.minutes = minutes
+            self.points = points
+            self.rebounds = rebounds
+            self.assists = assists
+            self.steals = steals
+            self.blocks = blocks
+            self.turnovers = turnovers
+            self.fgMade = fgMade
+            self.fgAttempts = fgAttempts
+            self.threeMade = threeMade
+            self.threeAttempts = threeAttempts
+            self.ftMade = ftMade
+            self.ftAttempts = ftAttempts
+        }
+    }
+
     public var bio = Bio()
     public var athleticism = Athleticism()
     public var shooting = Shooting()
@@ -130,6 +188,7 @@ public struct Player: Codable, Equatable, Sendable {
     public var condition = Condition()
     public var greed: Double? = nil
     public var loyalty: Double? = nil
+    public var careerSeasons: [CareerSeason]? = nil
 
     public init() {}
 }

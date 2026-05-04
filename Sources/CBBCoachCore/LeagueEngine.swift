@@ -43,6 +43,7 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
     public var isStarter: Bool
     public var attributes: [String: Int]?
     public var draftSlot: Int?
+    public var careerSeasons: [Player.CareerSeason]?
 
     public init(
         playerIndex: Int,
@@ -56,7 +57,8 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
         overall: Int,
         isStarter: Bool,
         attributes: [String: Int]?,
-        draftSlot: Int? = nil
+        draftSlot: Int? = nil,
+        careerSeasons: [Player.CareerSeason]? = nil
     ) {
         self.playerIndex = playerIndex
         self.name = name
@@ -70,6 +72,7 @@ public struct UserRosterPlayerSummary: Codable, Equatable, Sendable {
         self.isStarter = isStarter
         self.attributes = attributes
         self.draftSlot = draftSlot
+        self.careerSeasons = careerSeasons
     }
 }
 

@@ -348,7 +348,8 @@ func rosterSummaryPlayers(from team: Team, lineupNames: Set<String>) -> [UserRos
                 "tendencyPickAndRoll": player.tendencies.pickAndRoll,
                 "tendencyPickAndPop": player.tendencies.pickAndPop,
                 "tendencyShootVsPass": player.tendencies.shootVsPass,
-            ]
+            ],
+            careerSeasons: player.careerSeasons
         )
     }
 }

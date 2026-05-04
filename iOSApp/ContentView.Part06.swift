@@ -129,17 +129,42 @@ struct PlayerCardDetailView: View {
 
     private struct CareerYearRow {
         let year: String
+        let teamAbbreviation: String
         let totals: PlayerCareerTotals
     }
 
     private var careerRows: [(id: AnyHashable, data: CareerYearRow)] {
-        var totalsByYear: [String: PlayerCareerTotals] = [:]
-        let playerYear = player.year.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "N/A" : player.year
+        var rows: [CareerYearRow] = []
 
+        for season in player.careerSeasons ?? [] {
+            rows.append(
+                CareerYearRow(
+                    year: season.year.isEmpty ? "N/A" : season.year,
+                    teamAbbreviation: teamAbbreviation(for: season.teamName),
+                    totals: PlayerCareerTotals(
+                        games: season.games,
+                        minutes: season.minutes,
+                        points: season.points,
+                        rebounds: season.rebounds,
+                        assists: season.assists,
+                        steals: season.steals,
+                        blocks: season.blocks,
+                        turnovers: season.turnovers,
+                        fgMade: season.fgMade,
+                        fgAttempts: season.fgAttempts,
+                        threeMade: season.threeMade,
+                        threeAttempts: season.threeAttempts,
+                        ftMade: season.ftMade,
+                        ftAttempts: season.ftAttempts
+                    )
+                )
+            )
+        }
+
+        var current: PlayerCareerTotals = .zero
         for game in games where game.completed == true {
             guard let line = findPlayerLine(in: game) else { continue }
-            let current = totalsByYear[playerYear] ?? .zero
-            totalsByYear[playerYear] = PlayerCareerTotals(
+            current = PlayerCareerTotals(
                 games: current.games + 1,
                 minutes: current.minutes + line.minutes,
                 points: current.points + line.points,
@@ -157,17 +182,32 @@ struct PlayerCardDetailView: View {
             )
         }
 
-        return totalsByYear
-            .map { (year: $0.key, totals: $0.value) }
-            .sorted { lhs, rhs in
-                lhs.year.localizedCaseInsensitiveCompare(rhs.year) == .orderedAscending
-            }
-            .map { entry in
-                (
-                    id: AnyHashable(entry.year),
-                    data: CareerYearRow(year: entry.year, totals: entry.totals)
+        if current.games > 0 {
+            let playerYear = player.year.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "N/A" : player.year
+            rows.append(
+                CareerYearRow(
+                    year: playerYear,
+                    teamAbbreviation: teamAbbreviation(for: teamName),
+                    totals: current
                 )
-            }
+            )
+        }
+
+        return rows.enumerated().map { offset, row in
+            (id: AnyHashable("\(offset):\(row.year):\(row.teamAbbreviation)"), data: row)
+        }
+    }
+
+    private func teamAbbreviation(for name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "—" }
+        let words = trimmed.split(whereSeparator: { $0.isWhitespace })
+        if words.count >= 2 {
+            return words.prefix(4).map { String($0.first!).uppercased() }.joined()
+        }
+        let single = String(words.first ?? "")
+        let prefix = single.prefix(3)
+        return prefix.uppercased()
     }
 
     var body: some View {
@@ -231,6 +271,7 @@ struct PlayerCardDetailView: View {
                 GameCard {
                     let columns: [AppTableColumn<String>] = [
                         .init(id: "year", title: "YEAR", width: 52, alignment: .leading),
+                        .init(id: "team", title: "TEAM", width: 56, alignment: .leading),
                         .init(id: "games", title: "G", width: 42),
                         .init(id: "minutes", title: "MIN", width: 52),
                         .init(id: "points", title: "PTS", width: 52),
@@ -247,6 +288,7 @@ struct PlayerCardDetailView: View {
                     AppTable(columns: columns, rows: careerRows) { row in
                         HStack(spacing: 0) {
                             AppTableTextCell(text: row.year, width: 52, alignment: .leading, font: .caption.monospacedDigit())
+                            AppTableTextCell(text: row.teamAbbreviation, width: 56, alignment: .leading, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: "\(row.totals.games)", width: 42, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: format(row.totals.minutesPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: format(row.totals.pointsPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))

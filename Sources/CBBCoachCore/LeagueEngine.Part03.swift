@@ -34,6 +34,68 @@ private func markSeasonCompleted(_ state: inout LeagueStore.State) {
     if state.offseasonStage == nil {
         state.offseasonStage = .seasonRecap
     }
+    captureCareerSeasonStats(&state)
+}
+
+private func captureCareerSeasonStats(_ state: inout LeagueStore.State) {
+    var totalsByTeamAndPlayer: [String: [String: Player.CareerSeason]] = [:]
+
+    for game in state.schedule where game.completed {
+        guard let boxes = game.result?.boxScore else { continue }
+        for box in boxes {
+            let teamId: String
+            let teamName: String
+            if box.name == state.teams.first(where: { $0.teamId == game.homeTeamId })?.teamModel.name {
+                teamId = game.homeTeamId
+                teamName = box.name
+            } else if box.name == state.teams.first(where: { $0.teamId == game.awayTeamId })?.teamModel.name {
+                teamId = game.awayTeamId
+                teamName = box.name
+            } else if let match = state.teams.first(where: { $0.teamModel.name == box.name }) {
+                teamId = match.teamId
+                teamName = box.name
+            } else {
+                continue
+            }
+
+            for line in box.players where line.minutes > 0 {
+                var bucket = totalsByTeamAndPlayer[teamId] ?? [:]
+                var current = bucket[line.playerName] ?? Player.CareerSeason(year: "", teamId: teamId, teamName: teamName)
+                current.games += 1
+                current.minutes += line.minutes
+                current.points += line.points
+                current.rebounds += line.rebounds
+                current.assists += line.assists
+                current.steals += line.steals
+                current.blocks += line.blocks
+                current.turnovers += line.turnovers
+                current.fgMade += line.fgMade
+                current.fgAttempts += line.fgAttempts
+                current.threeMade += line.threeMade
+                current.threeAttempts += line.threeAttempts
+                current.ftMade += line.ftMade
+                current.ftAttempts += line.ftAttempts
+                bucket[line.playerName] = current
+                totalsByTeamAndPlayer[teamId] = bucket
+            }
+        }
+    }
+
+    for teamIndex in state.teams.indices {
+        let teamId = state.teams[teamIndex].teamId
+        let teamName = state.teams[teamIndex].teamModel.name
+        guard let bucket = totalsByTeamAndPlayer[teamId] else { continue }
+        for playerIndex in state.teams[teamIndex].teamModel.players.indices {
+            let player = state.teams[teamIndex].teamModel.players[playerIndex]
+            guard var entry = bucket[player.bio.name], entry.games > 0 else { continue }
+            entry.year = player.bio.year.rawValue
+            entry.teamId = teamId
+            entry.teamName = teamName
+            var history = state.teams[teamIndex].teamModel.players[playerIndex].careerSeasons ?? []
+            history.append(entry)
+            state.teams[teamIndex].teamModel.players[playerIndex].careerSeasons = history
+        }
+    }
 }
 
 private func completedUserSummaryFromGame(
