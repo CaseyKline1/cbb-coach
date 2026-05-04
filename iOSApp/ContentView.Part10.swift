@@ -352,18 +352,19 @@ struct SeasonRecapView: View {
         ]
     }
 
-    private var userAwardLines: [String] {
-        let national = awardRows.compactMap { title, stat in
-            stat?.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame ? "\(stat?.playerName ?? ""): \(title)" : nil
+    private var userAwardLines: [(text: String, stat: SeasonPlayerStat)] {
+        let national: [(text: String, stat: SeasonPlayerStat)] = awardRows.compactMap { title, stat -> (text: String, stat: SeasonPlayerStat)? in
+            guard let stat, stat.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame else { return nil }
+            return ("\(stat.playerName): \(title)", stat)
         }
         let americans = allAmericans.flatMap { team, players in
             players.filter { $0.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame }
-                .map { "\($0.playerName): \(team) All-American" }
+                .map { ("\($0.playerName): \(team) All-American", $0) }
         }
         let conference = selectedUserAllConferenceTeams.flatMap { team, players in
             players
                 .filter { $0.teamName.caseInsensitiveCompare(userTeamName) == .orderedSame }
-                .map { "\($0.playerName): \(team) All-\(conferenceTitle($0.conferenceId ?? userConferenceId ?? ""))" }
+                .map { ("\($0.playerName): \(team) All-\(conferenceTitle($0.conferenceId ?? userConferenceId ?? ""))", $0) }
         }
         return national + americans + conference
     }
@@ -439,22 +440,33 @@ struct SeasonRecapView: View {
             }
 
             GameCard {
-                GameSectionHeader(title: "Player Awards")
-                if userAwardLines.isEmpty {
-                    Text("No award winners this season.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(userAwardLines, id: \.self) { line in
-                            Text(line)
-                                .font(.subheadline.weight(.semibold))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Player Awards")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(AppTheme.ink)
+
+                    if userAwardLines.isEmpty {
+                        Text("No award winners this season.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(userAwardLines.enumerated()), id: \.offset) { _, line in
+                                NavigationLink {
+                                    playerCard(for: line.stat)
+                                } label: {
+                                    Text(line.text)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(AppTheme.ink)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                 }
             }
 
-            playerTable(title: "Final Player Stats", stats: userStats)
+            playerTable(title: "Player Stats", stats: userStats)
         }
     }
 
@@ -503,21 +515,26 @@ struct SeasonRecapView: View {
             .init(id: "a/to", title: "A:TO", width: 54),
         ]
         return GameCard {
-            GameSectionHeader(title: title)
-            AppTable(columns: columns, rows: stats.map { (id: AnyHashable($0.id), data: $0) }) { stat in
-                HStack(spacing: 0) {
-                    NavigationLink {
-                        playerCard(for: stat)
-                    } label: {
-                        AppTableTextCell(text: stat.playerName, width: 166, alignment: .leading, foreground: AppTheme.ink)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(AppTheme.ink)
+
+                AppTable(columns: columns, rows: stats.map { (id: AnyHashable($0.id), data: $0) }) { stat in
+                    HStack(spacing: 0) {
+                        NavigationLink {
+                            playerCard(for: stat)
+                        } label: {
+                            AppTableTextCell(text: stat.playerName, width: 166, alignment: .leading, foreground: AppTheme.ink)
+                        }
+                        .buttonStyle(.plain)
+                        AppTableTextCell(text: "\(stat.games)", width: 36)
+                        AppTableTextCell(text: format(stat.pointsPerGame), width: 48)
+                        AppTableTextCell(text: format(stat.reboundsPerGame), width: 48)
+                        AppTableTextCell(text: format(stat.assistsPerGame), width: 48)
+                        AppTableTextCell(text: pct(stat.effectiveFieldGoalPercentage), width: 56)
+                        AppTableTextCell(text: format(stat.assistTurnoverRatio), width: 54)
                     }
-                    .buttonStyle(.plain)
-                    AppTableTextCell(text: "\(stat.games)", width: 36)
-                    AppTableTextCell(text: format(stat.pointsPerGame), width: 48)
-                    AppTableTextCell(text: format(stat.reboundsPerGame), width: 48)
-                    AppTableTextCell(text: format(stat.assistsPerGame), width: 48)
-                    AppTableTextCell(text: pct(stat.effectiveFieldGoalPercentage), width: 56)
-                    AppTableTextCell(text: format(stat.assistTurnoverRatio), width: 54)
                 }
             }
         }
