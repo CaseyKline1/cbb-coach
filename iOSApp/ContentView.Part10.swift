@@ -1458,29 +1458,57 @@ struct DraftView: View {
 }
 
 struct NILOfferAmountControl: View {
+    enum Style {
+        case compact
+        case boxed
+    }
+
     let amount: Int
     let minimum: Int
     let maximum: Int
-    let postSecondFireSpeedMultiplier: Double
+    let step: Int
+    let style: Style
+    let amountWidth: CGFloat?
     let onSetAmount: (Int) -> Void
 
     @Environment(\.isEnabled) private var isViewEnabled
     @State private var localAmount: Int?
+
+    init(
+        amount: Int,
+        minimum: Int,
+        maximum: Int,
+        step: Int = 50_000,
+        style: Style = .compact,
+        amountWidth: CGFloat? = nil,
+        onSetAmount: @escaping (Int) -> Void
+    ) {
+        self.amount = amount
+        self.minimum = minimum
+        self.maximum = maximum
+        self.step = step
+        self.style = style
+        self.amountWidth = amountWidth
+        self.onSetAmount = onSetAmount
+    }
 
     private var displayedAmount: Int {
         clamped(localAmount ?? amount)
     }
 
     var body: some View {
-        HStack(spacing: 2) {
-            amountButton(title: "-$", delta: -50_000)
+        HStack(spacing: style == .boxed ? 3 : 2) {
+            amountButton(delta: -step)
 
             Text(moneyText(Double(displayedAmount)))
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .frame(minWidth: 54, alignment: .center)
+                .font(.caption.monospacedDigit().weight(style == .boxed ? .regular : .semibold))
+                .lineLimit(1)
+                .frame(width: amountWidth ?? (style == .boxed ? 76 : nil),
+                       alignment: .center)
+                .frame(minWidth: style == .compact ? 54 : nil, alignment: .center)
                 .foregroundStyle(AppTheme.ink)
 
-            amountButton(title: "+$", delta: 50_000)
+            amountButton(delta: step)
         }
         .onChange(of: amount) { _, newValue in
             localAmount = clamped(newValue)
@@ -1494,20 +1522,47 @@ struct NILOfferAmountControl: View {
     }
 
     @ViewBuilder
-    private func amountButton(title: String, delta: Int) -> some View {
+    private func amountButton(delta: Int) -> some View {
         let isControlEnabled = isEnabled(for: delta)
         HoldRepeatButton(
             action: { adjust(by: delta) },
             isEnabled: isControlEnabled,
-            initialRepeatDelay: 0.01,
-            holdRepeatInterval: 0.005,
-            postSecondFireSpeedMultiplier: postSecondFireSpeedMultiplier
+            initialRepeatDelay: 0.5,
+            holdRepeatInterval: 0.05
         ) {
-            Text(title)
+            buttonLabel(delta: delta, isControlEnabled: isControlEnabled)
+        }
+        .foregroundStyle(buttonForeground(isControlEnabled: isControlEnabled))
+    }
+
+    @ViewBuilder
+    private func buttonLabel(delta: Int, isControlEnabled: Bool) -> some View {
+        switch style {
+        case .compact:
+            Text(delta < 0 ? "-$" : "+$")
                 .font(.caption2.weight(.semibold))
                 .frame(minWidth: 24)
+        case .boxed:
+            Image(systemName: delta < 0 ? "minus" : "plus")
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 22, height: 24)
+                .background(Color(UIColor.secondarySystemBackground).opacity(isControlEnabled ? 1 : 0.45))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color(red: 0.81, green: 0.84, blue: 0.89).opacity(isControlEnabled ? 1 : 0.55), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .foregroundStyle((isViewEnabled && isControlEnabled) ? AppTheme.accent : .secondary.opacity(0.45))
+    }
+
+    private func buttonForeground(isControlEnabled: Bool) -> Color {
+        let active = isViewEnabled && isControlEnabled
+        switch style {
+        case .compact:
+            return active ? AppTheme.accent : .secondary.opacity(0.45)
+        case .boxed:
+            return active ? AppTheme.ink : .secondary.opacity(0.45)
+        }
     }
 
     private func adjust(by delta: Int) {
@@ -1542,7 +1597,6 @@ struct HoldRepeatButton<Label: View>: View {
     let isEnabled: Bool
     private let holdRepeatInterval: TimeInterval
     private let initialRepeatDelay: TimeInterval
-    private let postSecondFireSpeedMultiplier: Double
     @ViewBuilder let label: () -> Label
 
     @State private var holdTask: Task<Void, Never>?
@@ -1553,16 +1607,14 @@ struct HoldRepeatButton<Label: View>: View {
     init(
         action: @escaping () -> Void,
         isEnabled: Bool,
-        initialRepeatDelay: TimeInterval = 0.4,
-        holdRepeatInterval: TimeInterval = 0.06,
-        postSecondFireSpeedMultiplier: Double = 1.0,
+        initialRepeatDelay: TimeInterval = 0.5,
+        holdRepeatInterval: TimeInterval = 0.05,
         @ViewBuilder label: @escaping () -> Label
     ) {
         self.action = action
         self.isEnabled = isEnabled
         self.initialRepeatDelay = initialRepeatDelay
         self.holdRepeatInterval = max(0.03, holdRepeatInterval)
-        self.postSecondFireSpeedMultiplier = max(1.0, postSecondFireSpeedMultiplier)
         self.label = label
     }
 
@@ -1601,7 +1653,7 @@ struct HoldRepeatButton<Label: View>: View {
         action()
 
         let initialDelayNanos = UInt64(max(0.0, initialRepeatDelay) * 1_000_000_000)
-        let acceleratedIntervalNanos = UInt64(max(0.03, holdRepeatInterval / postSecondFireSpeedMultiplier) * 1_000_000_000)
+        let acceleratedIntervalNanos = UInt64(max(0.03, holdRepeatInterval) * 1_000_000_000)
 
         holdTask?.cancel()
         holdTask = Task {
@@ -1756,7 +1808,6 @@ struct NILRetentionView: View {
                     amount: displayedOffer,
                     minimum: 0,
                     maximum: maximumOffer,
-                    postSecondFireSpeedMultiplier: 1,
                     onSetAmount: { amount in
                         setOffer(row.id, amount: amount)
                     }
@@ -2287,41 +2338,20 @@ struct TransferPortalView: View {
     }
 
     private func offerControl(_ row: TransferPortalEntry) -> some View {
-        let offer = displayedOffer(for: row.id)
+        let offer = Int(displayedOffer(for: row.id).rounded())
         let isOpen = row.committedTeamId == nil && row.previousTeamId != summary?.userTeamId
 
-        return HStack(spacing: 3) {
-            portalOfferButton(systemName: "minus", isEnabled: isOpen && offer > 0) {
-                setOffer(row.id, amount: max(0, offer - 50_000))
+        return NILOfferAmountControl(
+            amount: offer,
+            minimum: 0,
+            maximum: Int.max,
+            style: .boxed,
+            onSetAmount: { amount in
+                setOffer(row.id, amount: Double(amount))
             }
-
-            Text(moneyText(offer))
-                .font(.caption.monospacedDigit())
-                .lineLimit(1)
-                .frame(width: 76, alignment: .center)
-
-            portalOfferButton(systemName: "plus", isEnabled: isOpen) {
-                setOffer(row.id, amount: offer + 50_000)
-            }
-        }
+        )
+        .disabled(!isOpen)
         .frame(width: 140)
-    }
-
-    private func portalOfferButton(systemName: String, isEnabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 10, weight: .bold))
-                .frame(width: 22, height: 24)
-                .background(Color(UIColor.secondarySystemBackground).opacity(isEnabled ? 1 : 0.45))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Color(red: 0.81, green: 0.84, blue: 0.89).opacity(isEnabled ? 1 : 0.55), lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(isEnabled ? AppTheme.ink : .secondary.opacity(0.45))
-        .disabled(!isEnabled)
     }
 
     private func sortedPortalRows(_ input: [TransferPortalEntry]) -> [TransferPortalEntry] {
