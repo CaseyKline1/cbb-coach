@@ -350,6 +350,8 @@ extension CollegeLeagueHomeView {
                 case .stageDestination:
                     if let destination = destination(forOffseasonStage: result.progress.stage) {
                         replaceCurrentOffseasonDestination(with: destination)
+                    } else if result.progress.stage == .complete {
+                        popOffseasonWorkflowDestinations()
                     }
                 }
 
@@ -425,6 +427,12 @@ extension CollegeLeagueHomeView {
             roster: retainedRoster,
             portalPlayerCount: portalPlayerCount
         )
+    }
+
+    private func popOffseasonWorkflowDestinations() {
+        while let last = navigationPath.last, last.isOffseasonWorkflowDestination {
+            navigationPath.removeLast()
+        }
     }
 
     private func replaceCurrentOffseasonDestination(with destination: LeagueMenuDestination) {
