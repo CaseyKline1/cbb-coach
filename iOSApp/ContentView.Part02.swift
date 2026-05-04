@@ -275,6 +275,8 @@ struct CollegeLeagueHomeView: View {
                     TransferPortalView(
                         summary: transferPortalSummary,
                         games: completedLeagueGames,
+                        roster: roster,
+                        userTeamName: summary?.userTeamName ?? teamName,
                         onSetTargeted: setTransferPortalTargeted,
                         onSetOffer: setTransferPortalOffer,
                         onAdvance: advanceOffseasonScheduleAndNavigate

@@ -1867,6 +1867,8 @@ struct NILRetentionView: View {
 }
 
 struct TransferPortalView: View {
+    private let maxUserTargets = 12
+
     private enum PortalTableColumn: String, Hashable {
         case target, player, position, year, previous, overall, potential, points, rebounds, assists, steals, blocks, turnovers, assistTurnover, fieldGoal, threePoint, effectiveFieldGoal, minutes, ask, status
     }
@@ -1885,6 +1887,8 @@ struct TransferPortalView: View {
 
     let summary: TransferPortalSummary?
     let games: [LeagueGameSummary]
+    let roster: [UserRosterPlayerSummary]
+    let userTeamName: String
     let onSetTargeted: (String, Bool) -> Void
     let onSetOffer: (String, Double) -> Void
     let onAdvance: () -> Void
@@ -1910,6 +1914,18 @@ struct TransferPortalView: View {
 
     private var committedRows: [TransferPortalEntry] {
         rows.filter { $0.committedTeamId != nil }
+    }
+
+    private var userCommittedRows: [TransferPortalEntry] {
+        rows.filter { $0.committedTeamId == summary?.userTeamId && $0.previousTeamId != summary?.userTeamId }
+    }
+
+    private var rosterWithCommittedRecruits: [UserRosterPlayerSummary] {
+        let existingNames = Set(roster.map(\.name))
+        let committedRecruits = userCommittedRows
+            .filter { !existingNames.contains($0.playerName) }
+            .map(playerProfile)
+        return roster + committedRecruits
     }
 
     private var activeRows: [TransferPortalEntry] {
@@ -2024,7 +2040,20 @@ struct TransferPortalView: View {
             VStack(alignment: .leading, spacing: 14) {
                 GameCard {
                     VStack(alignment: .leading, spacing: 10) {
-                        GameSectionHeader(title: "Transfer Portal")
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            GameSectionHeader(title: "Transfer Portal")
+                            Spacer(minLength: 8)
+                            NavigationLink {
+                                TransferPortalRosterView(
+                                    roster: rosterWithCommittedRecruits,
+                                    games: games,
+                                    userTeamName: userTeamName
+                                )
+                            } label: {
+                                Text("My Roster")
+                            }
+                            .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
+                        }
                         HStack(spacing: 8) {
                             summaryTile(title: "NATIONAL", value: "\(rows.count)")
                             summaryTile(title: "AVAILABLE", value: "\(availableRows.count)")
@@ -2044,7 +2073,7 @@ struct TransferPortalView: View {
                 Button {
                     onAdvance()
                 } label: {
-                    Text((summary?.week ?? 1) > (summary?.maxWeeks ?? 4) ? "Complete Offseason Schedule" : "Advance Portal Week")
+                    Text((summary?.week ?? 1) > (summary?.maxWeeks ?? 6) ? "Complete Offseason Schedule" : "Advance Portal Week")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GameButtonStyle(variant: .primary))
@@ -2060,7 +2089,7 @@ struct TransferPortalView: View {
         GameCard {
             VStack(alignment: .leading, spacing: 10) {
                 GameSectionHeader(title: "Recruiting Board")
-                Text("\(targetedRows.count)/8 targets")
+                Text("\(targetedRows.count)/\(maxUserTargets) targets")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
@@ -2205,7 +2234,7 @@ struct TransferPortalView: View {
         let isTargeted = targetIds.contains(row.id)
         let isUserDeparture = row.previousTeamId == summary?.userTeamId
         let canRecruit = !isUserDeparture && row.committedTeamId == nil
-        let isBoardFull = !isTargeted && (summary?.userTargetIds.count ?? 0) >= 8
+        let isBoardFull = !isTargeted && (summary?.userTargetIds.count ?? 0) >= maxUserTargets
 
         return Button {
             onSetTargeted(row.id, !isTargeted)
@@ -2471,6 +2500,72 @@ struct TransferPortalView: View {
 
     private func moneyText(_ amount: Double) -> String {
         nilMoneyText(amount)
+    }
+}
+
+private struct TransferPortalRosterView: View {
+    let roster: [UserRosterPlayerSummary]
+    let games: [LeagueGameSummary]
+    let userTeamName: String
+
+    private var sortedRoster: [UserRosterPlayerSummary] {
+        roster.sorted { lhs, rhs in
+            if lhs.position != rhs.position {
+                return positionSortValue(lhs.position) < positionSortValue(rhs.position)
+            }
+            if lhs.overall != rhs.overall {
+                return lhs.overall > rhs.overall
+            }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                GameCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        GameSectionHeader(title: "My Roster")
+                        ForEach(Array(sortedRoster.enumerated()), id: \.offset) { index, player in
+                            NavigationLink {
+                                PlayerCardDetailView(player: player, games: games, teamName: userTeamName)
+                            } label: {
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Text(player.name)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(AppTheme.ink)
+                                    Spacer(minLength: 8)
+                                    Text("\(player.year) \(player.position) | OVR \(player.overall)")
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            if index < sortedRoster.count - 1 {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("My Roster")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func positionSortValue(_ position: String) -> Int {
+        switch position.uppercased() {
+        case "PG": return 0
+        case "SG": return 1
+        case "SF": return 2
+        case "PF": return 3
+        case "C": return 4
+        default: return 5
+        }
     }
 }
 

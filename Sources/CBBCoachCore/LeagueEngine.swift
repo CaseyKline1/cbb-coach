@@ -636,7 +636,7 @@ public struct TransferPortalSummary: Codable, Equatable, Sendable {
         userTeamId: String,
         entries: [TransferPortalEntry],
         week: Int = 1,
-        maxWeeks: Int = 4,
+        maxWeeks: Int = 6,
         userTargetIds: [String] = [],
         userOffers: [String: Double] = [:],
         budget: NILRetentionBudgetSummary = NILRetentionBudgetSummary(total: 0, allocated: 0, remaining: 0)

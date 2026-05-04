@@ -649,8 +649,8 @@ private func transferPortalStats(from stats: HallCandidateStat) -> TransferPorta
     )
 }
 
-private let transferPortalRecruitingWeeks = 4
-private let transferPortalMaxUserTargets = 8
+private let transferPortalRecruitingWeeks = 6
+private let transferPortalMaxUserTargets = 12
 
 private func transferPortalSummary(from state: LeagueStore.State) -> TransferPortalSummary {
     TransferPortalSummary(
