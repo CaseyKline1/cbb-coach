@@ -129,12 +129,6 @@ private struct BracketGameCard: View {
                 .minimumScaleFactor(0.72)
 
             Spacer(minLength: 4)
-
-            if team?.automaticBid == true {
-                Text("AQ")
-                    .font(.caption2.weight(.black))
-                    .foregroundStyle(AppTheme.warning)
-            }
         }
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
