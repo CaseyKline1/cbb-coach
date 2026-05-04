@@ -3,14 +3,13 @@ set -euo pipefail
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'USAGE'
-Usage: TEAM_ID=XXXXXXXXXX scripts/deploy-testflight.sh
+Usage: scripts/deploy-testflight.sh
 
 Archives CBBCoachApp for iOS and uploads it to App Store Connect/TestFlight.
 
-Required:
-  TEAM_ID                         Apple Developer team id used for signing.
-
 Optional:
+  TEAM_ID                         Apple Developer team id used for signing.
+                                  Defaults to the first signed-in Xcode team.
   PROJECT=CBBCoach.xcodeproj
   SCHEME=CBBCoachApp
   CONFIG=Release
@@ -31,8 +30,8 @@ Authentication:
   ASC_ISSUER_ID=00000000-0000-0000-0000-000000000000
 
 Examples:
-  TEAM_ID=X822X4U67K scripts/deploy-testflight.sh
-  TEAM_ID=X822X4U67K EXPORT_DESTINATION=export scripts/deploy-testflight.sh
+  scripts/deploy-testflight.sh
+  TEAM_ID=YWKSCJ8LFX EXPORT_DESTINATION=export scripts/deploy-testflight.sh
 USAGE
   exit 0
 fi
@@ -50,7 +49,14 @@ ARCHIVE_PATH="${ARCHIVE_PATH:-build/TestFlight/${SCHEME}-${BUILD_NUMBER}.xcarchi
 EXPORT_PATH="${EXPORT_PATH:-build/TestFlight/export-${BUILD_NUMBER}}"
 
 if [[ -z "$TEAM_ID" ]]; then
-  echo "TEAM_ID is required. Example: TEAM_ID=X822X4U67K scripts/deploy-testflight.sh" >&2
+  TEAM_ID="$(
+    defaults read com.apple.dt.Xcode IDEProvisioningTeamByIdentifier 2>/dev/null \
+      | awk -F'= ' '/teamID = / { gsub(/[; ]/, "", $2); print $2; exit }'
+  )"
+fi
+
+if [[ -z "$TEAM_ID" ]]; then
+  echo "TEAM_ID is required. Example: TEAM_ID=YWKSCJ8LFX scripts/deploy-testflight.sh" >&2
   exit 1
 fi
 
@@ -147,7 +153,17 @@ EXPORT_CMD=(
 if [[ "${#AUTH_ARGS[@]}" -gt 0 ]]; then
   EXPORT_CMD+=("${AUTH_ARGS[@]}")
 fi
-"${EXPORT_CMD[@]}"
+EXPORT_LOG="$(mktemp "${TMPDIR:-/tmp}/cbb-coach-export.XXXXXX.log")"
+if ! "${EXPORT_CMD[@]}" 2>&1 | tee "$EXPORT_LOG"; then
+  if grep -q "Error Downloading App Information" "$EXPORT_LOG"; then
+    echo "" >&2
+    echo "Xcode could not find an App Store Connect app record for ${BUNDLE_ID}." >&2
+    echo "Create the app in App Store Connect with bundle ID ${BUNDLE_ID}, then rerun this script." >&2
+  fi
+  rm -f "$EXPORT_LOG"
+  exit 1
+fi
+rm -f "$EXPORT_LOG"
 
 if [[ "$EXPORT_DESTINATION" == "upload" ]]; then
   echo "Upload submitted to App Store Connect. Watch TestFlight processing for build ${MARKETING_VERSION} (${BUILD_NUMBER})."
