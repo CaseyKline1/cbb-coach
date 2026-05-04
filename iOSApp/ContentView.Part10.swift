@@ -2093,7 +2093,8 @@ struct TransferPortalView: View {
                         columns: portalColumns,
                         rows: portalTableRows,
                         sortState: .init(column: sortColumn, ascending: isAscending),
-                        onSort: togglePortalSort
+                        onSort: togglePortalSort,
+                        maxBodyHeight: 430
                     ) { row in
                         HStack(spacing: 0) {
                             targetButton(row)

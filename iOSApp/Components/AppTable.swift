@@ -33,6 +33,7 @@ struct AppTable<RowData, ColumnID: Hashable, RowContent: View>: View {
     private let sortState: AppTableSortState<ColumnID>?
     private let onSort: ((ColumnID) -> Void)?
     private let style: AppTableStyle
+    private let maxBodyHeight: CGFloat?
     private let rowContent: (RowData) -> RowContent
 
     init(
@@ -41,6 +42,7 @@ struct AppTable<RowData, ColumnID: Hashable, RowContent: View>: View {
         sortState: AppTableSortState<ColumnID>? = nil,
         onSort: ((ColumnID) -> Void)? = nil,
         style: AppTableStyle = .compact,
+        maxBodyHeight: CGFloat? = nil,
         @ViewBuilder rowContent: @escaping (RowData) -> RowContent
     ) {
         self.columns = columns
@@ -48,29 +50,53 @@ struct AppTable<RowData, ColumnID: Hashable, RowContent: View>: View {
         self.sortState = sortState
         self.onSort = onSort
         self.style = style
+        self.maxBodyHeight = maxBodyHeight
         self.rowContent = rowContent
     }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                headerRow
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    rowContent(row.data)
-                        .frame(minHeight: style.minimumRowHeight)
-                        .padding(.vertical, style.rowVerticalPadding)
-                    if index < rows.count - 1 {
-                        Divider().opacity(0.4)
-                    }
-                }
-            }
-        }
+        tableContent
         .background(AppTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
                 .stroke(style.borderColor, lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private var tableContent: some View {
+        if let maxBodyHeight {
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    headerRow
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            rowViews
+                        }
+                    }
+                    .frame(maxHeight: maxBodyHeight)
+                }
+            }
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    headerRow
+                    rowViews
+                }
+            }
+        }
+    }
+
+    private var rowViews: some View {
+        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+            rowContent(row.data)
+                .frame(minHeight: style.minimumRowHeight)
+                .padding(.vertical, style.rowVerticalPadding)
+            if index < rows.count - 1 {
+                Divider().opacity(0.4)
+            }
+        }
     }
 
     private var headerRow: some View {
