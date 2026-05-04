@@ -1623,6 +1623,9 @@ struct NILRetentionView: View {
     let onDelegate: () -> Void
     let onAdvance: () -> Void
 
+    @State private var offerOverrides: [String: Int] = [:]
+    @State private var offerWriteTasks: [String: Task<Void, Never>] = [:]
+
     private var budget: NILRetentionBudgetSummary {
         summary?.budget ?? NILRetentionBudgetSummary(total: 0, allocated: 0, remaining: 0)
     }
@@ -1697,6 +1700,7 @@ struct NILRetentionView: View {
 
     private func retentionRow(_ row: NILNegotiationEntry) -> some View {
         let maximumOffer = Int(max(row.demand * 1.25, 100_000).rounded())
+        let displayedOffer = offerOverrides[row.id] ?? Int(row.offer.rounded())
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1727,21 +1731,22 @@ struct NILRetentionView: View {
             HStack(spacing: 8) {
                 metricChip(title: "LOY", value: "\(Int(row.loyalty.rounded()))")
                 metricChip(title: "GREED", value: "\(Int(row.greed.rounded()))")
-                metricChip(title: "OFFER", value: moneyText(row.offer))
+                metricChip(title: "OFFER", value: moneyText(Double(displayedOffer)))
             }
 
             if row.status == .open {
                 NILOfferAmountControl(
-                    amount: Int(row.offer.rounded()),
+                    amount: displayedOffer,
                     minimum: 0,
                     maximum: maximumOffer,
                     postSecondFireSpeedMultiplier: 1,
                     onSetAmount: { amount in
-                        onSetOffer(row.id, Double(amount))
+                        setOffer(row.id, amount: amount)
                     }
                 )
                 HStack(spacing: 8) {
                     Button("Offer") {
+                        flushOfferOverride(for: row)
                         onSubmitOffer(row.id)
                     }
                     .buttonStyle(GameButtonStyle(variant: .secondary, size: .compact))
@@ -1760,6 +1765,26 @@ struct NILRetentionView: View {
             }
         }
         .padding(.vertical, 12)
+        .onChange(of: row.offer) { _, newValue in
+            offerOverrides[row.id] = Int(newValue.rounded())
+        }
+    }
+
+    private func setOffer(_ negotiationId: String, amount: Int) {
+        offerOverrides[negotiationId] = amount
+        offerWriteTasks[negotiationId]?.cancel()
+        offerWriteTasks[negotiationId] = Task {
+            try? await Task.sleep(nanoseconds: 75_000_000)
+            guard !Task.isCancelled else { return }
+            onSetOffer(negotiationId, Double(amount))
+        }
+    }
+
+    private func flushOfferOverride(for row: NILNegotiationEntry) {
+        guard let amount = offerOverrides[row.id], amount != Int(row.offer.rounded()) else { return }
+        offerWriteTasks[row.id]?.cancel()
+        offerWriteTasks[row.id] = nil
+        onSetOffer(row.id, Double(amount))
     }
 
     private func summaryTile(title: String, value: String) -> some View {
@@ -1871,6 +1896,8 @@ struct TransferPortalView: View {
     @State private var isAscending = false
     @State private var boardSortColumn: BoardTableColumn = .overall
     @State private var boardIsAscending = false
+    @State private var offerOverrides: [String: Double] = [:]
+    @State private var offerWriteTasks: [String: Task<Void, Never>] = [:]
 
     private var rows: [TransferPortalEntry] { summary?.entries ?? [] }
 
@@ -2055,7 +2082,7 @@ struct TransferPortalView: View {
                             AppTableTextCell(text: "\(row.overall)", width: 42)
                             AppTableTextCell(text: statText(row.stats?.pointsPerGame), width: 46)
                             AppTableTextCell(text: moneyText(row.askingPrice), width: 72)
-                            AppTableTextCell(text: moneyText(summary?.userOffers[row.id] ?? 0), width: 86)
+                            AppTableTextCell(text: moneyText(displayedOffer(for: row.id)), width: 86)
                             AppTableTextCell(text: interestText(row), width: 46)
                             AppTableTextCell(text: finalistsText(row), width: 150, alignment: .leading)
                             AppTableTextCell(text: statusText(row), width: 96, alignment: .leading)
@@ -2196,12 +2223,12 @@ struct TransferPortalView: View {
     }
 
     private func boardActions(_ row: TransferPortalEntry) -> some View {
-        let offer = summary?.userOffers[row.id] ?? 0
+        let offer = displayedOffer(for: row.id)
         let isOpen = row.committedTeamId == nil && row.previousTeamId != summary?.userTeamId
 
         return HStack(spacing: 6) {
             Button {
-                onSetOffer(row.id, max(0, offer - 50_000))
+                setOffer(row.id, amount: max(0, offer - 50_000))
             } label: {
                 Image(systemName: "minus")
                     .frame(width: 28)
@@ -2210,7 +2237,7 @@ struct TransferPortalView: View {
             .disabled(!isOpen || offer <= 0)
 
             Button {
-                onSetOffer(row.id, offer + 50_000)
+                setOffer(row.id, amount: offer + 50_000)
             } label: {
                 Image(systemName: "plus")
                     .frame(width: 28)
@@ -2316,7 +2343,7 @@ struct TransferPortalView: View {
         case .ask:
             return numericCompare(lhs: lhs.askingPrice, rhs: rhs.askingPrice)
         case .offer:
-            return numericCompare(lhs: summary?.userOffers[lhs.id] ?? 0, rhs: summary?.userOffers[rhs.id] ?? 0)
+            return numericCompare(lhs: displayedOffer(for: lhs.id), rhs: displayedOffer(for: rhs.id))
         case .interest:
             return numericCompare(lhs: userInterest(lhs), rhs: userInterest(rhs))
         case .finalists:
@@ -2325,6 +2352,20 @@ struct TransferPortalView: View {
             return statusText(lhs).localizedCaseInsensitiveCompare(statusText(rhs))
         case .actions:
             return lhs.playerName.localizedCaseInsensitiveCompare(rhs.playerName)
+        }
+    }
+
+    private func displayedOffer(for entryId: String) -> Double {
+        offerOverrides[entryId] ?? summary?.userOffers[entryId] ?? 0
+    }
+
+    private func setOffer(_ entryId: String, amount: Double) {
+        offerOverrides[entryId] = amount
+        offerWriteTasks[entryId]?.cancel()
+        offerWriteTasks[entryId] = Task {
+            try? await Task.sleep(nanoseconds: 75_000_000)
+            guard !Task.isCancelled else { return }
+            onSetOffer(entryId, amount)
         }
     }
 
