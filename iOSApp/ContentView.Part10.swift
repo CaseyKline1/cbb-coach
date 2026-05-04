@@ -2019,7 +2019,7 @@ struct TransferPortalView: View {
             let matchesSearch = query.isEmpty
                 || row.playerName.localizedCaseInsensitiveContains(query)
                 || row.previousTeamName.localizedCaseInsensitiveContains(query)
-            let matchesPosition = positionFilter == "All" || row.position == positionFilter
+            let matchesPosition = positionFilter == "All" || positionFilterMatches(filter: positionFilter, position: row.position)
             let matchesStatus: Bool
             switch statusFilter {
             case .all:
@@ -2751,6 +2751,26 @@ private struct SeasonPlayerStat: Hashable {
         }
 
         return Array(totals.values)
+    }
+}
+
+private func positionFilterMatches(filter: String, position: String) -> Bool {
+    let f = filter.uppercased()
+    let p = position.uppercased()
+    if f == p { return true }
+    switch f {
+    case "GUARD", "G":
+        return ["PG", "SG", "CG"].contains(p)
+    case "CG":
+        return ["PG", "SG", "CG"].contains(p)
+    case "WING":
+        return ["SG", "SF", "WING"].contains(p)
+    case "F", "FORWARD":
+        return ["SF", "PF", "F"].contains(p)
+    case "BIG":
+        return ["PF", "C", "BIG"].contains(p)
+    default:
+        return false
     }
 }
 
