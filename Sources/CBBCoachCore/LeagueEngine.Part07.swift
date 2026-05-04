@@ -419,7 +419,7 @@ private func prepareNILRetentionIfNeeded(_ state: inout LeagueStore.State) {
     let departedIds = Set((state.playersLeaving ?? [])
         .filter { $0.outcome == .graduated || $0.outcome == .draft || $0.outcome == .transfer }
         .map { playerKey(teamId: $0.teamId, playerName: $0.playerName) })
-    let budgetByTeam = Dictionary(uniqueKeysWithValues: calculateNILBudgetSummary(state).teams.map { ($0.teamId, $0.total) })
+    let budgetByTeam = Dictionary(calculateNILBudgetSummary(state).teams.map { ($0.teamId, $0.total) }, uniquingKeysWith: { first, _ in first })
     let statsByTeamAndPlayer = Dictionary(grouping: buildHallCandidateStats(state), by: \.teamId)
         .mapValues { rows in
             Dictionary(rows.map { ($0.playerName, $0) }, uniquingKeysWith: { first, second in
@@ -536,11 +536,11 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
     let mandatoryDepartureIds = Set(departures
         .filter { $0.outcome == .graduated || $0.outcome == .draft || $0.outcome == .transfer }
         .map { playerKey(teamId: $0.teamId, playerName: $0.playerName) })
-    let rosterPlayerById = Dictionary(uniqueKeysWithValues: state.teams.flatMap { team in
+    let rosterPlayerById = Dictionary(state.teams.flatMap { team in
         team.teamModel.players.map { player in
             (playerKey(teamId: team.teamId, playerName: player.bio.name), player)
         }
-    })
+    }, uniquingKeysWith: { first, _ in first })
     let statsByTeamAndPlayer = Dictionary(grouping: buildHallCandidateStats(state), by: \.teamId)
         .mapValues { rows in
             Dictionary(rows.map { ($0.playerName, transferPortalStats(from: $0)) }, uniquingKeysWith: { first, second in
@@ -716,7 +716,7 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
     let week = state.transferPortalWeek ?? 1
     let userTargets = state.transferPortalUserTargets ?? []
     let userOffers = state.transferPortalUserOffers ?? [:]
-    let budgetByTeam = Dictionary(uniqueKeysWithValues: calculateNILBudgetSummary(state).teams.map { ($0.teamId, $0.total) })
+    let budgetByTeam = Dictionary(calculateNILBudgetSummary(state).teams.map { ($0.teamId, $0.total) }, uniquingKeysWith: { first, _ in first })
     let cpuPlans = buildCPUTransferPortalPlans(state: state, portal: portal, budgetByTeam: budgetByTeam)
     var cpuTeamIdsByEntryId: [String: Set<String>] = [:]
     for (teamId, entryIds) in cpuPlans {
@@ -724,7 +724,7 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
             cpuTeamIdsByEntryId[entryId, default: []].insert(teamId)
         }
     }
-    let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
+    let teamById = Dictionary(state.teams.map { ($0.teamId, $0) }, uniquingKeysWith: { first, _ in first })
     var commitCountByTeam: [String: Int] = [:]
 
     for index in portal.indices {
@@ -899,7 +899,7 @@ private func transferPortalOrderedTeams(
     state: LeagueStore.State,
     budgetByTeam: [String: Double]
 ) -> [(teamId: String, score: Double)] {
-    let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
+    let teamById = Dictionary(state.teams.map { ($0.teamId, $0) }, uniquingKeysWith: { first, _ in first })
     return entry.interestByTeamId.compactMap { teamId, interest in
         guard let team = teamById[teamId], teamId != entry.previousTeamId else { return nil }
         let offer = teamId == state.userTeamId ? userOffers[entry.id, default: 0] : cpuTransferPortalOffer(entry: entry, team: team, budget: budgetByTeam[teamId] ?? 0)
@@ -1493,7 +1493,7 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
 func calculateSchoolHallOfFame(_ state: LeagueStore.State) -> [SchoolHallOfFameEntry] {
     let honorsByTeamAndPlayer = hallHonorsByTeamAndPlayer(state)
     let leaving = state.playersLeaving ?? calculatePlayersLeaving(state)
-    let draftSlotByPlayerId = Dictionary(uniqueKeysWithValues: (state.draftPicks ?? calculateDraftPicks(state)).map { ($0.id, $0.slot) })
+    let draftSlotByPlayerId = Dictionary((state.draftPicks ?? calculateDraftPicks(state)).map { ($0.id, $0.slot) }, uniquingKeysWith: { first, _ in first })
     var entries: [SchoolHallOfFameEntry] = []
 
     for departure in leaving where departure.outcome == .graduated || departure.outcome == .draft {
@@ -1535,7 +1535,7 @@ func calculateDraftPicks(_ state: LeagueStore.State) -> [DraftPickEntry] {
                 first.awardScore >= second.awardScore ? first : second
             })
         }
-    let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
+    let teamById = Dictionary(state.teams.map { ($0.teamId, $0) }, uniquingKeysWith: { first, _ in first })
 
     let candidates = leaving.compactMap { departure -> (departure: PlayerLeavingEntry, score: Double, boardScore: Double)? in
         guard departure.outcome == .graduated || departure.outcome == .draft else { return nil }
@@ -1611,7 +1611,7 @@ private func buildDraftProspectRankById(_ state: LeagueStore.State) -> [String: 
         if lhs.score != rhs.score { return lhs.score > rhs.score }
         return lhs.id < rhs.id
     }
-    return Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($0.element.id, $0.offset + 1) })
+    return Dictionary(ordered.enumerated().map { ($0.element.id, $0.offset + 1) }, uniquingKeysWith: { first, _ in first })
 }
 
 private func draftDeclarationChance(rank: Int, loyalty: Double, greed: Double) -> Double {
@@ -1800,10 +1800,10 @@ private func buildHallCandidateStats(_ state: LeagueStore.State) -> [HallCandida
         let position: String
     }
 
-    let rosterPlayerByTeamAndName = Dictionary(uniqueKeysWithValues: state.teams.map { team in
+    let rosterPlayerByTeamAndName = Dictionary(state.teams.map { team in
         let playersByName = Dictionary(grouping: team.teamModel.players, by: { $0.bio.name })
         return (team.teamId, playersByName)
-    })
+    }, uniquingKeysWith: { first, _ in first })
 
     var totals: [Key: HallCandidateStat] = [:]
     for game in state.schedule where game.completed {
