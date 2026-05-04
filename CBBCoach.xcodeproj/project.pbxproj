@@ -14,6 +14,7 @@
 		43D4C09A371721FEB3940163 /* ContentView.Part03.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C38770CC08E836B9D43787A /* ContentView.Part03.swift */; };
 		47D1C9316042922091F481DC /* CBBCoachCore in Frameworks */ = {isa = PBXBuildFile; productRef = EF6CB10E6DF3EA41469DAC21 /* CBBCoachCore */; };
 		4A3F436DD523E92D203DACC6 /* CBBCoachApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 723406DE4B79EAE29077EC7F /* CBBCoachApp.swift */; };
+		4DDA371A3AD700DB9E8E0911 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4DDA37193AD700DB9E8E0911 /* Assets.xcassets */; };
 		53BD08CA75A1F14ED6B56195 /* ContentView.Part04.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3E90F82901E39627679B11 /* ContentView.Part04.swift */; };
 		678B556D94E37A5AE35651B2 /* ContentView.Part06.swift in Sources */ = {isa = PBXBuildFile; fileRef = D88A27BBFC1DA2A32FE35C09 /* ContentView.Part06.swift */; };
 		713D916FA4B59886D3673B88 /* ContentView.Part09.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDBC1A58D490C67F542A6C2D /* ContentView.Part09.swift */; };
@@ -28,6 +29,7 @@
 		039882A13BCBBBEAFE227DE5 /* cbb-coach */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "cbb-coach"; path = .; sourceTree = SOURCE_ROOT; };
 		0CB22F4F81EB7D6037AB3CC0 /* ContentView.Part07.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part07.swift; sourceTree = "<group>"; };
 		34D2E888E6248BB74F08B758 /* ContentView.Part08.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part08.swift; sourceTree = "<group>"; };
+		4DDA37193AD700DB9E8E0911 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		57DB02E5416F8B532180DDC9 /* ContentView.Part05.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part05.swift; sourceTree = "<group>"; };
 		723406DE4B79EAE29077EC7F /* CBBCoachApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CBBCoachApp.swift; sourceTree = "<group>"; };
 		7C38770CC08E836B9D43787A /* ContentView.Part03.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part03.swift; sourceTree = "<group>"; };
@@ -87,6 +89,7 @@
 				BDBC1A58D490C67F542A6C2D /* ContentView.Part09.swift */,
 				C0EFC4E759F4FE96E71200F1 /* ContentView.Part10.swift */,
 				A95D0E601B2745C92AF4D82E /* ContentView.swift */,
+				4DDA37193AD700DB9E8E0911 /* Assets.xcassets */,
 				92A57274091C29C6024125B1 /* Info.plist */,
 				BFB4F2AC81D052E6C9972E49 /* Components */,
 			);
@@ -120,6 +123,7 @@
 			buildPhases = (
 				B897738C0636FAA20D74B6D7 /* Sources */,
 				C737738B43EAE073793FC5F9 /* Frameworks */,
+				4DDA371B3AD700DB9E8E0911 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -168,6 +172,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4DDA371B3AD700DB9E8E0911 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4DDA371A3AD700DB9E8E0911 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		B897738C0636FAA20D74B6D7 /* Sources */ = {

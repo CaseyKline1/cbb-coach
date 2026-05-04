@@ -21,6 +21,29 @@ swift run CBBCoachCLI
 swift test
 ```
 
+## TestFlight
+
+The iOS app can be archived and uploaded with:
+
+```bash
+TEAM_ID=YOUR_TEAM_ID scripts/deploy-testflight.sh
+```
+
+You must have App Store Connect access for `com.casey.cbbcoach` and either be
+signed in through Xcode Accounts or provide an App Store Connect API key:
+
+```bash
+TEAM_ID=YOUR_TEAM_ID \
+ASC_KEY_PATH=/path/to/AuthKey_KEYID.p8 \
+ASC_KEY_ID=KEYID \
+ASC_ISSUER_ID=ISSUER_UUID \
+scripts/deploy-testflight.sh
+```
+
+Use `EXPORT_DESTINATION=export` to create an IPA locally without uploading.
+The script assigns a timestamp build number by default so each TestFlight upload
+is unique.
+
 ## Notes
 
 - Legacy JavaScript engine/runtime files were removed after the Swift migration.
