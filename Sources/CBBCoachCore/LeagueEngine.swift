@@ -856,6 +856,16 @@ struct LeagueStore {
     }
 }
 
+public func encodeLeagueSnapshot(_ league: LeagueState) -> Data? {
+    guard let state = LeagueStore.get(league.handle) else { return nil }
+    return try? JSONEncoder().encode(state)
+}
+
+public func decodeLeagueSnapshot(_ data: Data) -> LeagueState? {
+    guard let state = try? JSONDecoder().decode(LeagueStore.State.self, from: data) else { return nil }
+    return LeagueState(handle: LeagueStore.put(state))
+}
+
 struct LoadedD1Data {
     static let sharedResult: Result<D1Snapshot, Error> = Result {
         try loadSnapshot()

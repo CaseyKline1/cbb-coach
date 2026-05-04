@@ -3,12 +3,12 @@ import CBBCoachCore
 
 enum LeagueStore {
     private static let fileName = "league_save.json"
-    private static let schemaVersion = 1
+    private static let schemaVersion = 2
 
     private struct Envelope: Codable {
         let schemaVersion: Int
         let teamName: String
-        let league: LeagueState
+        let snapshot: Data
     }
 
     private static var fileURL: URL {
@@ -17,7 +17,11 @@ enum LeagueStore {
     }
 
     static func save(_ league: LeagueState, teamName: String) {
-        let envelope = Envelope(schemaVersion: schemaVersion, teamName: teamName, league: league)
+        guard let snapshot = encodeLeagueSnapshot(league) else {
+            NSLog("LeagueStore.save failed: no engine state for handle \(league.handle)")
+            return
+        }
+        let envelope = Envelope(schemaVersion: schemaVersion, teamName: teamName, snapshot: snapshot)
         do {
             let data = try JSONEncoder().encode(envelope)
             try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -36,7 +40,7 @@ enum LeagueStore {
                   envelope.teamName == expectedTeam else {
                 return nil
             }
-            return envelope.league
+            return decodeLeagueSnapshot(envelope.snapshot)
         } catch {
             NSLog("LeagueStore.load failed: \(error)")
             return nil
