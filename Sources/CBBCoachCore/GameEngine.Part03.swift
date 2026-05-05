@@ -33,7 +33,9 @@ func resolveHalfCourtAction(
         let trailingSecurityRelief = clamp(Double(max(0, stored.teams[defenseTeamId].score - stored.teams[offenseTeamId].score)) / 340, min: 0, max: 0.05)
         let turnoverBase = clamp(0.085 + pressureEdge * 0.08, min: 0.05, max: 0.165)
         let turnoverBoost = clamp((0.5 - logistic(turnoverInteraction.edge)) * 0.1, min: -0.035, max: 0.07)
-        let isTurnover = random.nextUnit() < clamp(turnoverBase + turnoverBoost - trailingSecurityRelief, min: 0.03, max: 0.22)
+        let stealerElite = eliteRatingPremium(getRating(primaryDefender, path: "defense.steals"), maxBoost: 0.04)
+        let handlerSafetyElite = eliteRatingPremium(getRating(ballHandler, path: "skills.ballSafety"), maxBoost: 0.04)
+        let isTurnover = random.nextUnit() < clamp(turnoverBase + turnoverBoost - trailingSecurityRelief + stealerElite - handlerSafetyElite, min: 0.03, max: 0.24)
 
         if isTurnover {
             addPlayerStat(stored: &stored, teamId: offenseTeamId, lineupIndex: ballHandlerIdx) { $0.turnovers += 1 }
@@ -192,7 +194,9 @@ func resolveHalfCourtAction(
                 )
                 let blockDefenseControl = 1 - logistic(blockInteraction.edge)
                 // Keep interior contests meaningful with a slightly higher block environment.
-                let blockChance = clamp(0.07 + blockDefenseControl * 0.54, min: 0.06, max: 0.62)
+                let blockerElite = eliteRatingPremium(getRating(shotDefender, path: "defense.shotBlocking"), maxBoost: 0.10)
+                let finisherElite = eliteRatingPremium(getRating(shooter, path: primaryShotRatingPath(for: shotType)), maxBoost: 0.05)
+                let blockChance = clamp(0.07 + blockDefenseControl * 0.54 + blockerElite - finisherElite, min: 0.06, max: 0.68)
                 if random.nextUnit() < blockChance {
                     addPlayerStat(stored: &stored, teamId: defenseTeamId, lineupIndex: play.defenderLineupIndex) { $0.blocks += 1 }
                 }
@@ -242,10 +246,11 @@ func resolveHalfCourtAction(
                     random: &random
                 )
                 let andOneDefenseControl = 1 - logistic(andOneInteraction.edge)
+                let drawFoulElite = eliteRatingPremium(getRating(shooter, path: "shooting.drawFoul"), maxBoost: 0.04)
                 let andOneChance = clamp(
-                    0.008 + andOneDefenseControl * 0.055 + play.foulBonus * 0.26,
+                    0.008 + andOneDefenseControl * 0.055 + play.foulBonus * 0.26 + drawFoulElite,
                     min: 0.008,
-                    max: 0.085
+                    max: 0.10
                 )
                 if random.nextUnit() < andOneChance {
                     registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: play.defenderLineupIndex, shooting: true)
@@ -280,10 +285,11 @@ func resolveHalfCourtAction(
                     random: &random
                 )
                 let foulDefenseControl = 1 - logistic(shootingFoulInteraction.edge)
+                let drawFoulEliteMissed = eliteRatingPremium(getRating(shooter, path: "shooting.drawFoul"), maxBoost: 0.05)
                 let shootingFoulChance = clamp(
-                    0.012 + foulDefenseControl * 0.105 + play.foulBonus * 0.28,
+                    0.012 + foulDefenseControl * 0.105 + play.foulBonus * 0.28 + drawFoulEliteMissed,
                     min: 0.012,
-                    max: 0.14
+                    max: 0.16
                 )
                 if random.nextUnit() < shootingFoulChance {
                     registerDefensiveFoul(stored: &stored, defenseTeamId: defenseTeamId, lineupIndex: play.defenderLineupIndex, shooting: true)

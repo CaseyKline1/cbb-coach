@@ -502,13 +502,22 @@ func primaryShotRatingPath(for shotType: ShotType) -> String {
     }
 }
 
+/// Quadratic premium that ramps from 0 at `threshold` to `maxBoost` at 99.
+/// The shared matchup logistic flattens at the top of the rating scale, so
+/// elite ratings (90+) feel the same as merely-good ones (80) without an
+/// extra non-linear bump like this. Use this to differentiate elite tiers
+/// in any probability-based interaction (shots, blocks, steals, FTs, etc.).
+func eliteRatingPremium(_ rating: Double, threshold: Double = 78, maxBoost: Double) -> Double {
+    guard rating > threshold else { return 0 }
+    let span = max(1, 99 - threshold)
+    let normalized = min(1, (rating - threshold) / span)
+    return normalized * normalized * maxBoost
+}
+
 func shooterTalentBonus(for shotType: ShotType, shooter: Player) -> Double {
     let rating = getRating(shooter, path: primaryShotRatingPath(for: shotType))
-    // Linear baseline anchored at 65; ±~17pp at the extremes.
     let linear = clamp((rating - 65) / 220, min: -0.18, max: 0.155)
-    // Elite premium: quadratic boost above 78 so that 99 OVR pulls clearly
-    // ahead of 90 OVR rather than the difference flattening at the top.
-    let elite: Double = rating > 78 ? pow((rating - 78) / 21, 2) * 0.05 : 0
+    let elite = eliteRatingPremium(rating, maxBoost: 0.05)
     return clamp(linear + elite, min: -0.20, max: 0.21)
 }
 

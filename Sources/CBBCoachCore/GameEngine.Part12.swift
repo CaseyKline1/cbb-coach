@@ -151,7 +151,9 @@ func resolvePassInterception(
         )
         let secureEdge = laneInteraction.edge + (receiverWindow - 55) / 100
         // Keep lane-jumpers impactful, but tune interception rate lower so picks are rarer.
-        let stealSignal = clamp((1 - logistic(secureEdge)) * 0.34, min: 0.006, max: 0.27)
+        let perceptionElite = eliteRatingPremium(getRating(defender, path: "defense.passPerception"), maxBoost: 0.05)
+        let passerSafetyElite = eliteRatingPremium(getRating(passer, path: "skills.passingIQ"), maxBoost: 0.04)
+        let stealSignal = clamp((1 - logistic(secureEdge)) * 0.34 + perceptionElite - passerSafetyElite, min: 0.004, max: 0.30)
         let laneBoost = clamp((laneThreat - 60) / 320, min: -0.04, max: 0.05)
         let stealWeight = max(0.02, (stealSignal + laneBoost) * riskScale * 4.0)
         weights.append(stealWeight)

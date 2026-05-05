@@ -273,7 +273,10 @@ func resolveReboundOutcome(
     let boxoutSizeEdge = (heightReboundRating(offenseLineup[bestOffenseIdx]) - heightReboundRating(defenseLineup[bestDefenseIdx])) * 0.009
         + (wingspanReboundRating(offenseLineup[bestOffenseIdx]) - wingspanReboundRating(defenseLineup[bestDefenseIdx])) * 0.010
     let boxoutPositioningEdge = (offensePositioning - defensePositioning) * 0.16
-    let slipEdge = boxoutBattle.edge + boxoutSizeEdge + boxoutPositioningEdge
+    let oReboundElite = eliteRatingPremium(getRating(offenseLineup[bestOffenseIdx], path: "rebounding.offensiveRebounding"), maxBoost: 0.55)
+    let dBoxoutElite = eliteRatingPremium(getRating(defenseLineup[bestDefenseIdx], path: "rebounding.boxouts"), maxBoost: 0.55)
+    let boxoutEliteEdge = oReboundElite - dBoxoutElite
+    let slipEdge = boxoutBattle.edge + boxoutSizeEdge + boxoutPositioningEdge + boxoutEliteEdge
 
     let gatherBattle = resolveInteractionWithTrace(
         stored: &stored,
@@ -288,7 +291,9 @@ func resolveReboundOutcome(
         + (wingspanReboundRating(offenseLineup[bestOffenseIdx]) - wingspanReboundRating(defenseLineup[bestDefenseIdx])) * 0.010
     let chaosScale = reboundChaosScale(for: zone)
     let reboundChaosNoise = (random.nextUnit() + random.nextUnit() + random.nextUnit() - 1.5) * (chaosScale * 2.3)
-    let finalEdge = gatherBattle.edge + gatherSizeEdge + (offensePositioning - defensePositioning) * 0.12 + slipEdge * 0.4 + reboundChaosNoise
+    let dReboundElite = eliteRatingPremium(getRating(defenseLineup[bestDefenseIdx], path: "rebounding.defensiveRebound"), maxBoost: 0.55)
+    let gatherEliteEdge = oReboundElite - dReboundElite
+    let finalEdge = gatherBattle.edge + gatherSizeEdge + (offensePositioning - defensePositioning) * 0.12 + slipEdge * 0.4 + reboundChaosNoise + gatherEliteEdge
     let crashEdge = (offenseCrashPreference - defenseCrashPreference) * 0.22
     // Defensive teams convert more misses by default; offense needs a real edge to sustain OREBs.
     let defensiveAdvantage = 1.05 + clamp((defensePositioning - offensePositioning) * 0.09, min: -0.08, max: 0.14)
