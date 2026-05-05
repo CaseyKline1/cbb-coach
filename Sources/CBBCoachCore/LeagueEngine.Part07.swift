@@ -191,6 +191,22 @@ public func submitNILRetentionOffer(_ league: inout LeagueState, negotiationId: 
         var row = rows[index]
         row.rounds += 1
         let budget = nilRetentionBudgetSummary(state, negotiations: rows)
+        if row.offer >= row.demand {
+            guard row.demand <= budget.remaining else {
+                row.responseText = "Not enough remaining NIL budget."
+                rows[index] = row
+                state.nilRetention = rows
+                return row
+            }
+            row.offer = row.demand
+            row.status = .accepted
+            row.responseText = "Accepted."
+            rows[index] = row
+            state.nilRetention = rows
+            applyNILRetentionContract(&state, row: row)
+            return row
+        }
+
         if row.offer > budget.remaining {
             row.responseText = "Not enough remaining NIL budget."
             rows[index] = row

@@ -1162,6 +1162,92 @@ func walkOnLevelPlayersHaveZeroNILValueAndAsks() throws {
     #expect(portalEntry.askingPrice == 0)
 }
 
+@Test("Manual NIL retention offers at or above ask accept like meet ask")
+func manualNILRetentionOfferAtOrAboveAskAcceptsLikeMeetAsk() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "nil-manual-meet-ask", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .playerRetention
+        state.playersLeaving = []
+        state.draftPicks = []
+        state.transferPortal = nil
+        state.nilRetentionFinalized = false
+
+        guard let userIndex = state.teams.firstIndex(where: { $0.teamId == state.userTeamId }) else { return }
+        state.teams[userIndex].teamModel.players[0].bio.name = "Exact Ask Guard"
+        state.teams[userIndex].teamModel.players[0].bio.nilDollarsLastYear = 0
+        state.teams[userIndex].teamModel.players[1].bio.name = "Above Ask Wing"
+        state.teams[userIndex].teamModel.players[1].bio.nilDollarsLastYear = 0
+
+        let teamId = state.userTeamId
+        let teamName = state.teams[userIndex].teamName
+        state.nilRetention = [
+            NILNegotiationEntry(
+                id: "exact-ask",
+                teamId: teamId,
+                teamName: teamName,
+                player: nil,
+                playerIndex: 0,
+                playerName: "Exact Ask Guard",
+                position: "PG",
+                year: "SO",
+                overall: 82,
+                potential: 86,
+                intrinsicValue: 120_000,
+                demand: 100_000,
+                offer: 100_000,
+                lastYearAmount: 0,
+                rounds: 0,
+                status: .open,
+                responseText: "",
+                loyalty: 0,
+                greed: 100,
+                returningDiscount: 0,
+                priority: 1
+            ),
+            NILNegotiationEntry(
+                id: "above-ask",
+                teamId: teamId,
+                teamName: teamName,
+                player: nil,
+                playerIndex: 1,
+                playerName: "Above Ask Wing",
+                position: "SF",
+                year: "JR",
+                overall: 83,
+                potential: 87,
+                intrinsicValue: 120_000,
+                demand: 100_000,
+                offer: 150_000,
+                lastYearAmount: 0,
+                rounds: 0,
+                status: .open,
+                responseText: "",
+                loyalty: 0,
+                greed: 100,
+                returningDiscount: 0,
+                priority: 1
+            )
+        ]
+    }
+
+    let exact = try #require(submitNILRetentionOffer(&league, negotiationId: "exact-ask"))
+    let above = try #require(submitNILRetentionOffer(&league, negotiationId: "above-ask"))
+
+    #expect(exact.status == .accepted)
+    #expect(exact.offer == 100_000)
+    #expect(exact.responseText == "Accepted.")
+    #expect(above.status == .accepted)
+    #expect(above.offer == 100_000)
+    #expect(above.responseText == "Accepted.")
+
+    let state = try #require(LeagueStore.get(league.handle))
+    let userTeam = try #require(state.teams.first { $0.teamId == state.userTeamId })
+    #expect(userTeam.teamModel.players[0].bio.nilDollarsLastYear == 100_000)
+    #expect(userTeam.teamModel.players[1].bio.nilDollarsLastYear == 100_000)
+}
+
 @Test("Completing transfer portal starts next year and fills walk-ons")
 func transferPortalCompletionStartsNextYearAndFillsWalkOns() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "portal-new-year", totalRegularSeasonGames: 1))
