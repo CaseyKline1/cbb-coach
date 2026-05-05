@@ -278,4 +278,10 @@ struct PlayerCareerTotals: Hashable {
     var threePct: Double { threeAttempts > 0 ? Double(threeMade) / Double(threeAttempts) : 0 }
     var ftPct: Double { ftAttempts > 0 ? Double(ftMade) / Double(ftAttempts) : 0 }
     var efgPct: Double { fgAttempts > 0 ? (Double(fgMade) + 0.5 * Double(threeMade)) / Double(fgAttempts) : 0 }
+    var fgMadePerGame: Double { games > 0 ? Double(fgMade) / Double(games) : 0 }
+    var fgAttemptsPerGame: Double { games > 0 ? Double(fgAttempts) / Double(games) : 0 }
+    var threeMadePerGame: Double { games > 0 ? Double(threeMade) / Double(games) : 0 }
+    var threeAttemptsPerGame: Double { games > 0 ? Double(threeAttempts) / Double(games) : 0 }
+    var ftMadePerGame: Double { games > 0 ? Double(ftMade) / Double(games) : 0 }
+    var ftAttemptsPerGame: Double { games > 0 ? Double(ftAttempts) / Double(games) : 0 }
 }

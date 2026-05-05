@@ -284,6 +284,12 @@ struct PlayerCardDetailView: View {
                         .init(id: "three", title: "3PT%", width: 64),
                         .init(id: "ft", title: "FT%", width: 64),
                         .init(id: "efg", title: "EFG%", width: 64),
+                        .init(id: "fgm", title: "FGM", width: 46),
+                        .init(id: "fga", title: "FGA", width: 46),
+                        .init(id: "tpm", title: "3PM", width: 46),
+                        .init(id: "tpa", title: "3PA", width: 46),
+                        .init(id: "ftm", title: "FTM", width: 46),
+                        .init(id: "fta", title: "FTA", width: 46),
                     ]
                     AppTable(columns: columns, rows: careerRows) { row in
                         HStack(spacing: 0) {
@@ -301,6 +307,12 @@ struct PlayerCardDetailView: View {
                             AppTableTextCell(text: pct(row.totals.threePct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.ftPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.efgPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.fgMadePerGame), width: 46, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.fgAttemptsPerGame), width: 46, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.threeMadePerGame), width: 46, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.threeAttemptsPerGame), width: 46, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.ftMadePerGame), width: 46, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: format(row.totals.ftAttemptsPerGame), width: 46, font: .caption.monospacedDigit().weight(.semibold))
                         }
                     }
                 }
