@@ -676,6 +676,7 @@ private func transferPortalStats(from stats: HallCandidateStat) -> TransferPorta
 
 private let transferPortalRecruitingWeeks = 6
 private let transferPortalMaxUserTargets = 12
+private let transferPortalBlowoutCommitGap = 250.0
 
 private func transferPortalSummary(from state: LeagueStore.State) -> TransferPortalSummary {
     TransferPortalSummary(
@@ -803,14 +804,6 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
         }
 
         let orderedTeams = transferPortalOrderedTeams(for: entry, userOffers: userOffers, state: state, budgetByTeam: remainingByTeam)
-        if entry.finalistTeamIds.isEmpty,
-           week >= 2,
-           orderedTeams.count > 1 {
-            let finalistCount = min(3, orderedTeams.count)
-            entry.finalistTeamIds = Array(orderedTeams.prefix(finalistCount).map(\.teamId))
-            entry.finalistTeamNames = entry.finalistTeamIds.compactMap { teamById[$0]?.teamName }
-        }
-
         let candidateTeams = entry.finalistTeamIds.isEmpty
             ? orderedTeams
             : orderedTeams.filter { entry.finalistTeamIds.contains($0.teamId) }
@@ -833,6 +826,16 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
         if let best = remainingTeams.first {
             let second = remainingTeams.dropFirst().first?.score ?? (best.score - 9)
             let gap = max(0, best.score - second)
+            if entry.finalistTeamIds.isEmpty,
+               week >= 2,
+               orderedTeams.count > 1,
+               gap < transferPortalBlowoutCommitGap {
+                let finalistCount = min(3, orderedTeams.count)
+                entry.finalistTeamIds = Array(orderedTeams.prefix(finalistCount).map(\.teamId))
+                entry.finalistTeamNames = entry.finalistTeamIds.compactMap { teamById[$0]?.teamName }
+                portal[index] = entry
+                continue
+            }
             let chance = clamp(0.04 + (Double(week) / Double(transferPortalRecruitingWeeks)) * 0.22 + gap / 58, min: 0.03, max: 0.82)
             let roll = deterministicNILValueRoll(seed: "\(state.optionsSeed):portal-commit:\(week):\(entry.id):\(best.teamId)")
             let finalWeek = week >= transferPortalRecruitingWeeks
