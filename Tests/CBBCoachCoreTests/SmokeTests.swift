@@ -1271,6 +1271,84 @@ func manualNILRetentionOfferAtOrAboveAskAcceptsLikeMeetAsk() throws {
     #expect(userTeam.teamModel.players[1].bio.nilDollarsLastYear == 100_000)
 }
 
+@Test("Manual NIL retention offers clamp to remaining budget")
+func manualNILRetentionOffersClampToRemainingBudget() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "nil-offer-cap", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .playerRetention
+        state.playersLeaving = []
+        state.draftPicks = []
+        state.transferPortal = nil
+        state.nilRetentionFinalized = false
+        state.nilRetention = []
+    }
+
+    let budget = getNILRetentionSummary(league).budget
+    let remaining = 50_000.0
+    #expect(budget.total > remaining)
+
+    _ = LeagueStore.update(league.handle) { state in
+        guard let userIndex = state.teams.firstIndex(where: { $0.teamId == state.userTeamId }) else { return }
+        let teamId = state.userTeamId
+        let teamName = state.teams[userIndex].teamName
+        state.nilRetention = [
+            NILNegotiationEntry(
+                id: "signed-budget",
+                teamId: teamId,
+                teamName: teamName,
+                player: nil,
+                playerIndex: 0,
+                playerName: "Signed Budget",
+                position: "PG",
+                year: "SR",
+                overall: 84,
+                potential: 84,
+                intrinsicValue: budget.total - remaining,
+                demand: budget.total - remaining,
+                offer: budget.total - remaining,
+                lastYearAmount: 0,
+                rounds: 1,
+                status: .accepted,
+                responseText: "Accepted.",
+                loyalty: 50,
+                greed: 50,
+                returningDiscount: 0,
+                priority: 1
+            ),
+            NILNegotiationEntry(
+                id: "capped-offer",
+                teamId: teamId,
+                teamName: teamName,
+                player: nil,
+                playerIndex: 1,
+                playerName: "Capped Offer",
+                position: "SG",
+                year: "JR",
+                overall: 82,
+                potential: 86,
+                intrinsicValue: 150_000,
+                demand: 150_000,
+                offer: 0,
+                lastYearAmount: 0,
+                rounds: 0,
+                status: .open,
+                responseText: "",
+                loyalty: 50,
+                greed: 50,
+                returningDiscount: 0,
+                priority: 1
+            )
+        ]
+    }
+
+    let updated = try #require(setNILRetentionOffer(&league, negotiationId: "capped-offer", offer: 200_000))
+
+    #expect(updated.offer == remaining)
+    #expect(getNILRetentionSummary(league).entries.first { $0.id == "capped-offer" }?.offer == remaining)
+}
+
 @Test("Completing transfer portal starts next year and fills walk-ons")
 func transferPortalCompletionStartsNextYearAndFillsWalkOns() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "portal-new-year", totalRegularSeasonGames: 1))
