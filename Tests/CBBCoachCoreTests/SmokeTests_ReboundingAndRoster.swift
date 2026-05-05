@@ -110,6 +110,47 @@ func reboundingDistributionStaysBalanced() {
     #expect(crashOrbRate <= 0.66)
 }
 
+@Test("Frontcourt players get stronger generated rebounding profiles than wings")
+func generatedFrontcourtReboundingProfileBeatsWingProfile() {
+    func generatedPlayer(position: PlayerPosition) -> Player {
+        var player = createPlayer()
+        player.bio.position = position
+        var random = SeededRandom(seed: hashString("same-rating-draw"))
+        applyRatings(&player, base: 70, random: &random)
+        return player
+    }
+
+    let sf = generatedPlayer(position: .sf)
+    let pf = generatedPlayer(position: .pf)
+    let center = generatedPlayer(position: .c)
+
+    #expect(pf.rebounding.offensiveRebounding > sf.rebounding.offensiveRebounding)
+    #expect(pf.rebounding.defensiveRebound > sf.rebounding.defensiveRebound)
+    #expect(pf.rebounding.boxouts > sf.rebounding.boxouts)
+    #expect(center.rebounding.defensiveRebound >= pf.rebounding.defensiveRebound)
+    #expect(center.rebounding.boxouts >= pf.rebounding.boxouts)
+}
+
+@Test("Rebound proximity treats power forwards and bigs as interior players")
+func reboundProximityFavorsInteriorFrontcourtNearBasket() {
+    func player(position: PlayerPosition) -> Player {
+        var player = createPlayer()
+        player.bio.position = position
+        return player
+    }
+
+    let sf = player(position: .sf)
+    let pf = player(position: .pf)
+    let big = player(position: .big)
+    let wing = player(position: .wing)
+
+    #expect(positionProximity(pf, zone: .paint) > positionProximity(sf, zone: .paint))
+    #expect(positionProximity(pf, zone: .leftBlock) > positionProximity(sf, zone: .leftBlock))
+    #expect(positionProximity(big, zone: .paint) > positionProximity(wing, zone: .paint))
+    #expect(positionProximity(wing, zone: .topPerimeter) > positionProximity(big, zone: .topPerimeter))
+    #expect(reboundCollectorRoleBonus(pf) > reboundCollectorRoleBonus(sf))
+}
+
 @Test("User roster summary includes full player rating payload")
 func userRosterIncludesFullAttributeSet() throws {
     let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "roster-attributes"))

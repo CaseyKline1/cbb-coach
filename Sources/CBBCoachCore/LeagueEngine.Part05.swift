@@ -370,6 +370,7 @@ func applyRatings(_ player: inout Player, base: Int, random: inout SeededRandom)
     player.rebounding.offensiveRebounding = r(-1)
     player.rebounding.defensiveRebound = r(0)
     player.rebounding.boxouts = r(0)
+    applyPositionReboundingProfile(&player)
 
     player.tendencies.post = r(-2)
     player.tendencies.inside = r(2)
@@ -394,6 +395,44 @@ func applyRatings(_ player: inout Player, base: Int, random: inout SeededRandom)
         shootVsPassBase = 56
     }
     player.tendencies.shootVsPass = clamp(shootVsPassBase + random.int(-8, 8), min: 25, max: 99)
+}
+
+func applyPositionReboundingProfile(_ player: inout Player) {
+    func adjust(_ keyPath: WritableKeyPath<Player, Int>, by delta: Int) {
+        player[keyPath: keyPath] = clamp(player[keyPath: keyPath] + delta, min: 25, max: 99)
+    }
+
+    switch player.bio.position {
+    case .pg:
+        adjust(\.rebounding.offensiveRebounding, by: -9)
+        adjust(\.rebounding.defensiveRebound, by: -8)
+        adjust(\.rebounding.boxouts, by: -9)
+        adjust(\.athleticism.strength, by: -4)
+    case .sg, .cg:
+        adjust(\.rebounding.offensiveRebounding, by: -6)
+        adjust(\.rebounding.defensiveRebound, by: -5)
+        adjust(\.rebounding.boxouts, by: -6)
+        adjust(\.athleticism.strength, by: -2)
+    case .sf, .wing:
+        adjust(\.rebounding.offensiveRebounding, by: -2)
+        adjust(\.rebounding.defensiveRebound, by: -1)
+        adjust(\.rebounding.boxouts, by: -2)
+    case .f:
+        adjust(\.rebounding.offensiveRebounding, by: 4)
+        adjust(\.rebounding.defensiveRebound, by: 5)
+        adjust(\.rebounding.boxouts, by: 5)
+        adjust(\.athleticism.strength, by: 3)
+    case .pf:
+        adjust(\.rebounding.offensiveRebounding, by: 8)
+        adjust(\.rebounding.defensiveRebound, by: 9)
+        adjust(\.rebounding.boxouts, by: 9)
+        adjust(\.athleticism.strength, by: 5)
+    case .c, .big:
+        adjust(\.rebounding.offensiveRebounding, by: 10)
+        adjust(\.rebounding.defensiveRebound, by: 11)
+        adjust(\.rebounding.boxouts, by: 12)
+        adjust(\.athleticism.strength, by: 7)
+    }
 }
 
 func playerOverall(_ player: Player) -> Int {
