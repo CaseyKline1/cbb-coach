@@ -89,7 +89,10 @@ struct CollegeLeagueHomeView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(teamHeaderText)
-                            .font(.largeTitle.bold())
+                            .font(.title.bold())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                            .allowsTightening(true)
                     }
 
                     if let lastPlayed = latestCompletedGame {
