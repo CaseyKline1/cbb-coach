@@ -64,14 +64,6 @@ struct PlaybookView: View {
                     }
                 }
 
-                Button("Save Playbook") {
-                    let normalized = normalizedWeights()
-                    onSave(pace, defenseScheme, normalized)
-                    statusText = "Saved."
-                }
-                .buttonStyle(GameButtonStyle(variant: .primary))
-                .disabled(!canSave)
-
                 if !statusText.isEmpty {
                     Text(statusText)
                         .font(.caption)
@@ -87,6 +79,14 @@ struct PlaybookView: View {
             didLoad = true
             loadInitial()
         }
+        .onChange(of: pace) { _ in autosave() }
+        .onChange(of: defenseScheme) { _ in autosave() }
+    }
+
+    private func autosave() {
+        guard didLoad, canSave else { return }
+        onSave(pace, defenseScheme, normalizedWeights())
+        statusText = "Saved."
     }
 
     @ViewBuilder
@@ -110,7 +110,7 @@ struct PlaybookView: View {
             Slider(
                 value: Binding(
                     get: { weights[formation] ?? 0 },
-                    set: { weights[formation] = $0; statusText = "" }
+                    set: { weights[formation] = $0; autosave() }
                 ),
                 in: 0...100,
                 step: 5
