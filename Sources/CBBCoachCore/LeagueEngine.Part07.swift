@@ -1419,14 +1419,15 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
     for team in state.teams {
         let teamPrestige = clamp(team.prestige, min: 0, max: 1)
         let teamStats = minutesByTeamAndPlayer[team.teamId] ?? [:]
-        let totalTeamMinutes = max(1, teamStats.values.reduce(0) { $0 + $1.minutes })
+        let teamGames = max(1, team.wins + team.losses)
+        let availableSoloMinutes = max(1.0, 40.0 * Double(teamGames))
         let lineupNames = Set(team.teamModel.lineup.map(\.bio.name))
         let rosterSummaries = rosterSummaryPlayers(from: team.teamModel, lineupNames: lineupNames)
 
         for (playerIndex, player) in team.teamModel.players.enumerated() {
             let overall = playerOverall(player)
             let stats = teamStats[player.bio.name] ?? LeavingPlayerStat()
-            let minutesShare = clamp(stats.minutes / totalTeamMinutes, min: 0, max: 1)
+            let minutesShare = clamp(stats.minutes / availableSoloMinutes, min: 0, max: 1)
             let expectedShare = expectedMinutesShare(for: player, overall: overall)
             let loyalty = resolvedLoyalty(player, teamId: team.teamId)
             let greed = resolvedGreed(player, teamId: team.teamId)
@@ -1499,7 +1500,7 @@ func calculatePlayersLeaving(_ state: LeagueStore.State) -> [PlayerLeavingEntry]
             let volatility = deterministicLeavingRoll(state: state, teamId: team.teamId, playerName: player.bio.name, salt: "variance") - 0.5
             let risk = clamp(
                 0.015
-                    + playingTimeGap * 1.28
+                    + playingTimeGap * 0.70
                     + tooGoodPressure * 0.32
                     + nilExpectation
                     + greedPressure * 0.11
@@ -1925,13 +1926,13 @@ private func expectedMinutesShare(for player: Player, overall: Int) -> Double {
     let nilFactor = clamp((player.bio.nilDollarsLastYear ?? 0) / 650_000, min: 0, max: 1)
     let classBump: Double
     switch player.bio.year {
-    case .fr: classBump = -0.025
+    case .fr: classBump = -0.05
     case .so: classBump = 0.0
-    case .jr: classBump = 0.025
-    case .sr: classBump = 0.04
+    case .jr: classBump = 0.05
+    case .sr: classBump = 0.08
     default: classBump = 0.0
     }
-    return clamp(0.035 + overallFactor * 0.175 + potentialFactor * 0.055 + nilFactor * 0.075 + classBump, min: 0.02, max: 0.31)
+    return clamp(0.15 + overallFactor * 0.45 + potentialFactor * 0.15 + nilFactor * 0.10 + classBump, min: 0.10, max: 0.85)
 }
 
 private func isLikelyRedshirtingSenior(_ player: Player, stats: LeavingPlayerStat, teamGames: Int) -> Bool {
