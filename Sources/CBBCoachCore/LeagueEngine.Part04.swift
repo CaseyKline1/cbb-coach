@@ -789,6 +789,7 @@ func simulateScheduledDayInState(
     teamIndexById: [String: Int]? = nil
 ) {
     guard !scheduleIndexes.isEmpty else { return }
+    LeagueSimulationPauseGate.waitIfPaused()
     let resolvedTeamIndexById: [String: Int]
     if let teamIndexById {
         resolvedTeamIndexById = teamIndexById

@@ -433,6 +433,7 @@ struct CollegeLeagueHomeView: View {
                 }
             }
             .onChange(of: scenePhase) { _, phase in
+                LeagueSimulationPauseGate.setPaused(phase != .active)
                 if phase != .active, let league {
                     LeagueStore.save(league, teamName: teamName)
                 }
@@ -623,9 +624,9 @@ struct CollegeLeagueHomeView: View {
         skipAheadTitle = target.overlayTitle
         skipAheadGameRecaps = []
 
-        Task(priority: .userInitiated) {
+        Task(priority: .utility) {
             await Task.yield()
-            let result = await Task.detached(priority: .userInitiated) {
+            let result = await Task.detached(priority: .utility) {
                 await Self.runSkipAhead(from: startingLeague, target: target) { recaps in
                     await MainActor.run {
                         skipAheadGameRecaps = recaps
