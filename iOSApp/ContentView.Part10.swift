@@ -1994,6 +1994,7 @@ struct TransferPortalView: View {
     @State private var boardSortColumn: BoardTableColumn = .overall
     @State private var boardIsAscending = false
     @State private var offerOverrides: [String: Double] = [:]
+    @State private var offerWriteTasks: [String: Task<Void, Never>] = [:]
 
     private var rows: [TransferPortalEntry] { summary?.entries ?? [] }
 
@@ -2170,6 +2171,7 @@ struct TransferPortalView: View {
                 portalTableSection
 
                 Button {
+                    flushOfferOverrides()
                     onAdvance()
                 } label: {
                     Text((summary?.week ?? 1) > (summary?.maxWeeks ?? 6) ? "Complete Offseason Schedule" : "Advance Portal Week")
@@ -2182,6 +2184,9 @@ struct TransferPortalView: View {
         .background(AppTheme.background)
         .navigationTitle("Transfer Portal")
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear {
+            flushOfferOverrides()
+        }
     }
 
     private var boardSection: some View {
@@ -2498,7 +2503,23 @@ struct TransferPortalView: View {
 
     private func setOffer(_ entryId: String, amount: Double) {
         offerOverrides[entryId] = amount
-        onSetOffer(entryId, amount)
+        offerWriteTasks[entryId]?.cancel()
+        offerWriteTasks[entryId] = Task {
+            try? await Task.sleep(nanoseconds: 75_000_000)
+            guard !Task.isCancelled else { return }
+            onSetOffer(entryId, amount)
+        }
+    }
+
+    private func flushOfferOverrides() {
+        let pendingOffers = offerOverrides
+        offerOverrides.removeAll()
+        for (entryId, amount) in pendingOffers {
+            offerWriteTasks[entryId]?.cancel()
+            offerWriteTasks[entryId] = nil
+            guard amount != (summary?.userOffers[entryId] ?? 0) else { continue }
+            onSetOffer(entryId, amount)
+        }
     }
 
     private func numericCompare<T: Comparable>(lhs: T, rhs: T) -> ComparisonResult {
