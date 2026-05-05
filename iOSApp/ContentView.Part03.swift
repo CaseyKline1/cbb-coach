@@ -384,15 +384,30 @@ extension CollegeLeagueHomeView {
     }
 
     var retainedRoster: [UserRosterPlayerSummary] {
-        guard let retention = nilRetentionSummary else { return roster }
-        let userTeamId = retention.userTeamId
-        let unretainedNames = Set(
-            retention.entries
-                .filter { $0.teamId == userTeamId && $0.status != .accepted }
-                .map(\.playerName)
-        )
-        guard !unretainedNames.isEmpty else { return roster }
-        return roster.filter { !unretainedNames.contains($0.name) }
+        var departedNames = Set<String>()
+
+        if let retention = nilRetentionSummary {
+            let userTeamId = retention.userTeamId
+            for entry in retention.entries where entry.teamId == userTeamId && entry.status != .accepted {
+                departedNames.insert(entry.playerName)
+            }
+        }
+
+        if let leaving = playersLeavingSummary {
+            for entry in leaving.userEntries {
+                departedNames.insert(entry.playerName)
+            }
+        }
+
+        if let portal = transferPortalSummary {
+            let userTeamId = portal.userTeamId
+            for entry in portal.entries where entry.previousTeamId == userTeamId {
+                departedNames.insert(entry.playerName)
+            }
+        }
+
+        guard !departedNames.isEmpty else { return roster }
+        return roster.filter { !departedNames.contains($0.name) }
     }
 
     private func offseasonLoadingContext() -> OffseasonAdvanceLoadingContext {
