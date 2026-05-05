@@ -72,50 +72,37 @@ if args.contains("--nil-balance") {
 
         let budgets = getNILBudgetSummary(league)
         let retention = getNILRetentionSummary(league)
-
-        var capturedPortal: TransferPortalSummary? = nil
+        var portalSnapshot: TransferPortalSummary? = nil
         var loopGuard = 0
         while loopGuard < 64 {
             let summary = getTransferPortalSummary(league)
-            capturedPortal = summary
-            let progress = getOffseasonProgress(league)
-            if args.contains("--verbose") {
-                let stage = progress?.stage.rawValue ?? "nil"
-                let committed = summary.entries.filter { $0.committedTeamId != nil }.count
-                print("  loop=\(loopGuard) stage=\(stage) week=\(summary.week)/\(summary.maxWeeks) entries=\(summary.entries.count) committed=\(committed)")
+            if !summary.entries.isEmpty {
+                portalSnapshot = summary
             }
-            guard let stageProgress = progress, stageProgress.stage != .complete else { break }
-            if summary.week > summary.maxWeeks {
-                break
-            }
+            guard let progress = getOffseasonProgress(league), progress.stage != .complete else { break }
             _ = advanceOffseason(&league)
             loopGuard += 1
         }
-        let portal = capturedPortal ?? TransferPortalSummary(userTeamId: retention.userTeamId, entries: [])
-        let retentionByTeam = Dictionary(
-            grouping: retention.entries.filter { $0.status == .accepted },
-            by: { $0.teamId }
-        ).mapValues { entries in entries.reduce(0.0) { $0 + $1.offer } }
-        let portalCommitsByTeam = Dictionary(
-            grouping: portal.entries.compactMap { entry -> (String, Double)? in
-                guard let committed = entry.committedTeamId else { return nil }
-                return (committed, entry.askingPrice)
-            },
-            by: { $0.0 }
-        ).mapValues { pairs in pairs.reduce(0.0) { $0 + $1.1 } }
 
-        let retentionSpend = retentionByTeam.values.reduce(0, +)
-        let portalSpend = portalCommitsByTeam.values.reduce(0, +)
+        let spendSummary = getTeamNILSpendSummary(league)
+        let portal = portalSnapshot ?? TransferPortalSummary(userTeamId: retention.userTeamId, entries: [])
+        let spendByTeam = Dictionary(
+            uniqueKeysWithValues: spendSummary.teams.map { ($0.teamId, $0.totalCommitted) }
+        )
+        let retentionSpend = retention.entries.filter { $0.status == .accepted }.reduce(0.0) { $0 + $1.offer }
+        let totalSpend = spendByTeam.values.reduce(0, +)
+        let portalSpend = max(0, totalSpend - retentionSpend)
         let openDemand = retention.entries.reduce(0.0) { $0 + $1.demand }
-        let userSpend = (retentionByTeam[retention.userTeamId] ?? 0) + (portalCommitsByTeam[retention.userTeamId] ?? 0)
+        let userSpend = spendByTeam[retention.userTeamId] ?? 0
         let userRemaining = max(0, retention.budget.total - userSpend)
+        let totalCommitted = totalSpend
 
         let majorConferences: Set<String> = ["acc", "big-ten", "big-12", "sec"]
         var teamShares: [Double] = []
         var majorShares: [Double] = []
         var minorShares: [Double] = []
         for team in budgets.teams where team.total > 0 {
-            let spend = (retentionByTeam[team.teamId] ?? 0) + (portalCommitsByTeam[team.teamId] ?? 0)
+            let spend = spendByTeam[team.teamId] ?? 0
             let share = min(2.0, spend / team.total)
             teamShares.append(share)
             if majorConferences.contains(team.conferenceId) {
@@ -166,8 +153,9 @@ if args.contains("--nil-balance") {
             minorMedianShare: median(minorShares)
         )
         runs.append(run)
-        let totalSpend = run.retentionSpend + run.portalSpend
-        print("run \(iteration): team=\(simTeam) portal=\(run.portalCount) committed=\(run.portalCommitted) retention=\(String(format: "%.1f", run.retentionSpend / 1_000_000))M portal=\(String(format: "%.1f", run.portalSpend / 1_000_000))M spend/budget=\(String(format: "%.0f", (totalSpend / max(1, run.nationalBudget)) * 100))% medianShare=\(String(format: "%.0f", run.medianShare * 100))% >=80%:\(String(format: "%.0f", run.pctTeamsAbove80))% >=60%:\(String(format: "%.0f", run.pctTeamsAbove60))% <20%:\(String(format: "%.0f", run.pctTeamsBelow20))%")
+        let runTotalSpend = run.retentionSpend + run.portalSpend
+        print("run \(iteration): team=\(simTeam) portal=\(run.portalCount) committed=\(run.portalCommitted) retention=\(String(format: "%.1f", run.retentionSpend / 1_000_000))M portal=\(String(format: "%.1f", run.portalSpend / 1_000_000))M spend/budget=\(String(format: "%.0f", (runTotalSpend / max(1, run.nationalBudget)) * 100))% medianShare=\(String(format: "%.0f", run.medianShare * 100))% >=80%:\(String(format: "%.0f", run.pctTeamsAbove80))% >=60%:\(String(format: "%.0f", run.pctTeamsAbove60))% <20%:\(String(format: "%.0f", run.pctTeamsBelow20))%")
+        _ = totalCommitted
     }
 
     func avg(_ values: [Double]) -> Double {

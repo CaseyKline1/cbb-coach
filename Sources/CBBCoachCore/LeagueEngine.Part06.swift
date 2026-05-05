@@ -104,6 +104,47 @@ public func getNILBudgetSummary(_ league: LeagueState) -> NILBudgetSummary {
     return calculateNILBudgetSummary(state)
 }
 
+public struct TeamNILSpendEntry: Codable, Equatable, Sendable, Identifiable {
+    public var teamId: String
+    public var teamName: String
+    public var conferenceId: String
+    public var conferenceName: String
+    public var totalCommitted: Double
+    public var topPlayerCommitted: Double
+    public var playerCount: Int
+    public var nilPlayerCount: Int
+
+    public var id: String { teamId }
+}
+
+public struct TeamNILSpendSummary: Codable, Equatable, Sendable {
+    public var userTeamId: String
+    public var teams: [TeamNILSpendEntry]
+}
+
+public func getTeamNILSpendSummary(_ league: LeagueState) -> TeamNILSpendSummary {
+    guard let state = LeagueStore.get(league.handle) else {
+        return TeamNILSpendSummary(userTeamId: "", teams: [])
+    }
+    let entries = state.teams.map { team -> TeamNILSpendEntry in
+        let amounts = team.teamModel.players.map { $0.bio.nilDollarsLastYear ?? 0 }
+        let total = amounts.reduce(0, +)
+        let top = amounts.max() ?? 0
+        let nilPlayers = amounts.filter { $0 > 0 }.count
+        return TeamNILSpendEntry(
+            teamId: team.teamId,
+            teamName: team.teamName,
+            conferenceId: team.conferenceId,
+            conferenceName: team.conferenceName,
+            totalCommitted: total,
+            topPlayerCommitted: top,
+            playerCount: team.teamModel.players.count,
+            nilPlayerCount: nilPlayers
+        )
+    }
+    return TeamNILSpendSummary(userTeamId: state.userTeamId, teams: entries)
+}
+
 func calculateNILBudgetSummary(_ state: LeagueStore.State) -> NILBudgetSummary {
     let awardsByTeamId = calculateNILAwardsByTeamId(state)
     let nationalTournamentTeamIds = Set(state.nationalTournament?.entrants.map(\.teamId) ?? [])

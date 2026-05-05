@@ -228,13 +228,20 @@ func resolvePickAndRollOutcome(
             defenseRatings: ["defense.passPerception", "defense.lateralQuickness", "defense.perimeterDefense"],
             random: &random
         )
+        // Elite roll-man (postControl) seals harder; elite handler (passingVision)
+        // reads the rotation and finds the right read. Defensive bigs / on-ball
+        // stoppers symmetrically reduce both.
+        let rollerElite = eliteRatingPremium(getRating(screener, path: "postGame.postControl"), maxBoost: 0.45)
+        let rollDefElite = eliteRatingPremium(getRating(screenerDefender, path: "defense.postDefense"), maxBoost: 0.40)
+        let readerElite = eliteRatingPremium(getRating(ballHandler, path: "skills.passingVision"), maxBoost: 0.35)
+        let perimeterElite = eliteRatingPremium(getRating(onBallDefender, path: "defense.perimeterDefense"), maxBoost: 0.30)
         let rollerFinishChance = clamp(
             0.18
-                + logistic(rollerSeal.edge + screenEdge * 0.45) * 0.46
-                + logistic(handlerRead.edge) * 0.12
+                + logistic(rollerSeal.edge + screenEdge * 0.45 + rollerElite - rollDefElite) * 0.46
+                + logistic(handlerRead.edge + readerElite - perimeterElite) * 0.12
                 + (passLean - 0.55) * 0.16,
             min: 0.2,
-            max: 0.78
+            max: 0.82
         )
         if random.nextUnit() < rollerFinishChance {
             let takesDunk = getRating(screener, path: "shooting.dunks") > 65 && random.nextUnit() < 0.45

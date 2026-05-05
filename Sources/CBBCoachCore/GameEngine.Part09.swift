@@ -55,7 +55,13 @@ func resolvePlay(
             defenseRatings: ["defense.perimeterDefense", "defense.lateralQuickness", "defense.defensiveControl"],
             random: &random
         )
-        let driveControl = logistic(driveInteraction.edge)
+        // Elite slashers (high burst + handle) win drives more decisively than the
+        // matchup logistic alone allows; elite on-ball stoppers do the inverse.
+        let driverElite = eliteRatingPremium(getRating(ballHandler, path: "athleticism.burst"), maxBoost: 0.30)
+            + eliteRatingPremium(getRating(ballHandler, path: "skills.ballHandling"), maxBoost: 0.25)
+        let stopperElite = eliteRatingPremium(getRating(onBallDefender, path: "defense.perimeterDefense"), maxBoost: 0.30)
+            + eliteRatingPremium(getRating(onBallDefender, path: "defense.lateralQuickness"), maxBoost: 0.25)
+        let driveControl = logistic(driveInteraction.edge + driverElite - stopperElite)
         let driveTier: Int
         if driveControl <= 0.28 {
             driveTier = -1 // decisive loss
@@ -222,7 +228,15 @@ func resolvePlay(
             defenseRatings: ["defense.postDefense", "defense.defensiveControl", "athleticism.strength", "defense.shotContest"],
             random: &random
         )
-        let postControl = logistic(postAdvantage.edge)
+        // Post premium is intentionally larger than drive/PnR: elite low-post players
+        // (Embiid/Jokic tier) should dominate average defenders rather than blending
+        // into the field. The premium feeds the postControl edge, which then ripples
+        // through shot edgeBonus/foulBonus/shot-type weights below.
+        let postOffenseElite = eliteRatingPremium(getRating(shooter, path: "postGame.postControl"), maxBoost: 0.55)
+            + eliteRatingPremium(getRating(shooter, path: "athleticism.strength"), maxBoost: 0.20)
+        let postDefenseElite = eliteRatingPremium(getRating(postDefender, path: "defense.postDefense"), maxBoost: 0.55)
+            + eliteRatingPremium(getRating(postDefender, path: "athleticism.strength"), maxBoost: 0.18)
+        let postControl = logistic(postAdvantage.edge + postOffenseElite - postDefenseElite)
         let postKickChance = clamp(
             0.62 + (1 - postControl) * 0.32 + actionPassDecisionBias,
             min: 0.7 + actionPassDecisionBias,
@@ -350,7 +364,9 @@ func resolvePlay(
             defenseRatings: ["defense.passPerception", "defense.lateralQuickness", "defense.perimeterDefense"],
             random: &random
         )
-        let popReadControl = logistic(popRead.edge)
+        let popReaderElite = eliteRatingPremium(getRating(pickActionBallHandler, path: "skills.passingVision"), maxBoost: 0.35)
+        let popPerimeterElite = eliteRatingPremium(getRating(onBallDefender, path: "defense.perimeterDefense"), maxBoost: 0.30)
+        let popReadControl = logistic(popRead.edge + popReaderElite - popPerimeterElite)
         let ballHandlerPassLean = clamp(
             0.55
                 + (50 - getRating(pickActionBallHandler, path: "tendencies.shootVsPass")) / 150
