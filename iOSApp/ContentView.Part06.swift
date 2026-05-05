@@ -131,6 +131,7 @@ struct PlayerCardDetailView: View {
         let year: String
         let teamAbbreviation: String
         let totals: PlayerCareerTotals
+        let isCareerTotal: Bool
     }
 
     private var awardRows: [(id: AnyHashable, text: String)] {
@@ -165,7 +166,8 @@ struct PlayerCardDetailView: View {
                         threeAttempts: season.threeAttempts,
                         ftMade: season.ftMade,
                         ftAttempts: season.ftAttempts
-                    )
+                    ),
+                    isCareerTotal: false
                 )
             )
         }
@@ -197,13 +199,29 @@ struct PlayerCardDetailView: View {
                 CareerYearRow(
                     year: playerYear,
                     teamAbbreviation: TeamNameAbbreviation.abbreviated(teamName),
-                    totals: current
+                    totals: current,
+                    isCareerTotal: false
                 )
             )
         }
 
-        return rows.reversed().enumerated().map { offset, row in
-            (id: AnyHashable("\(offset):\(row.year):\(row.teamAbbreviation)"), data: row)
+        var seenSeasonKeys = Set<String>()
+        let uniqueRows = rows.filter { row in
+            let key = careerSeasonDeduplicationKey(for: row)
+            return seenSeasonKeys.insert(key).inserted
+        }
+        let careerTotals = combinedCareerTotals(for: uniqueRows)
+        let displayRows = Array(uniqueRows.reversed()) + [
+            CareerYearRow(
+                year: "Career",
+                teamAbbreviation: "",
+                totals: careerTotals,
+                isCareerTotal: true
+            )
+        ]
+
+        return displayRows.enumerated().map { offset, row in
+            (id: AnyHashable("\(offset):\(row.year):\(row.teamAbbreviation):\(row.isCareerTotal)"), data: row)
         }
     }
 
@@ -308,20 +326,20 @@ struct PlayerCardDetailView: View {
                             AppTableTextCell(text: row.year, width: 52, alignment: .leading, font: .caption.monospacedDigit())
                             AppTableTextCell(text: row.teamAbbreviation, width: 56, alignment: .leading, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: "\(row.totals.games)", width: 42, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: format(row.totals.minutesPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: format(row.totals.pointsPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: format(row.totals.reboundsPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: format(row.totals.assistsPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: format(row.totals.stealsPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: format(row.totals.blocksPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: format(row.totals.turnoversPerGame), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: careerStat(row.totals.minutes, perGame: row.totals.minutesPerGame, isCareerTotal: row.isCareerTotal), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: careerStat(row.totals.points, perGame: row.totals.pointsPerGame, isCareerTotal: row.isCareerTotal), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: careerStat(row.totals.rebounds, perGame: row.totals.reboundsPerGame, isCareerTotal: row.isCareerTotal), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: careerStat(row.totals.assists, perGame: row.totals.assistsPerGame, isCareerTotal: row.isCareerTotal), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: careerStat(row.totals.steals, perGame: row.totals.stealsPerGame, isCareerTotal: row.isCareerTotal), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: careerStat(row.totals.blocks, perGame: row.totals.blocksPerGame, isCareerTotal: row.isCareerTotal), width: 52, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: careerStat(row.totals.turnovers, perGame: row.totals.turnoversPerGame, isCareerTotal: row.isCareerTotal), width: 52, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.fgPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.threePct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.ftPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.efgPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: "\(format(row.totals.fgMadePerGame))/\(format(row.totals.fgAttemptsPerGame))", width: 72, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: "\(format(row.totals.threeMadePerGame))/\(format(row.totals.threeAttemptsPerGame))", width: 72, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: "\(format(row.totals.ftMadePerGame))/\(format(row.totals.ftAttemptsPerGame))", width: 72, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: madeAttempt(row.totals.fgMade, row.totals.fgAttempts, madePerGame: row.totals.fgMadePerGame, attemptsPerGame: row.totals.fgAttemptsPerGame, isCareerTotal: row.isCareerTotal), width: 72, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: madeAttempt(row.totals.threeMade, row.totals.threeAttempts, madePerGame: row.totals.threeMadePerGame, attemptsPerGame: row.totals.threeAttemptsPerGame, isCareerTotal: row.isCareerTotal), width: 72, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: madeAttempt(row.totals.ftMade, row.totals.ftAttempts, madePerGame: row.totals.ftMadePerGame, attemptsPerGame: row.totals.ftAttemptsPerGame, isCareerTotal: row.isCareerTotal), width: 72, font: .caption.monospacedDigit().weight(.semibold))
                         }
                     }
                 }
@@ -467,6 +485,69 @@ struct PlayerCardDetailView: View {
 
     private func pct(_ value: Double) -> String {
         String(format: "%.1f%%", value * 100)
+    }
+
+    private func careerStat(_ total: Double, perGame: Double, isCareerTotal: Bool) -> String {
+        isCareerTotal ? format(total) : format(perGame)
+    }
+
+    private func careerStat(_ total: Int, perGame: Double, isCareerTotal: Bool) -> String {
+        isCareerTotal ? "\(total)" : format(perGame)
+    }
+
+    private func madeAttempt(
+        _ made: Int,
+        _ attempts: Int,
+        madePerGame: Double,
+        attemptsPerGame: Double,
+        isCareerTotal: Bool
+    ) -> String {
+        if isCareerTotal {
+            return "\(made)/\(attempts)"
+        }
+        return "\(format(madePerGame))/\(format(attemptsPerGame))"
+    }
+
+    private func careerSeasonDeduplicationKey(for row: CareerYearRow) -> String {
+        [
+            row.year,
+            row.teamAbbreviation,
+            "\(row.totals.games)",
+            format(row.totals.minutes),
+            "\(row.totals.points)",
+            "\(row.totals.rebounds)",
+            "\(row.totals.assists)",
+            "\(row.totals.steals)",
+            "\(row.totals.blocks)",
+            "\(row.totals.turnovers)",
+            "\(row.totals.fgMade)",
+            "\(row.totals.fgAttempts)",
+            "\(row.totals.threeMade)",
+            "\(row.totals.threeAttempts)",
+            "\(row.totals.ftMade)",
+            "\(row.totals.ftAttempts)",
+        ].joined(separator: "|")
+    }
+
+    private func combinedCareerTotals(for rows: [CareerYearRow]) -> PlayerCareerTotals {
+        rows.reduce(.zero) { total, row in
+            PlayerCareerTotals(
+                games: total.games + row.totals.games,
+                minutes: total.minutes + row.totals.minutes,
+                points: total.points + row.totals.points,
+                rebounds: total.rebounds + row.totals.rebounds,
+                assists: total.assists + row.totals.assists,
+                steals: total.steals + row.totals.steals,
+                blocks: total.blocks + row.totals.blocks,
+                turnovers: total.turnovers + row.totals.turnovers,
+                fgMade: total.fgMade + row.totals.fgMade,
+                fgAttempts: total.fgAttempts + row.totals.fgAttempts,
+                threeMade: total.threeMade + row.totals.threeMade,
+                threeAttempts: total.threeAttempts + row.totals.threeAttempts,
+                ftMade: total.ftMade + row.totals.ftMade,
+                ftAttempts: total.ftAttempts + row.totals.ftAttempts
+            )
+        }
     }
 
     private func twoColumnPairs(from entries: [RatingEntry]) -> [(left: RatingEntry?, right: RatingEntry?)] {
