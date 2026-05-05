@@ -69,9 +69,11 @@ func reboundCollectorRoleBonus(_ player: Player) -> Double {
     case .c, .big:
         return 0.24
     case .pf:
-        return 0.14
-    case .f, .sf, .wing:
+        return 0.17
+    case .f:
         return 0.12
+    case .sf, .wing:
+        return 0.07
     case .sg, .cg:
         return -0.08
     case .pg:

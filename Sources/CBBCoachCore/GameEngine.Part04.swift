@@ -337,29 +337,59 @@ func zonePresenceAffinity(_ player: Player, zone: ReboundZone) -> Double {
 }
 
 func positionProximity(_ player: Player, zone: ReboundZone) -> Double {
-    let isBig: Bool
-    let isGuard: Bool
-    switch player.bio.position {
-    case .c, .cg, .pf, .sf, .f:
-        isBig = true
-    case .pg, .sg, .wing, .big:
-        isBig = false
-    }
-    switch player.bio.position {
-    case .pg, .sg, .cg, .wing, .big:
-        isGuard = true
-    case .c, .pf, .sf, .f:
-        isGuard = false
-    }
     switch zone {
     case .paint:
-        return isBig ? 1.25 : (isGuard ? 0.75 : 1.0)
+        switch player.bio.position {
+        case .c, .big:
+            return 1.28
+        case .pf, .f:
+            return 1.2
+        case .sf, .wing:
+            return 0.98
+        case .sg, .cg:
+            return 0.78
+        case .pg:
+            return 0.7
+        }
     case .leftBlock, .rightBlock:
-        return isBig ? 1.18 : 0.85
+        switch player.bio.position {
+        case .c, .big:
+            return 1.24
+        case .pf, .f:
+            return 1.16
+        case .sf, .wing:
+            return 0.98
+        case .sg, .cg:
+            return 0.82
+        case .pg:
+            return 0.74
+        }
     case .leftPerimeter, .rightPerimeter:
-        return isGuard ? 1.2 : 0.85
+        switch player.bio.position {
+        case .pg, .sg, .cg:
+            return 1.2
+        case .sf, .wing:
+            return 1.08
+        case .f:
+            return 0.96
+        case .pf:
+            return 0.86
+        case .c, .big:
+            return 0.78
+        }
     case .topPerimeter:
-        return isGuard ? 1.15 : 0.9
+        switch player.bio.position {
+        case .pg, .sg, .cg:
+            return 1.15
+        case .sf, .wing:
+            return 1.06
+        case .f:
+            return 0.96
+        case .pf:
+            return 0.88
+        case .c, .big:
+            return 0.8
+        }
     }
 }
 
