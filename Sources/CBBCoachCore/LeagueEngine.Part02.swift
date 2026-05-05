@@ -273,7 +273,17 @@ public func getUserSchedule(_ league: LeagueState) -> [UserGameSummary] {
             if $0.day != $1.day { return $0.day < $1.day }
             return $0.gameId < $1.gameId
         }
-        .map { userSummaryFromGame($0, userTeamId: user.teamId) }
+        .map { game in
+            var summary = userSummaryFromGame(game, userTeamId: user.teamId)
+            let opponentTeamId = game.homeTeamId == user.teamId ? game.awayTeamId : game.homeTeamId
+            if let opponent = state.teams.first(where: { $0.teamId == opponentTeamId }) {
+                summary.opponentRecord = .object([
+                    "wins": .number(Double(opponent.wins)),
+                    "losses": .number(Double(opponent.losses)),
+                ])
+            }
+            return summary
+        }
 }
 
 public func getUserRoster(_ league: LeagueState) -> [UserRosterPlayerSummary] {

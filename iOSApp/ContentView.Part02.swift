@@ -300,7 +300,13 @@ struct CollegeLeagueHomeView: View {
                         userTeamName: summary?.userTeamName ?? teamName
                     )
                 case .schedule:
-                    ScheduleListView(schedule: schedule, userTeamName: summary?.userTeamName ?? teamName)
+                    ScheduleListView(
+                        schedule: schedule,
+                        userTeamName: summary?.userTeamName ?? teamName,
+                        games: completedLeagueGames,
+                        roster: roster,
+                        teamRostersByName: teamRostersByName
+                    )
                 case .rotation:
                     RotationSettingsView(
                         roster: roster,

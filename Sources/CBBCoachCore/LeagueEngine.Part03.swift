@@ -25,7 +25,8 @@ private func seasonCompleteSummary(currentDay: Int) -> UserGameSummary {
         message: "Season complete",
         score: nil,
         won: nil,
-        record: nil
+        record: nil,
+        opponentRecord: nil
     )
 }
 
@@ -820,7 +821,8 @@ func userSummaryFromGame(_ game: LeagueStore.ScheduledGame, userTeamId: String) 
         message: nil,
         score: nil,
         won: nil,
-        record: nil
+        record: nil,
+        opponentRecord: nil
     )
 }
 

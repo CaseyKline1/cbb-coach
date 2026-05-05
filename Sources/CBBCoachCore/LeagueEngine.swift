@@ -156,6 +156,7 @@ public struct UserGameSummary: Codable, Equatable, Sendable {
     public var score: JSONValue?
     public var won: Bool?
     public var record: JSONValue?
+    public var opponentRecord: JSONValue?
 }
 
 public struct UserGameAdvanceBatch: Codable, Equatable, Sendable {

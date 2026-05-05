@@ -5,6 +5,9 @@ import CBBCoachCore
 struct ScheduleListView: View {
     let schedule: [UserGameSummary]
     let userTeamName: String
+    let games: [LeagueGameSummary]
+    let roster: [UserRosterPlayerSummary]
+    let teamRostersByName: [String: [UserRosterPlayerSummary]]
 
     private var orderedGames: [UserGameSummary] {
         schedule.sorted {
@@ -17,15 +20,48 @@ struct ScheduleListView: View {
         }
     }
 
+    private var columns: [AppTableColumn<String>] {
+        [
+            .init(id: "site", title: "H/A/N", width: 48),
+            .init(id: "opponent", title: "OPPONENT", width: 150, alignment: .leading),
+            .init(id: "record", title: "REC", width: 58),
+            .init(id: "score", title: "SCORE", width: 78),
+            .init(id: "mvp", title: "GAMEMVP", width: 132, alignment: .leading),
+            .init(id: "scorer", title: "SCORER", width: 132, alignment: .leading),
+            .init(id: "rebounder", title: "REBOUNDER", width: 132, alignment: .leading),
+            .init(id: "assister", title: "ASSISTER", width: 132, alignment: .leading),
+        ]
+    }
+
+    private var tableRows: [(id: AnyHashable, data: ScheduleGameRow)] {
+        orderedGames.enumerated().map { index, game in
+            (id: AnyHashable(game.gameId ?? "schedule-\(index)"), data: row(for: game))
+        }
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(orderedGames.enumerated()), id: \.offset) { index, game in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Game \(index + 1)")
-                            .font(.headline)
-                        scheduleRow(game)
+            AppTable(columns: columns, rows: tableRows) { row in
+                HStack(spacing: 0) {
+                    AppTableTextCell(text: row.site, width: 48)
+                    AppTableTextCell(text: row.opponent, width: 150, alignment: .leading)
+                    AppTableTextCell(text: row.opponentRecord, width: 58)
+
+                    Group {
+                        if row.isCompleted, let gameId = row.game.gameId {
+                            NavigationLink(value: LeagueMenuDestination.boxScore(gameId)) {
+                                AppTableTextCell(text: row.score, width: 78)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            AppTableTextCell(text: row.score, width: 78, foreground: .secondary)
+                        }
                     }
+
+                    leaderCell(row.gameMVP, width: 132, showValue: false)
+                    leaderCell(row.leadingScorer, width: 132)
+                    leaderCell(row.leadingRebounder, width: 132)
+                    leaderCell(row.leadingAssister, width: 132)
                 }
             }
             .padding(16)
@@ -34,53 +70,176 @@ struct ScheduleListView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func scheduleRow(_ game: UserGameSummary) -> some View {
-        Group {
-            if game.completed == true, let gameId = game.gameId {
-                NavigationLink(value: LeagueMenuDestination.boxScore(gameId)) {
-                    scheduleRowContent(game)
-                }
-                .buttonStyle(.plain)
-            } else {
-                scheduleRowContent(game)
+    @ViewBuilder
+    private func leaderCell(_ leader: ScheduleGameLeader?, width: CGFloat, showValue: Bool = true) -> some View {
+        if let leader {
+            NavigationLink {
+                PlayerCardDetailView(
+                    player: resolvedPlayer(teamName: leader.teamName, boxLine: leader.boxLine),
+                    games: games,
+                    teamName: leader.teamName
+                )
+            } label: {
+                AppTableTextCell(
+                    text: showValue ? "\(leader.playerName) \(leader.value)" : leader.playerName,
+                    width: width,
+                    alignment: .leading,
+                    foreground: leader.isUserTeam ? AppTheme.ink : .secondary.opacity(0.65)
+                )
             }
+            .buttonStyle(.plain)
+        } else {
+            AppTableTextCell(text: "--", width: width, alignment: .leading, foreground: .secondary)
         }
     }
 
-    private func scheduleRowContent(_ game: UserGameSummary) -> some View {
-        GameCard {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("\(game.isHome == true ? "vs" : "@") \(game.opponentName ?? "Unknown")")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Text(game.type?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Game")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if game.completed == true {
-                    let home = game.result?.intValue(for: "homeScore") ?? 0
-                    let away = game.result?.intValue(for: "awayScore") ?? 0
-                    let userScore = game.isHome == true ? home : away
-                    let oppScore = game.isHome == true ? away : home
-                    HStack(spacing: 6) {
-                        GamePill(text: userScore > oppScore ? "W" : "L", color: userScore > oppScore ? AppTheme.success : AppTheme.danger)
-                        Text("\(userScore)-\(oppScore)")
-                            .font(.subheadline.monospacedDigit().weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("Upcoming")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+    private func row(for game: UserGameSummary) -> ScheduleGameRow {
+        let leaders = leaders(for: game)
+        return ScheduleGameRow(
+            game: game,
+            site: siteText(for: game),
+            opponent: game.opponentName ?? "Unknown",
+            opponentRecord: recordText(from: game.opponentRecord),
+            score: scoreText(for: game),
+            isCompleted: game.completed == true,
+            gameMVP: leaders.mvp,
+            leadingScorer: leaders.scorer,
+            leadingRebounder: leaders.rebounder,
+            leadingAssister: leaders.assister
+        )
+    }
+
+    private func siteText(for game: UserGameSummary) -> String {
+        if game.neutralSite == true || game.siteType == "neutral" {
+            return "N"
+        }
+        return game.isHome == true ? "H" : "A"
+    }
+
+    private func scoreText(for game: UserGameSummary) -> String {
+        guard game.completed == true else { return "--" }
+        let home = game.result?.intValue(for: "homeScore") ?? 0
+        let away = game.result?.intValue(for: "awayScore") ?? 0
+        let userScore = game.isHome == true ? home : away
+        let oppScore = game.isHome == true ? away : home
+        let marker = userScore > oppScore ? "W" : "L"
+        return "\(marker) \(userScore)-\(oppScore)"
+    }
+
+    private func recordText(from value: JSONValue?) -> String {
+        guard let wins = value?.intValue(for: "wins"),
+              let losses = value?.intValue(for: "losses") else {
+            return "--"
+        }
+        return "\(wins)-\(losses)"
+    }
+
+    private func leaders(for game: UserGameSummary) -> (
+        mvp: ScheduleGameLeader?,
+        scorer: ScheduleGameLeader?,
+        rebounder: ScheduleGameLeader?,
+        assister: ScheduleGameLeader?
+    ) {
+        let leaders = ParsedTeamBoxScore.parse(from: game.result).flatMap { team in
+            team.players.map { boxLine in
+                ScheduleGameLeader(
+                    playerName: boxLine.playerName,
+                    teamName: team.name,
+                    value: 0,
+                    isUserTeam: team.name.caseInsensitiveCompare(userTeamName) == .orderedSame,
+                    boxLine: boxLine
+                )
             }
         }
+
+        return (
+            topLeader(leaders, value: mvpValue),
+            topLeader(leaders, value: { $0.boxLine.points }),
+            topLeader(leaders, value: { $0.boxLine.rebounds }),
+            topLeader(leaders, value: { $0.boxLine.assists })
+        )
     }
+
+    private func topLeader(
+        _ leaders: [ScheduleGameLeader],
+        value: (ScheduleGameLeader) -> Int
+    ) -> ScheduleGameLeader? {
+        leaders
+            .map { leader -> ScheduleGameLeader in
+                var updated = leader
+                updated.value = value(leader)
+                return updated
+            }
+            .max { lhs, rhs in
+                if lhs.value != rhs.value { return lhs.value < rhs.value }
+                return lhs.playerName.localizedCaseInsensitiveCompare(rhs.playerName) == .orderedDescending
+            }
+    }
+
+    private func mvpValue(_ leader: ScheduleGameLeader) -> Int {
+        let line = leader.boxLine
+        return line.points
+            + Int((Double(line.rebounds) * 1.2).rounded())
+            + Int((Double(line.assists) * 1.5).rounded())
+            + (line.steals * 2)
+            + (line.blocks * 2)
+            - line.turnovers
+    }
+
+    private func rosterForTeam(named teamName: String) -> [UserRosterPlayerSummary]? {
+        if let direct = teamRostersByName[teamName] {
+            return direct
+        }
+        return teamRostersByName.first(where: {
+            $0.key.caseInsensitiveCompare(teamName) == .orderedSame
+        })?.value
+    }
+
+    private func resolvedPlayer(teamName: String, boxLine: ParsedPlayerBoxScore) -> UserRosterPlayerSummary {
+        if let teamRoster = rosterForTeam(named: teamName),
+           let match = teamRoster.first(where: { $0.name == boxLine.playerName }) {
+            return match
+        }
+        if teamName == userTeamName,
+           let match = roster.first(where: { $0.name == boxLine.playerName }) {
+            return match
+        }
+
+        return UserRosterPlayerSummary(
+            playerIndex: -1,
+            name: boxLine.playerName,
+            position: boxLine.position,
+            year: "N/A",
+            home: nil,
+            height: nil,
+            weight: nil,
+            wingspan: nil,
+            overall: 0,
+            isStarter: false,
+            attributes: nil
+        )
+    }
+}
+
+private struct ScheduleGameRow {
+    let game: UserGameSummary
+    let site: String
+    let opponent: String
+    let opponentRecord: String
+    let score: String
+    let isCompleted: Bool
+    let gameMVP: ScheduleGameLeader?
+    let leadingScorer: ScheduleGameLeader?
+    let leadingRebounder: ScheduleGameLeader?
+    let leadingAssister: ScheduleGameLeader?
+}
+
+private struct ScheduleGameLeader {
+    let playerName: String
+    let teamName: String
+    var value: Int
+    let isUserTeam: Bool
+    let boxLine: ParsedPlayerBoxScore
 }
 
 struct BoxScoreDetailView: View {
