@@ -533,10 +533,28 @@ public struct TransferPortalPlayerStats: Codable, Equatable, Sendable {
     }
 }
 
+public enum TransferPortalConferenceLevel: String, Codable, CaseIterable, Equatable, Sendable {
+    case highMajor = "High-Major"
+    case midMajor = "Mid-Major"
+    case lowMajor = "Low-Major"
+}
+
+public func transferPortalConferenceLevel(for conferenceId: String?) -> TransferPortalConferenceLevel {
+    switch conferenceId {
+    case "acc", "big-12", "big-east", "big-ten", "sec":
+        return .highMajor
+    case "atlantic-10", "american", "mountain-west", "mvc", "wcc":
+        return .midMajor
+    default:
+        return .lowMajor
+    }
+}
+
 public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var previousTeamId: String
     public var previousTeamName: String
+    public var previousConferenceId: String? = nil
     public var committedTeamId: String? = nil
     public var committedTeamName: String? = nil
     public var committedOffer: Double? = nil
@@ -561,6 +579,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
         id: String,
         previousTeamId: String,
         previousTeamName: String,
+        previousConferenceId: String? = nil,
         committedTeamId: String? = nil,
         committedTeamName: String? = nil,
         committedOffer: Double? = nil,
@@ -584,6 +603,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
         self.id = id
         self.previousTeamId = previousTeamId
         self.previousTeamName = previousTeamName
+        self.previousConferenceId = previousConferenceId
         self.committedTeamId = committedTeamId
         self.committedTeamName = committedTeamName
         self.committedOffer = committedOffer
@@ -606,7 +626,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, previousTeamId, previousTeamName, committedTeamId, committedTeamName, committedOffer
+        case id, previousTeamId, previousTeamName, previousConferenceId, committedTeamId, committedTeamName, committedOffer
         case finalistTeamIds, finalistTeamNames, interestByTeamId
         case player, playerModel, stats, playerName, position, year, overall, potential
         case askingPrice, intrinsicValue, reason, loyalty, greed
@@ -618,6 +638,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
             id: try container.decode(String.self, forKey: .id),
             previousTeamId: try container.decode(String.self, forKey: .previousTeamId),
             previousTeamName: try container.decode(String.self, forKey: .previousTeamName),
+            previousConferenceId: try container.decodeIfPresent(String.self, forKey: .previousConferenceId),
             committedTeamId: try container.decodeIfPresent(String.self, forKey: .committedTeamId),
             committedTeamName: try container.decodeIfPresent(String.self, forKey: .committedTeamName),
             committedOffer: try container.decodeIfPresent(Double.self, forKey: .committedOffer),

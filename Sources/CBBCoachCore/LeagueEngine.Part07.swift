@@ -174,7 +174,8 @@ public func setNILRetentionOffer(_ league: inout LeagueState, negotiationId: Str
               let index = rows.firstIndex(where: { $0.id == negotiationId && $0.teamId == state.userTeamId }),
               rows[index].status == .open
         else { return nil }
-        rows[index].offer = clamp(offer, min: 0, max: 10_000_000)
+        let budget = nilRetentionBudgetSummary(state, negotiations: rows)
+        rows[index].offer = clamp(offer, min: 0, max: min(10_000_000, budget.remaining))
         state.nilRetention = rows
         return rows[index]
     } ?? nil
@@ -562,6 +563,7 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
             (playerKey(teamId: team.teamId, playerName: player.bio.name), player)
         }
     }, uniquingKeysWith: { first, _ in first })
+    let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
     let statsByTeamAndPlayer = Dictionary(grouping: buildHallCandidateStats(state), by: \.teamId)
         .mapValues { rows in
             Dictionary(rows.map { ($0.playerName, transferPortalStats(from: $0)) }, uniquingKeysWith: { first, second in
@@ -586,6 +588,7 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
                 id: "\(departure.teamId):\(departure.playerName):portal",
                 previousTeamId: departure.teamId,
                 previousTeamName: departure.teamName,
+                previousConferenceId: teamById[departure.teamId]?.conferenceId,
                 player: departure.player,
                 playerModel: rosterPlayerById[playerKey(teamId: departure.teamId, playerName: departure.playerName)],
                 stats: statsByTeamAndPlayer[departure.teamId]?[departure.playerName],
@@ -609,6 +612,7 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
                 id: "\(row.teamId):\(row.playerName):portal",
                 previousTeamId: row.teamId,
                 previousTeamName: row.teamName,
+                previousConferenceId: teamById[row.teamId]?.conferenceId,
                 player: row.player,
                 playerModel: rosterPlayerById[playerKey(teamId: row.teamId, playerName: row.playerName)],
                 stats: statsByTeamAndPlayer[row.teamId]?[row.playerName],

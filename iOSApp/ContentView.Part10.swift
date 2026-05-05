@@ -1771,7 +1771,8 @@ struct NILRetentionView: View {
     }
 
     private func retentionRow(_ row: NILNegotiationEntry) -> some View {
-        let maximumOffer = Int(max(row.demand * 1.25, 100_000).rounded())
+        let offerCeiling = max(row.demand * 1.25, 100_000)
+        let maximumOffer = Int(min(offerCeiling, budget.remaining).rounded())
         let displayedOffer = offerOverrides[row.id] ?? Int(row.offer.rounded())
 
         return VStack(alignment: .leading, spacing: 10) {
@@ -1942,7 +1943,7 @@ struct TransferPortalView: View {
     private let boardStatusWidth: CGFloat = 136
 
     private enum PortalTableColumn: String, Hashable {
-        case target, player, position, year, previous, overall, potential, points, rebounds, assists, steals, blocks, turnovers, assistTurnover, fieldGoal, threePoint, effectiveFieldGoal, minutes, ask, status
+        case target, player, position, year, previous, level, overall, potential, points, rebounds, assists, steals, blocks, turnovers, assistTurnover, fieldGoal, threePoint, effectiveFieldGoal, minutes, ask, status
     }
 
     private enum BoardTableColumn: String, Hashable {
@@ -1977,6 +1978,22 @@ struct TransferPortalView: View {
         }
     }
 
+    private enum PortalLevelFilter: String, CaseIterable, Hashable {
+        case all = "All"
+        case highMajor = "High-Major"
+        case midMajor = "Mid-Major"
+        case lowMajor = "Low-Major"
+
+        var level: TransferPortalConferenceLevel? {
+            switch self {
+            case .all: return nil
+            case .highMajor: return .highMajor
+            case .midMajor: return .midMajor
+            case .lowMajor: return .lowMajor
+            }
+        }
+    }
+
     let summary: TransferPortalSummary?
     let games: [LeagueGameSummary]
     let roster: [UserRosterPlayerSummary]
@@ -1988,6 +2005,7 @@ struct TransferPortalView: View {
     @State private var searchText = ""
     @State private var positionFilter = "All"
     @State private var statusFilter: PortalStatusFilter = .available
+    @State private var levelFilter: PortalLevelFilter = .all
     @State private var interestRankFilter: InterestRankFilter = .all
     @State private var sortColumn: PortalTableColumn = .overall
     @State private var isAscending = false
@@ -2046,6 +2064,7 @@ struct TransferPortalView: View {
                 || row.playerName.localizedCaseInsensitiveContains(query)
                 || row.previousTeamName.localizedCaseInsensitiveContains(query)
             let matchesPosition = positionFilter == "All" || positionFilterMatches(filter: positionFilter, position: row.position)
+            let matchesLevel = levelFilter.level.map { previousConferenceLevel(row) == $0 } ?? true
             let matchesStatus: Bool
             switch statusFilter {
             case .all:
@@ -2065,7 +2084,7 @@ struct TransferPortalView: View {
             } else {
                 matchesInterestRank = true
             }
-            return matchesSearch && matchesPosition && matchesStatus && matchesInterestRank
+            return matchesSearch && matchesPosition && matchesLevel && matchesStatus && matchesInterestRank
         })
     }
 
@@ -2094,6 +2113,7 @@ struct TransferPortalView: View {
             .init(id: .position, title: "POS", width: 42),
             .init(id: .year, title: "YR", width: 34),
             .init(id: .previous, title: "FROM", width: 112, alignment: .leading),
+            .init(id: .level, title: "LEVEL", width: 78),
             .init(id: .overall, title: "OVR", width: 42),
             .init(id: .potential, title: "POT", width: 42),
             .init(id: .points, title: "PTS", width: 46),
@@ -2252,6 +2272,13 @@ struct TransferPortalView: View {
                         )
                         FilterDropdown(
                             title: "",
+                            selection: $levelFilter,
+                            options: PortalLevelFilter.allCases.map { ($0.rawValue, $0) },
+                            isSearchEnabled: false,
+                            isCompact: true
+                        )
+                        FilterDropdown(
+                            title: "",
                             selection: $interestRankFilter,
                             options: InterestRankFilter.allCases.map { ($0.rawValue, $0) },
                             isSearchEnabled: false,
@@ -2278,6 +2305,7 @@ struct TransferPortalView: View {
                             AppTableTextCell(text: row.position, width: 42)
                             AppTableTextCell(text: row.year, width: 34)
                             AppTableTextCell(text: row.previousTeamName, width: 112, alignment: .leading)
+                            AppTableTextCell(text: levelText(row), width: 78)
                             AppTableTextCell(text: "\(row.overall)", width: 42)
                             AppTableTextCell(text: "\(row.potential)", width: 42)
                             AppTableTextCell(text: statText(row.stats?.pointsPerGame), width: 46)
@@ -2414,7 +2442,7 @@ struct TransferPortalView: View {
             isAscending.toggle()
         } else {
             sortColumn = id
-            isAscending = id == .player || id == .position || id == .year || id == .previous || id == .status
+            isAscending = id == .player || id == .position || id == .year || id == .previous || id == .level || id == .status
         }
     }
 
@@ -2439,6 +2467,8 @@ struct TransferPortalView: View {
             return lhs.year.localizedCaseInsensitiveCompare(rhs.year)
         case .previous:
             return lhs.previousTeamName.localizedCaseInsensitiveCompare(rhs.previousTeamName)
+        case .level:
+            return levelText(lhs).localizedCaseInsensitiveCompare(levelText(rhs))
         case .overall:
             return numericCompare(lhs: lhs.overall, rhs: rhs.overall)
         case .potential:
@@ -2571,6 +2601,18 @@ struct TransferPortalView: View {
             return "Open"
         }
         return "Finalists"
+    }
+
+    private func levelText(_ row: TransferPortalEntry) -> String {
+        switch previousConferenceLevel(row) {
+        case .highMajor: return "High"
+        case .midMajor: return "Mid"
+        case .lowMajor: return "Low"
+        }
+    }
+
+    private func previousConferenceLevel(_ row: TransferPortalEntry) -> TransferPortalConferenceLevel {
+        transferPortalConferenceLevel(for: row.previousConferenceId ?? inferredConferenceId(from: row.previousTeamId))
     }
 
     private func statText(_ value: Double?) -> String {
@@ -2847,6 +2889,44 @@ private func positionFilterMatches(filter: String, position: String) -> Bool {
         return false
     }
 }
+
+private func inferredConferenceId(from teamId: String) -> String? {
+    knownD1ConferenceIds.first { teamId.hasPrefix("\($0)-") }
+}
+
+private let knownD1ConferenceIds = [
+    "summit-league",
+    "mountain-west",
+    "america-east",
+    "atlantic-10",
+    "ivy-league",
+    "southland",
+    "big-east",
+    "big-south",
+    "big-west",
+    "sun-belt",
+    "big-sky",
+    "big-ten",
+    "big-12",
+    "american",
+    "patriot",
+    "horizon",
+    "socon",
+    "swac",
+    "cusa",
+    "maac",
+    "meac",
+    "mvc",
+    "nec",
+    "ovc",
+    "wac",
+    "wcc",
+    "acc",
+    "asun",
+    "caa",
+    "mac",
+    "sec"
+]
 
 private func normalizePosition(_ position: String) -> String {
     switch position.uppercased() {
