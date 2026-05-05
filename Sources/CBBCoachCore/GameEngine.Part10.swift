@@ -93,8 +93,9 @@ func evaluatePassTarget(
             let boxIdx = lineupBoxIndices[idx]
             guard boxIdx >= 0, boxIdx < currentBoxPlayers.count else { return 0 }
             let box = currentBoxPlayers[boxIdx]
-            let scorerBias = Double(max(0, box.points - 10)) * 0.45 + Double(max(0, box.fgMade - 4)) * 0.35
-            let overattemptTax = Double(max(0, box.fgAttempts - 12)) * 1.4
+            let scorerBias = Double(max(0, box.points - 16)) * 0.28 + Double(max(0, box.fgMade - 7)) * 0.22
+            let overattemptTax = Double(max(0, box.fgAttempts - 11)) * 1.6
+                + Double(max(0, box.points - 28)) * 0.35
             return overattemptTax - scorerBias
         }()
         let score = shotUtility * 12 + openness * 18 - passRisk * 8 - fatigueTax - inGameLoadTax + random.nextUnit() * 2

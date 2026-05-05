@@ -486,10 +486,9 @@ func makeScale(for shotType: ShotType) -> Double {
     }
 }
 
-// Direct shooter-rating bonus on top of the matchup logistic.
-// The (off−def)/34 → logistic dampens rating spread heavily, so we add a
-// linear talent term that scales with the shooter's primary shot rating.
-// At rating 65 the bonus is 0; an elite 99 adds ~+0.16, a 25 subtracts ~−0.18.
+// Direct shooter-rating bonus on top of the matchup logistic. Keep this modest:
+// the shot interaction already contains the shooter's rating, so this term is a
+// nudge for talent, not a second full make-probability curve.
 func primaryShotRatingPath(for shotType: ShotType) -> String {
     switch shotType {
     case .three: return "shooting.threePointShooting"
@@ -516,9 +515,25 @@ func eliteRatingPremium(_ rating: Double, threshold: Double = 78, maxBoost: Doub
 
 func shooterTalentBonus(for shotType: ShotType, shooter: Player) -> Double {
     let rating = getRating(shooter, path: primaryShotRatingPath(for: shotType))
-    let linear = clamp((rating - 65) / 220, min: -0.18, max: 0.155)
-    let elite = eliteRatingPremium(rating, maxBoost: 0.05)
-    return clamp(linear + elite, min: -0.20, max: 0.21)
+    let linear = clamp((rating - 65) / 340, min: -0.12, max: 0.095)
+    let eliteCap: Double
+    let maxBonus: Double
+    switch shotType {
+    case .three:
+        eliteCap = 0.012
+        maxBonus = 0.105
+    case .midrange, .fadeaway:
+        eliteCap = 0.014
+        maxBonus = 0.110
+    case .close, .layup, .hook:
+        eliteCap = 0.018
+        maxBonus = 0.118
+    case .dunk:
+        eliteCap = 0.020
+        maxBonus = 0.125
+    }
+    let elite = eliteRatingPremium(rating, threshold: 84, maxBoost: eliteCap)
+    return clamp(linear + elite, min: -0.14, max: maxBonus)
 }
 
 func shotTypeEdge(for shotType: ShotType) -> Double {
@@ -547,13 +562,13 @@ func minMakeProbability(for shotType: ShotType) -> Double {
 
 func maxMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.55
-    case .midrange: return 0.58
-    case .close: return 0.66
-    case .layup: return 0.79
-    case .dunk: return 0.905
-    case .hook: return 0.62
-    case .fadeaway: return 0.57
+    case .three: return 0.47
+    case .midrange: return 0.54
+    case .close: return 0.63
+    case .layup: return 0.76
+    case .dunk: return 0.88
+    case .hook: return 0.59
+    case .fadeaway: return 0.535
     }
 }
 

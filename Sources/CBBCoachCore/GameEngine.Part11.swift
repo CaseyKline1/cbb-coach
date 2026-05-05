@@ -230,9 +230,9 @@ func freeThrowMakeProbability(
     random: inout SeededRandom
 ) -> Double {
     let ftRating = getBaseRating(shooter, path: "shooting.freeThrows")
-    let baseRate = clamp(ftRating / 120, min: 0.45, max: 0.92)
-    let elite = eliteRatingPremium(ftRating, maxBoost: 0.04)
-    let base = clamp(baseRate + elite, min: 0.45, max: 0.96)
+    let baseRate = clamp(ftRating / 100, min: 0.52, max: 0.86)
+    let elite = eliteRatingPremium(ftRating, threshold: 84, maxBoost: 0.018)
+    let base = clamp(baseRate + elite, min: 0.52, max: 0.90)
     guard let defenseTeamId, defenseTeamId >= 0, defenseTeamId < stored.teams.count else {
         return base
     }
@@ -258,8 +258,8 @@ func freeThrowMakeProbability(
         defenseRatings: ["defense.defensiveControl", "skills.hustle", "skills.clutch"],
         random: &random
     )
-    let focusBoost = (logistic(interaction.edge) - 0.5) * 0.18
-    return clamp(base + focusBoost, min: 0.4, max: 0.97)
+    let focusBoost = (logistic(interaction.edge) - 0.5) * 0.11
+    return clamp(base + focusBoost, min: 0.48, max: 0.92)
 }
 
 func teamFoulsForPeriod(_ stored: NativeGameStateStore.StoredState, teamId: Int) -> Int {
