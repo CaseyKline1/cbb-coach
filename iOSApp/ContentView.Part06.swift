@@ -133,6 +133,15 @@ struct PlayerCardDetailView: View {
         let totals: PlayerCareerTotals
     }
 
+    private var awardRows: [(id: AnyHashable, text: String)] {
+        (player.awards ?? []).enumerated().map { offset, award in
+            let year = award.year.trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = award.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = year.isEmpty ? title : "\(year): \(title)"
+            return (id: AnyHashable("\(offset):\(text)"), text: text)
+        }
+    }
+
     private var careerRows: [(id: AnyHashable, data: CareerYearRow)] {
         var rows: [CareerYearRow] = []
 
@@ -193,7 +202,7 @@ struct PlayerCardDetailView: View {
             )
         }
 
-        return rows.enumerated().map { offset, row in
+        return rows.reversed().enumerated().map { offset, row in
             (id: AnyHashable("\(offset):\(row.year):\(row.teamAbbreviation)"), data: row)
         }
     }
@@ -250,6 +259,24 @@ struct PlayerCardDetailView: View {
                                 }
                                 if index < ratingSections.count - 1 {
                                     Divider()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !awardRows.isEmpty {
+                    GameCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Awards")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(AppTheme.ink)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(awardRows, id: \.id) { row in
+                                    Text(row.text)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.primary)
                                 }
                             }
                         }

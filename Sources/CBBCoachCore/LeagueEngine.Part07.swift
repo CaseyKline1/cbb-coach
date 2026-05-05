@@ -1803,7 +1803,7 @@ private func parseMeasurementInches(_ value: String?) -> Int? {
     return Int(trimmed)
 }
 
-private func hallHonorsByTeamAndPlayer(_ state: LeagueStore.State) -> [String: [String: [String]]] {
+func hallHonorsByTeamAndPlayer(_ state: LeagueStore.State) -> [String: [String: [String]]] {
     let stats = buildHallCandidateStats(state)
     let eligible = stats
         .filter { $0.games >= 8 && $0.minutesPerGame >= 12 }

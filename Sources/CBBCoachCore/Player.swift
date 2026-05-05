@@ -176,6 +176,16 @@ public struct Player: Codable, Equatable, Sendable {
         }
     }
 
+    public struct CareerAward: Codable, Equatable, Sendable {
+        public var year: String
+        public var title: String
+
+        public init(year: String, title: String) {
+            self.year = year
+            self.title = title
+        }
+    }
+
     public var bio = Bio()
     public var athleticism = Athleticism()
     public var shooting = Shooting()
@@ -189,6 +199,7 @@ public struct Player: Codable, Equatable, Sendable {
     public var greed: Double? = nil
     public var loyalty: Double? = nil
     public var careerSeasons: [CareerSeason]? = nil
+    public var awards: [CareerAward]? = nil
 
     public init() {}
 }

@@ -35,6 +35,32 @@ private func markSeasonCompleted(_ state: inout LeagueStore.State) {
         state.offseasonStage = .seasonRecap
     }
     captureCareerSeasonStats(&state)
+    captureSeasonAwards(&state)
+}
+
+private func captureSeasonAwards(_ state: inout LeagueStore.State) {
+    let honorsByTeamAndPlayer = hallHonorsByTeamAndPlayer(state)
+    guard !honorsByTeamAndPlayer.isEmpty else { return }
+
+    for teamIndex in state.teams.indices {
+        let teamId = state.teams[teamIndex].teamId
+        guard let teamHonors = honorsByTeamAndPlayer[teamId] else { continue }
+
+        for playerIndex in state.teams[teamIndex].teamModel.players.indices {
+            let playerName = state.teams[teamIndex].teamModel.players[playerIndex].bio.name
+            guard let honors = teamHonors[playerName], !honors.isEmpty else { continue }
+
+            let year = state.teams[teamIndex].teamModel.players[playerIndex].bio.year.rawValue
+            var awards = state.teams[teamIndex].teamModel.players[playerIndex].awards ?? []
+            for honor in honors {
+                let award = Player.CareerAward(year: year, title: honor)
+                if !awards.contains(award) {
+                    awards.append(award)
+                }
+            }
+            state.teams[teamIndex].teamModel.players[playerIndex].awards = awards
+        }
+    }
 }
 
 private func captureCareerSeasonStats(_ state: inout LeagueStore.State) {
