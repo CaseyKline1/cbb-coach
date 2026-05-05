@@ -504,7 +504,12 @@ func primaryShotRatingPath(for shotType: ShotType) -> String {
 
 func shooterTalentBonus(for shotType: ShotType, shooter: Player) -> Double {
     let rating = getRating(shooter, path: primaryShotRatingPath(for: shotType))
-    return clamp((rating - 65) / 220, min: -0.18, max: 0.16)
+    // Linear baseline anchored at 65; ±~17pp at the extremes.
+    let linear = clamp((rating - 65) / 220, min: -0.18, max: 0.155)
+    // Elite premium: quadratic boost above 78 so that 99 OVR pulls clearly
+    // ahead of 90 OVR rather than the difference flattening at the top.
+    let elite: Double = rating > 78 ? pow((rating - 78) / 21, 2) * 0.05 : 0
+    return clamp(linear + elite, min: -0.20, max: 0.21)
 }
 
 func shotTypeEdge(for shotType: ShotType) -> Double {
