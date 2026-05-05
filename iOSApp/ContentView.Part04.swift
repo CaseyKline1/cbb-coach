@@ -216,21 +216,25 @@ struct RotationSettingsView: View {
             }
         }
 
-        var diff = targetTotal - normalized.reduce(0) { $0 + $1.minutes }
+        // Priority order: prefer adjusting slots that already have meaningful minutes
+        // when reducing, and slots with highest current minutes when adding.
+        let priorityOrder = normalized.indices.sorted { normalized[$0].minutes > normalized[$1].minutes }
+
         var guardCount = 0
-        while abs(diff) >= 0.49 && guardCount < 1000 {
+        while abs(targetTotal - normalized.reduce(0) { $0 + $1.minutes }) >= 0.25 && guardCount < 4000 {
             guardCount += 1
+            let diff = targetTotal - normalized.reduce(0) { $0 + $1.minutes }
             let step = diff > 0 ? 0.5 : -0.5
+            let order = diff > 0 ? priorityOrder : Array(priorityOrder.reversed())
             var adjusted = false
-            for index in normalized.indices {
+            for index in order {
                 let candidate = normalized[index].minutes + step
-                if candidate < 0 || candidate > 40 { continue }
+                if candidate < -0.001 || candidate > 40.001 { continue }
                 normalized[index].minutes = candidate
                 adjusted = true
                 break
             }
             if !adjusted { break }
-            diff = targetTotal - normalized.reduce(0) { $0 + $1.minutes }
         }
 
         return normalized

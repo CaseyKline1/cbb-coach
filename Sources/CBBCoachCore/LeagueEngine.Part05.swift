@@ -444,17 +444,89 @@ func defaultRotationSlots(for team: Team) -> [UserRotationSlot] {
     let starters = team.lineup
     let lineupNames = Set(starters.map { $0.bio.name })
 
-    let starterSlots = starters.enumerated().map { idx, player in
-        let playerIndex = team.players.firstIndex(where: { $0.bio.name == player.bio.name })
-        return UserRotationSlot(slot: idx, playerIndex: playerIndex, position: player.bio.position.rawValue, minutes: 28)
+    let benchPairs = Array(team.players.enumerated().filter { !lineupNames.contains($0.element.bio.name) }.prefix(5))
+
+    let totalSlots = starters.count + benchPairs.count
+    let totalTarget = min(200.0, Double(totalSlots) * 40.0)
+
+    let starterTarget: Double
+    let benchTarget: Double
+    if !starters.isEmpty && !benchPairs.isEmpty {
+        starterTarget = (totalTarget * 0.70 * 2).rounded() / 2
+        benchTarget = totalTarget - starterTarget
+    } else if !starters.isEmpty {
+        starterTarget = totalTarget
+        benchTarget = 0
+    } else {
+        starterTarget = 0
+        benchTarget = totalTarget
     }
 
-    let benchPlayers = team.players.enumerated().filter { !lineupNames.contains($0.element.bio.name) }
-    let benchSlots = benchPlayers.prefix(5).enumerated().map { benchIdx, pair in
-        UserRotationSlot(slot: benchIdx + 5, playerIndex: pair.offset, position: pair.element.bio.position.rawValue, minutes: 12)
+    let starterMinutes = balancedMinutes(
+        overalls: starters.map { Double(playerOverall($0)) },
+        target: starterTarget,
+        softMin: 18,
+        softMax: 36
+    )
+    let benchMinutes = balancedMinutes(
+        overalls: benchPairs.map { Double(playerOverall($0.element)) },
+        target: benchTarget,
+        softMin: 4,
+        softMax: 24
+    )
+
+    let starterSlots = starters.enumerated().map { idx, player -> UserRotationSlot in
+        let playerIndex = team.players.firstIndex(where: { $0.bio.name == player.bio.name })
+        return UserRotationSlot(slot: idx, playerIndex: playerIndex, position: player.bio.position.rawValue, minutes: starterMinutes[idx])
+    }
+
+    let benchSlots = benchPairs.enumerated().map { benchIdx, pair -> UserRotationSlot in
+        UserRotationSlot(slot: benchIdx + 5, playerIndex: pair.offset, position: pair.element.bio.position.rawValue, minutes: benchMinutes[benchIdx])
     }
 
     return starterSlots + benchSlots
+}
+
+func balancedMinutes(overalls: [Double], target: Double, softMin: Double, softMax: Double) -> [Double] {
+    guard !overalls.isEmpty, target > 0 else {
+        return Array(repeating: 0, count: overalls.count)
+    }
+    let count = Double(overalls.count)
+    let avg = target / count
+    let mean = overalls.reduce(0, +) / count
+    var values = overalls.map { o -> Double in
+        let weighted = avg + (o - mean) * 0.35
+        let bounded = min(softMax, max(softMin, weighted))
+        return (bounded * 2).rounded() / 2
+    }
+    forceTotal(&values, target: target, hardMin: 0, hardMax: 40, preferredMin: softMin, preferredMax: softMax, overalls: overalls)
+    return values
+}
+
+func forceTotal(_ values: inout [Double], target: Double, hardMin: Double, hardMax: Double, preferredMin: Double, preferredMax: Double, overalls: [Double]) {
+    guard !values.isEmpty else { return }
+    let order = values.indices.sorted { overalls[$0] > overalls[$1] }
+    var guardCount = 0
+    while abs(values.reduce(0, +) - target) >= 0.25 && guardCount < 4000 {
+        guardCount += 1
+        let diff = target - values.reduce(0, +)
+        let step = diff > 0 ? 0.5 : -0.5
+        let preferIndices = diff > 0 ? order : order.reversed()
+        var adjusted = false
+        for tier in 0..<2 {
+            let lower = tier == 0 ? preferredMin : hardMin
+            let upper = tier == 0 ? preferredMax : hardMax
+            for i in preferIndices {
+                let candidate = values[i] + step
+                if candidate < lower - 0.001 || candidate > upper + 0.001 { continue }
+                values[i] = candidate
+                adjusted = true
+                break
+            }
+            if adjusted { break }
+        }
+        if !adjusted { break }
+    }
 }
 
 let homeCourtBoost = 1.03
