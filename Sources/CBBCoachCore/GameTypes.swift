@@ -63,9 +63,11 @@ public struct TeamTendencies: Codable, Equatable, Sendable {
 
 public struct TeamRotation: Codable, Equatable, Sendable {
     public var minuteTargets: [String: Double]
+    public var slotPlayerNames: [String]?
 
-    public init(minuteTargets: [String: Double] = [:]) {
+    public init(minuteTargets: [String: Double] = [:], slotPlayerNames: [String]? = nil) {
         self.minuteTargets = minuteTargets
+        self.slotPlayerNames = slotPlayerNames
     }
 }
 

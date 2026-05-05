@@ -383,17 +383,78 @@ public func getUserRotation(_ league: LeagueState) -> [UserRotationSlot] {
         return []
     }
 
-    let defaultSlots = defaultRotationSlots(for: user.teamModel)
-    guard let targets = user.teamModel.rotation?.minuteTargets, !targets.isEmpty else {
+    return userRotationSlots(for: user.teamModel)
+}
+
+func userRotationSlots(for team: Team) -> [UserRotationSlot] {
+    let defaultSlots = defaultRotationSlots(for: team)
+    guard let rotation = team.rotation else {
+        return defaultSlots
+    }
+
+    if let orderedSlots = savedRotationSlots(for: team, rotation: rotation, defaultSlots: defaultSlots) {
+        return orderedSlots
+    }
+
+    guard !rotation.minuteTargets.isEmpty else {
         return defaultSlots
     }
 
     return defaultSlots.map { slot in
-        guard let playerIndex = slot.playerIndex, playerIndex < user.teamModel.players.count else { return slot }
-        let player = user.teamModel.players[playerIndex]
-        let mapped = targets[player.bio.name] ?? slot.minutes
+        guard let playerIndex = slot.playerIndex, playerIndex < team.players.count else { return slot }
+        let player = team.players[playerIndex]
+        let mapped = rotation.minuteTargets[player.bio.name] ?? slot.minutes
         return UserRotationSlot(slot: slot.slot, playerIndex: slot.playerIndex, position: slot.position, minutes: mapped)
     }
+}
+
+private func savedRotationSlots(for team: Team, rotation: TeamRotation, defaultSlots: [UserRotationSlot]) -> [UserRotationSlot]? {
+    guard let slotPlayerNames = rotation.slotPlayerNames, !slotPlayerNames.isEmpty else {
+        return nil
+    }
+
+    var playerIndexByName: [String: Int] = [:]
+    for (index, player) in team.players.enumerated() where playerIndexByName[player.bio.name] == nil {
+        playerIndexByName[player.bio.name] = index
+    }
+
+    var defaultMinutesByName: [String: Double] = [:]
+    for slot in defaultSlots {
+        guard let playerIndex = slot.playerIndex, playerIndex >= 0, playerIndex < team.players.count else { continue }
+        defaultMinutesByName[team.players[playerIndex].bio.name] = slot.minutes
+    }
+
+    var usedNames: Set<String> = []
+    var slots: [UserRotationSlot] = []
+
+    func appendSlot(for playerName: String) {
+        guard !usedNames.contains(playerName), let playerIndex = playerIndexByName[playerName] else { return }
+        usedNames.insert(playerName)
+        let player = team.players[playerIndex]
+        slots.append(
+            UserRotationSlot(
+                slot: slots.count + 1,
+                playerIndex: playerIndex,
+                position: player.bio.position.rawValue,
+                minutes: rotation.minuteTargets[playerName] ?? defaultMinutesByName[playerName] ?? 0
+            )
+        )
+    }
+
+    for playerName in slotPlayerNames {
+        appendSlot(for: playerName)
+    }
+
+    for slot in defaultSlots {
+        guard let playerIndex = slot.playerIndex, playerIndex >= 0, playerIndex < team.players.count else { continue }
+        appendSlot(for: team.players[playerIndex].bio.name)
+    }
+
+    for player in team.players {
+        appendSlot(for: player.bio.name)
+    }
+
+    return slots.isEmpty ? nil : slots
 }
 
 public func setUserRotation(_ league: inout LeagueState, slots: [UserRotationSlot]) -> [UserRotationSlot] {
@@ -409,9 +470,15 @@ public func setUserRotation(_ league: inout LeagueState, slots: [UserRotationSlo
             let playerName = team.players[playerIndex].bio.name
             targets[playerName] = clamp(slot.minutes, min: 0, max: 40)
         }
+        let slotPlayerNames = slots
+            .sorted { $0.slot < $1.slot }
+            .compactMap { slot -> String? in
+                guard let playerIndex = slot.playerIndex, playerIndex >= 0, playerIndex < team.players.count else { return nil }
+                return team.players[playerIndex].bio.name
+            }
 
         var updatedTeam = team
-        updatedTeam.rotation = TeamRotation(minuteTargets: targets)
+        updatedTeam.rotation = TeamRotation(minuteTargets: targets, slotPlayerNames: slotPlayerNames)
 
         let lineupIndexes = slots
             .sorted { $0.minutes > $1.minutes }
@@ -424,16 +491,7 @@ public func setUserRotation(_ league: inout LeagueState, slots: [UserRotationSlo
 
         state.teams[userIndex].teamModel = updatedTeam
 
-        let defaultSlots = defaultRotationSlots(for: updatedTeam)
-        guard let minuteTargets = updatedTeam.rotation?.minuteTargets, !minuteTargets.isEmpty else {
-            return defaultSlots
-        }
-        return defaultSlots.map { slot in
-            guard let playerIndex = slot.playerIndex, playerIndex < updatedTeam.players.count else { return slot }
-            let player = updatedTeam.players[playerIndex]
-            let mapped = minuteTargets[player.bio.name] ?? slot.minutes
-            return UserRotationSlot(slot: slot.slot, playerIndex: slot.playerIndex, position: slot.position, minutes: mapped)
-        }
+        return userRotationSlots(for: updatedTeam)
     } ?? []
 }
 
