@@ -79,8 +79,8 @@ struct PlaybookView: View {
             didLoad = true
             loadInitial()
         }
-        .onChange(of: pace) { _ in autosave() }
-        .onChange(of: defenseScheme) { _ in autosave() }
+        .onChange(of: pace) { _, _ in autosave() }
+        .onChange(of: defenseScheme) { _, _ in autosave() }
     }
 
     private func autosave() {
