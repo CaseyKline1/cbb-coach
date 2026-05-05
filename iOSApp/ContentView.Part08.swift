@@ -23,6 +23,8 @@ struct TeamAggregateStats: Sendable {
     var pointsInPaint: Int = 0
     var offensiveRebounds: Int = 0
     var opponentDefensiveRebounds: Int = 0
+    var adjustedOffensiveEfficiency: Double = 0
+    var adjustedDefensiveEfficiency: Double = 0
 
     private func perGame(_ value: Int) -> Double {
         guard games > 0 else { return 0 }
@@ -165,6 +167,8 @@ struct TeamStatsView: View {
     private var metricDefinitions: [MetricDefinition] {
         [
             .init(id: "ppg", title: "PPG", higherIsBetter: true, extractor: { $0.pointsPerGame }, formatter: formatPerGame),
+            .init(id: "adjoe", title: "ADJ OE", higherIsBetter: true, extractor: { $0.adjustedOffensiveEfficiency }, formatter: formatEfficiency),
+            .init(id: "adjde", title: "ADJ DE", higherIsBetter: false, extractor: { $0.adjustedDefensiveEfficiency }, formatter: formatEfficiency),
             .init(id: "apg", title: "APG", higherIsBetter: true, extractor: { $0.assistsPerGame }, formatter: formatPerGame),
             .init(id: "spg", title: "SPG", higherIsBetter: true, extractor: { $0.stealsPerGame }, formatter: formatPerGame),
             .init(id: "bpg", title: "BPG", higherIsBetter: true, extractor: { $0.blocksPerGame }, formatter: formatPerGame),
@@ -365,6 +369,11 @@ struct TeamStatsView: View {
 
     private func formatPercent(_ value: Double) -> String {
         String(format: "%.1f%%", value)
+    }
+
+    private func formatEfficiency(_ value: Double) -> String {
+        guard value > 0 else { return "--" }
+        return String(format: "%.1f", value)
     }
 }
 

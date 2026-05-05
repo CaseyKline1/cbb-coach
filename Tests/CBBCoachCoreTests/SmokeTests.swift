@@ -224,6 +224,29 @@ func completedLeagueGamesCarryBoxScore() throws {
     #expect(boxArray.count == 2)
 }
 
+@Test("Team efficiency ratings populate after completed games")
+func teamEfficiencyRatingsPopulate() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "team-efficiency-tests", totalRegularSeasonGames: 1))
+    autoFillUserNonConferenceOpponents(&league)
+    generateSeasonSchedule(&league)
+    _ = advanceToNextUserGame(&league)
+
+    let summary = getLeagueSummary(league)
+    let ratings = getTeamEfficiencyRatings(league)
+    guard let userRating = ratings.first(where: { $0.teamId == summary.userTeamId }) else {
+        Issue.record("Missing user team efficiency rating")
+        return
+    }
+
+    #expect(userRating.gamesPlayed > 0)
+    #expect(userRating.rawOffensiveEfficiency > 0)
+    #expect(userRating.rawDefensiveEfficiency > 0)
+    #expect(userRating.adjustedOffensiveEfficiency > 0)
+    #expect(userRating.adjustedDefensiveEfficiency > 0)
+    #expect(userRating.pythagoreanExpectation >= 0)
+    #expect(userRating.pythagoreanExpectation <= 1)
+}
+
 @Test("Conference tournaments are scheduled after regular season")
 func conferenceTournamentsFollowRegularSeason() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "conference-tourney-smoke", totalRegularSeasonGames: 1))

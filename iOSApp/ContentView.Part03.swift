@@ -216,12 +216,23 @@ extension CollegeLeagueHomeView {
             uniquingKeysWith: { first, _ in first }
         )
         let completedGames = getCompletedLeagueGames(league)
+        let efficiencyRatingsByTeamId = Dictionary(
+            getTeamEfficiencyRatings(league).map { ($0.teamId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var teamStats = TeamStatsView.aggregateTeamStats(from: completedGames)
+        for (teamId, rating) in efficiencyRatingsByTeamId {
+            guard var stats = teamStats[teamId] else { continue }
+            stats.adjustedOffensiveEfficiency = rating.adjustedOffensiveEfficiency
+            stats.adjustedDefensiveEfficiency = rating.adjustedDefensiveEfficiency
+            teamStats[teamId] = stats
+        }
         return DeferredLeagueRefreshData(
             conferenceStandings: standingsData.standings,
             conferenceNamesById: standingsData.conferenceNames,
             completedLeagueGames: completedGames,
             teamRostersByName: teamRosters,
-            teamStatsById: TeamStatsView.aggregateTeamStats(from: completedGames)
+            teamStatsById: teamStats
         )
     }
 

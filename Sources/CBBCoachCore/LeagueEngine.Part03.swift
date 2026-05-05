@@ -527,12 +527,18 @@ public func getRankings(_ league: LeagueState, topN: Int = 25) -> LeagueRankings
     return calculateRankings(state, topN: topN)
 }
 
+public func getTeamEfficiencyRatings(_ league: LeagueState) -> [TeamEfficiencyRating] {
+    guard let state = LeagueStore.get(league.handle) else { return [] }
+    return calculateTeamEfficiencyRatings(state)
+}
+
 func calculateRankings(_ state: LeagueStore.State, topN: Int) -> LeagueRankings {
     let maxGamesPlayed = state.teams.map { $0.wins + $0.losses }.max() ?? 0
     let seasonTarget = max(1, state.totalRegularSeasonGames)
     let seasonProgress = clamp(Double(maxGamesPlayed) / Double(seasonTarget), min: 0, max: 1)
     let preseasonWeight = clamp(1 - seasonProgress * 0.9, min: 0.1, max: 1)
     let inSeasonWeight = 1 - preseasonWeight
+    let efficiencyRatingsByTeamId = Dictionary(uniqueKeysWithValues: calculateTeamEfficiencyRatings(state).map { ($0.teamId, $0) })
     let teamPowerById = Dictionary(uniqueKeysWithValues: state.teams.map { team in
         let games = team.wins + team.losses
         let winRate = games > 0 ? Double(team.wins) / Double(games) : team.lastYearResult
@@ -576,11 +582,16 @@ func calculateRankings(_ state: LeagueStore.State, topN: Int) -> LeagueRankings 
         let lowSchedulePenalty = clamp((0.52 - strengthOfSchedule) / 0.22, min: 0, max: 1)
             * clamp((winRate - 0.76) / 0.24, min: 0, max: 1)
             * clamp((0.14 - qualityWinShare) / 0.14, min: 0, max: 1)
+        let efficiencyRating = efficiencyRatingsByTeamId[team.teamId]
+        let adjustedOffensiveEfficiency = efficiencyRating?.adjustedOffensiveEfficiency ?? 0
+        let adjustedDefensiveEfficiency = efficiencyRating?.adjustedDefensiveEfficiency ?? 0
+        let pythagoreanExpectation = efficiencyRating?.pythagoreanExpectation ?? winRate
 
         let preseasonScore = playerSkill * 0.45 + coachQuality * 0.25 + team.prestige * 0.2 + team.lastYearResult * 0.1
         let rawInSeasonScore = scheduleAdjustedWinRate * 0.25
             + qualityWinRate * 0.2
-            + clamp((pointDiffPerGame + 20) / 40, min: 0, max: 1) * 0.08
+            + clamp((pointDiffPerGame + 20) / 40, min: 0, max: 1) * 0.04
+            + pythagoreanExpectation * 0.04
             + strengthOfSchedule * 0.36
             + qualityWinShare * 0.11
         let inSeasonScore = clamp(rawInSeasonScore - lowSchedulePenalty * 0.16, min: 0, max: 1)
@@ -602,6 +613,8 @@ func calculateRankings(_ state: LeagueStore.State, topN: Int) -> LeagueRankings 
             prestige: team.prestige,
             lastYearResult: team.lastYearResult,
             coachQuality: coachQuality,
+            adjustedOffensiveEfficiency: adjustedOffensiveEfficiency,
+            adjustedDefensiveEfficiency: adjustedDefensiveEfficiency,
             preseasonScore: preseasonScore,
             inSeasonScore: inSeasonScore,
             compositeScore: composite
@@ -621,6 +634,194 @@ func calculateRankings(_ state: LeagueStore.State, topN: Int) -> LeagueRankings 
 
     let top = Array(ranked.prefix(max(1, topN)))
     return LeagueRankings(topN: max(1, topN), seasonProgress: seasonProgress, preseasonWeight: preseasonWeight, inSeasonWeight: inSeasonWeight, rankings: top)
+}
+
+private struct EfficiencyGameLine {
+    let teamId: String
+    let teamName: String
+    let conferenceId: String
+    let opponentTeamId: String
+    let pointsFor: Int
+    let pointsAgainst: Int
+    let possessions: Double
+    let day: Int
+
+    var rawOffensiveEfficiency: Double {
+        guard possessions > 0 else { return 0 }
+        return Double(pointsFor) / possessions * 100
+    }
+
+    var rawDefensiveEfficiency: Double {
+        guard possessions > 0 else { return 0 }
+        return Double(pointsAgainst) / possessions * 100
+    }
+}
+
+private struct EfficiencyBoxLine {
+    let points: Int
+    let fieldGoalAttempts: Int
+    let freeThrowAttempts: Int
+    let offensiveRebounds: Int
+    let turnovers: Int
+
+    var estimatedPossessions: Double {
+        max(1, Double(fieldGoalAttempts - offensiveRebounds + turnovers) + Double(freeThrowAttempts) * 0.475)
+    }
+}
+
+private func calculateTeamEfficiencyRatings(_ state: LeagueStore.State) -> [TeamEfficiencyRating] {
+    let gameLines = buildEfficiencyGameLines(state)
+    guard !gameLines.isEmpty else {
+        return state.teams.map { team in
+            TeamEfficiencyRating(
+                teamId: team.teamId,
+                teamName: team.teamName,
+                conferenceId: team.conferenceId,
+                gamesPlayed: 0,
+                rawOffensiveEfficiency: 0,
+                rawDefensiveEfficiency: 0,
+                adjustedOffensiveEfficiency: 0,
+                adjustedDefensiveEfficiency: 0,
+                pythagoreanExpectation: team.lastYearResult
+            )
+        }
+    }
+
+    let nationalAverageEfficiency = average(gameLines.map(\.rawOffensiveEfficiency))
+    var adjustedOffenseByTeamId = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, nationalAverageEfficiency) })
+    var adjustedDefenseByTeamId = adjustedOffenseByTeamId
+    let maxDay = gameLines.map(\.day).max() ?? 0
+
+    for _ in 0..<18 {
+        var offenseSums: [String: Double] = [:]
+        var offenseWeights: [String: Double] = [:]
+        var defenseSums: [String: Double] = [:]
+        var defenseWeights: [String: Double] = [:]
+
+        for line in gameLines {
+            let weight = recencyWeight(gameDay: line.day, maxDay: maxDay)
+            let opponentDefense = max(1, adjustedDefenseByTeamId[line.opponentTeamId] ?? nationalAverageEfficiency)
+            let opponentOffense = max(1, adjustedOffenseByTeamId[line.opponentTeamId] ?? nationalAverageEfficiency)
+            let adjustedGameOffense = line.rawOffensiveEfficiency * nationalAverageEfficiency / opponentDefense
+            let adjustedGameDefense = line.rawDefensiveEfficiency * nationalAverageEfficiency / opponentOffense
+            offenseSums[line.teamId, default: 0] += adjustedGameOffense * weight
+            offenseWeights[line.teamId, default: 0] += weight
+            defenseSums[line.teamId, default: 0] += adjustedGameDefense * weight
+            defenseWeights[line.teamId, default: 0] += weight
+        }
+
+        for team in state.teams {
+            if let weight = offenseWeights[team.teamId], weight > 0 {
+                adjustedOffenseByTeamId[team.teamId] = offenseSums[team.teamId, default: 0] / weight
+            }
+            if let weight = defenseWeights[team.teamId], weight > 0 {
+                adjustedDefenseByTeamId[team.teamId] = defenseSums[team.teamId, default: 0] / weight
+            }
+        }
+    }
+
+    let linesByTeamId = Dictionary(grouping: gameLines, by: \.teamId)
+    return state.teams.map { team in
+        let lines = linesByTeamId[team.teamId] ?? []
+        let possessions = lines.map(\.possessions).reduce(0, +)
+        let pointsFor = lines.map(\.pointsFor).reduce(0, +)
+        let pointsAgainst = lines.map(\.pointsAgainst).reduce(0, +)
+        let rawOffense = possessions > 0 ? Double(pointsFor) / possessions * 100 : 0
+        let rawDefense = possessions > 0 ? Double(pointsAgainst) / possessions * 100 : 0
+        let adjustedOffense = adjustedOffenseByTeamId[team.teamId] ?? 0
+        let adjustedDefense = adjustedDefenseByTeamId[team.teamId] ?? 0
+
+        return TeamEfficiencyRating(
+            teamId: team.teamId,
+            teamName: team.teamName,
+            conferenceId: team.conferenceId,
+            gamesPlayed: lines.count,
+            rawOffensiveEfficiency: rawOffense,
+            rawDefensiveEfficiency: rawDefense,
+            adjustedOffensiveEfficiency: adjustedOffense,
+            adjustedDefensiveEfficiency: adjustedDefense,
+            pythagoreanExpectation: pythagoreanExpectation(
+                adjustedOffensiveEfficiency: adjustedOffense,
+                adjustedDefensiveEfficiency: adjustedDefense,
+                fallback: team.lastYearResult
+            )
+        )
+    }
+}
+
+private func buildEfficiencyGameLines(_ state: LeagueStore.State) -> [EfficiencyGameLine] {
+    let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
+    var lines: [EfficiencyGameLine] = []
+
+    for game in state.schedule where game.completed {
+        guard
+            let result = game.result,
+            let homeBox = efficiencyBoxLine(boxScore: result.boxScore?.first, points: result.homeScore),
+            let awayBox = efficiencyBoxLine(boxScore: result.boxScore?.dropFirst().first, points: result.awayScore),
+            let homeTeam = teamById[game.homeTeamId],
+            let awayTeam = teamById[game.awayTeamId]
+        else {
+            continue
+        }
+
+        let sharedPossessions = max(1, (homeBox.estimatedPossessions + awayBox.estimatedPossessions) / 2)
+        lines.append(EfficiencyGameLine(
+            teamId: game.homeTeamId,
+            teamName: game.homeTeamName,
+            conferenceId: homeTeam.conferenceId,
+            opponentTeamId: game.awayTeamId,
+            pointsFor: result.homeScore,
+            pointsAgainst: result.awayScore,
+            possessions: sharedPossessions,
+            day: game.day
+        ))
+        lines.append(EfficiencyGameLine(
+            teamId: game.awayTeamId,
+            teamName: game.awayTeamName,
+            conferenceId: awayTeam.conferenceId,
+            opponentTeamId: game.homeTeamId,
+            pointsFor: result.awayScore,
+            pointsAgainst: result.homeScore,
+            possessions: sharedPossessions,
+            day: game.day
+        ))
+    }
+
+    return lines
+}
+
+private func efficiencyBoxLine(boxScore: TeamBoxScore?, points: Int) -> EfficiencyBoxLine? {
+    guard let boxScore else { return nil }
+    let playerTotals = boxScore.players.reduce(into: (fieldGoalAttempts: 0, freeThrowAttempts: 0, offensiveRebounds: 0, turnovers: 0)) { totals, player in
+        totals.fieldGoalAttempts += player.fgAttempts
+        totals.freeThrowAttempts += player.ftAttempts
+        totals.offensiveRebounds += player.offensiveRebounds
+        totals.turnovers += player.turnovers
+    }
+    return EfficiencyBoxLine(
+        points: points,
+        fieldGoalAttempts: playerTotals.fieldGoalAttempts,
+        freeThrowAttempts: playerTotals.freeThrowAttempts,
+        offensiveRebounds: playerTotals.offensiveRebounds,
+        turnovers: boxScore.teamExtras?["turnovers"] ?? playerTotals.turnovers
+    )
+}
+
+private func recencyWeight(gameDay: Int, maxDay: Int) -> Double {
+    let daysAgo = max(0, maxDay - gameDay)
+    return pow(0.985, Double(daysAgo))
+}
+
+private func pythagoreanExpectation(
+    adjustedOffensiveEfficiency offense: Double,
+    adjustedDefensiveEfficiency defense: Double,
+    fallback: Double
+) -> Double {
+    guard offense > 0, defense > 0 else { return clamp(fallback, min: 0, max: 1) }
+    let exponent = 10.25
+    let offensePower = pow(offense, exponent)
+    let defensePower = pow(defense, exponent)
+    return clamp(offensePower / max(0.0001, offensePower + defensePower), min: 0, max: 1)
 }
 
 public func getNationalTournamentBracket(_ league: LeagueState) -> NationalTournamentBracket? {
