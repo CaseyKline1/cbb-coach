@@ -129,6 +129,15 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
     return LeagueState(handle: handle)
 }
 
+public func listAllD1SchoolNames() -> [String] {
+    guard let dataset = try? LoadedD1Data.get() else {
+        return []
+    }
+    return dataset.conferences
+        .flatMap { $0.teams.map { $0.name } }
+        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+}
+
 public func listCareerTeamOptions() -> [CareerTeamOption] {
     guard let dataset = try? LoadedD1Data.get() else {
         return []

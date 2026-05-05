@@ -332,25 +332,37 @@ struct CoachBackgroundStepView: View {
     let identity: CoachIdentitySelection
     let onNext: (CoachBackgroundSelection) -> Void
 
-    @State private var almaMater: String = "Independent"
+    @State private var almaMater: String = ""
     @State private var pipelineState: String = "CA"
+    @State private var almaMaterOptions: [String] = []
+
+    private static let pipelineOptions: [(label: String, value: String)] = [
+        ("Alabama (AL)", "AL"), ("Alaska (AK)", "AK"), ("Arizona (AZ)", "AZ"),
+        ("Arkansas (AR)", "AR"), ("California (CA)", "CA"), ("Colorado (CO)", "CO"),
+        ("Connecticut (CT)", "CT"), ("Delaware (DE)", "DE"), ("Florida (FL)", "FL"),
+        ("Georgia (GA)", "GA"), ("Hawaii (HI)", "HI"), ("Idaho (ID)", "ID"),
+        ("Illinois (IL)", "IL"), ("Indiana (IN)", "IN"), ("Iowa (IA)", "IA"),
+        ("Kansas (KS)", "KS"), ("Kentucky (KY)", "KY"), ("Louisiana (LA)", "LA"),
+        ("Maine (ME)", "ME"), ("Maryland (MD)", "MD"), ("Massachusetts (MA)", "MA"),
+        ("Michigan (MI)", "MI"), ("Minnesota (MN)", "MN"), ("Mississippi (MS)", "MS"),
+        ("Missouri (MO)", "MO"), ("Montana (MT)", "MT"), ("Nebraska (NE)", "NE"),
+        ("Nevada (NV)", "NV"), ("New Hampshire (NH)", "NH"), ("New Jersey (NJ)", "NJ"),
+        ("New Mexico (NM)", "NM"), ("New York (NY)", "NY"), ("North Carolina (NC)", "NC"),
+        ("North Dakota (ND)", "ND"), ("Ohio (OH)", "OH"), ("Oklahoma (OK)", "OK"),
+        ("Oregon (OR)", "OR"), ("Pennsylvania (PA)", "PA"), ("Rhode Island (RI)", "RI"),
+        ("South Carolina (SC)", "SC"), ("South Dakota (SD)", "SD"), ("Tennessee (TN)", "TN"),
+        ("Texas (TX)", "TX"), ("Utah (UT)", "UT"), ("Vermont (VT)", "VT"),
+        ("Virginia (VA)", "VA"), ("Washington (WA)", "WA"), ("West Virginia (WV)", "WV"),
+        ("Wisconsin (WI)", "WI"), ("Wyoming (WY)", "WY"),
+        ("Europe (EU)", "EU")
+    ]
 
     private var trimmedAlma: String {
         almaMater.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var normalizedPipeline: String {
-        pipelineState.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-    }
-
-    private var pipelineIsValid: Bool {
-        let code = normalizedPipeline
-        guard code.count == 2 else { return false }
-        return code.unicodeScalars.allSatisfy { CharacterSet.uppercaseLetters.contains($0) }
-    }
-
     private var isValid: Bool {
-        !trimmedAlma.isEmpty && pipelineIsValid
+        !trimmedAlma.isEmpty
     }
 
     var body: some View {
@@ -364,37 +376,36 @@ struct CoachBackgroundStepView: View {
                 onNext(
                     CoachBackgroundSelection(
                         almaMater: trimmedAlma,
-                        pipelineState: normalizedPipeline
+                        pipelineState: pipelineState
                     )
                 )
             }
         ) {
             GameCard {
                 VStack(alignment: .leading, spacing: 16) {
-                    TextField("Alma Mater", text: $almaMater)
-                        .textInputAutocapitalization(.words)
-                        .textFieldStyle(.roundedBorder)
+                    FilterDropdown(
+                        label: "Alma Mater",
+                        selection: $almaMater,
+                        options: almaMaterOptions.map { (label: $0, value: $0) }
+                    )
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        TextField("Pipeline State (2-letter code)", text: $pipelineState)
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                            .textFieldStyle(.roundedBorder)
-
-                        Text("Example: CA, TX, FL")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if !pipelineState.isEmpty, !pipelineIsValid {
-                            Text("Use a valid 2-letter state code.")
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-                    }
+                    FilterDropdown(
+                        label: "Pipeline",
+                        selection: $pipelineState,
+                        options: Self.pipelineOptions
+                    )
 
                     Text("\(identity.firstName) \(identity.lastName), age \(identity.age)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .onAppear {
+            if almaMaterOptions.isEmpty {
+                almaMaterOptions = listAllD1SchoolNames()
+                if almaMater.isEmpty, let first = almaMaterOptions.first {
+                    almaMater = first
                 }
             }
         }
