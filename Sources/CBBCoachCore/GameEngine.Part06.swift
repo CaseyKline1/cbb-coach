@@ -21,39 +21,12 @@ func computeTargetMinutesByRosterIndex(team: Team, roster: [Player]) -> [Double]
         }
     }
 
-    // Default CPU-style pattern: 10-man rotation (5 starters ~40, 5 backups ~0).
-    // If roster size differs, preserve this shape and scale to 200 team minutes.
-    let listedStarters = Array((team.lineup.isEmpty ? roster : team.lineup).prefix(5))
-    var used: Set<Int> = []
-    var starterIndices: [Int] = []
-    for starter in listedStarters {
-        if let idx = roster.enumerated().first(where: { pair in
-            !used.contains(pair.offset)
-                && pair.element.bio.name == starter.bio.name
-                && pair.element.bio.position == starter.bio.position
-        })?.offset {
-            starterIndices.append(idx)
-            used.insert(idx)
-        }
-    }
-    if starterIndices.count < 5 {
-        for idx in roster.indices where !used.contains(idx) {
-            starterIndices.append(idx)
-            used.insert(idx)
-            if starterIndices.count == 5 { break }
-        }
-    }
+    let targets = rotationMinuteTargets(for: team, roster: roster)
+    let targetTotal = targets.reduce(0, +)
+    guard targetTotal > 0 else { return targets }
 
-    let benchIndices = roster.indices.filter { !used.contains($0) }.prefix(5)
-    var rawTargets = Array(repeating: 0.0, count: roster.count)
-    for idx in starterIndices { rawTargets[idx] = 40 }
-    for idx in benchIndices { rawTargets[idx] = 0 }
-
-    let rawTotal = rawTargets.reduce(0, +)
-    guard rawTotal > 0 else { return rawTargets }
-
-    let scale = totalTeamMinutes / rawTotal
-    return rawTargets.map { clamp($0 * scale, min: 0, max: 40) }
+    let scale = totalTeamMinutes / targetTotal
+    return targets.map { clamp($0 * scale, min: 0, max: 40) }
 }
 
 func computeTargetMinutesMap(tracker: NativeGameStateStore.TeamTracker) -> [Int: Double] {

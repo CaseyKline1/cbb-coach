@@ -432,6 +432,74 @@ func substitutionFlowUsesBenchMinutes() {
     #expect(awayBenchMinutes > 0)
 }
 
+@Test("Default CPU rotations use full roster without flattening minutes")
+func defaultCPURotationUsesFullRosterWithoutFlatteningMinutes() {
+    var random = SeededRandom(seed: 5150)
+    var players: [Player] = []
+    for idx in 0..<13 {
+        var p = createPlayer()
+        p.bio.name = "Rotation P\(idx + 1)"
+        p.bio.position = [.pg, .sg, .sf, .pf, .c, .cg, .wing, .f, .big, .pg, .sg, .sf, .pf][idx]
+        let rating = 82 - idx * 2
+        p.skills.shotIQ = rating
+        p.skills.ballHandling = rating
+        p.skills.passingIQ = rating
+        p.shooting.threePointShooting = rating
+        p.shooting.midrangeShot = rating
+        p.shooting.closeShot = rating
+        p.defense.perimeterDefense = rating
+        p.defense.postDefense = rating
+        p.rebounding.defensiveRebound = rating
+        p.athleticism.speed = rating
+        p.athleticism.agility = rating
+        players.append(p)
+    }
+
+    var options = CreateTeamOptions(name: "Rotation U", players: players)
+    options.lineup = Array(players.prefix(5))
+    let team = createTeam(options: options, random: &random)
+    let slots = defaultRotationSlots(for: team)
+    let minutes = slots.map(\.minutes)
+
+    #expect(slots.count == players.count)
+    #expect(abs(minutes.reduce(0, +) - 200) < 0.01)
+    #expect(minutes.prefix(5).allSatisfy { $0 >= 25 && $0 <= 36 })
+    #expect(minutes.dropFirst(5).filter { $0 > 0 }.count >= 5)
+    #expect(minutes.dropFirst(5).max() ?? 0 < minutes.prefix(5).min() ?? 0)
+    #expect(Set(minutes).count > 4)
+}
+
+@Test("Simulation fallback minute targets give CPU bench real roles")
+func simulationFallbackMinuteTargetsGiveCPUBenchRealRoles() {
+    var random = SeededRandom(seed: 6262)
+    var players: [Player] = []
+    for idx in 0..<12 {
+        var p = createPlayer()
+        p.bio.name = "CPU P\(idx + 1)"
+        p.bio.position = [.pg, .sg, .sf, .pf, .c, .cg, .wing, .f, .big, .pg, .sg, .sf][idx]
+        let rating = 80 - idx
+        p.skills.shotIQ = rating
+        p.shooting.threePointShooting = rating
+        p.shooting.midrangeShot = rating
+        p.shooting.closeShot = rating
+        p.skills.ballHandling = rating
+        p.defense.perimeterDefense = rating
+        p.defense.shotContest = rating
+        p.rebounding.defensiveRebound = rating
+        players.append(p)
+    }
+
+    var options = CreateTeamOptions(name: "CPU Rotation", players: players)
+    options.lineup = Array(players.prefix(5))
+    let team = createTeam(options: options, random: &random)
+    let targets = computeTargetMinutesByRosterIndex(team: team, roster: team.players)
+
+    #expect(abs(targets.reduce(0, +) - 200) < 0.01)
+    #expect(targets.prefix(5).allSatisfy { $0 < 40 && $0 >= 25 })
+    #expect(targets.dropFirst(5).reduce(0, +) >= 40)
+    #expect(targets.dropFirst(5).filter { $0 > 0 }.count >= 5)
+}
+
 @Test("Fatigue keeps high-usage scorers out of unrealistic average ranges")
 func fatigueSuppressesExtremeScorerAverages() {
     func makePlayer(

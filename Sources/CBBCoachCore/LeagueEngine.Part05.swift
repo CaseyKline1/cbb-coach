@@ -441,50 +441,96 @@ func coachingQuality(_ staff: CoachingStaff) -> Double {
 }
 
 func defaultRotationSlots(for team: Team) -> [UserRotationSlot] {
-    let starters = team.lineup
+    let starters = Array((team.lineup.isEmpty ? team.players : team.lineup).prefix(5))
     let lineupNames = Set(starters.map { $0.bio.name })
 
-    let benchPairs = Array(team.players.enumerated().filter { !lineupNames.contains($0.element.bio.name) }.prefix(5))
-
-    let totalSlots = starters.count + benchPairs.count
-    let totalTarget = min(200.0, Double(totalSlots) * 40.0)
-
-    let starterTarget: Double
-    let benchTarget: Double
-    if !starters.isEmpty && !benchPairs.isEmpty {
-        starterTarget = (totalTarget * 0.70 * 2).rounded() / 2
-        benchTarget = totalTarget - starterTarget
-    } else if !starters.isEmpty {
-        starterTarget = totalTarget
-        benchTarget = 0
-    } else {
-        starterTarget = 0
-        benchTarget = totalTarget
-    }
-
-    let starterMinutes = balancedMinutes(
-        overalls: starters.map { Double(playerOverall($0)) },
-        target: starterTarget,
-        softMin: 18,
-        softMax: 36
-    )
-    let benchMinutes = balancedMinutes(
-        overalls: benchPairs.map { Double(playerOverall($0.element)) },
-        target: benchTarget,
-        softMin: 4,
-        softMax: 24
-    )
+    let benchPairs = Array(team.players.enumerated().filter { !lineupNames.contains($0.element.bio.name) })
+    let minutesByRosterIndex = rotationMinuteTargets(for: team, roster: team.players)
 
     let starterSlots = starters.enumerated().map { idx, player -> UserRotationSlot in
         let playerIndex = team.players.firstIndex(where: { $0.bio.name == player.bio.name })
-        return UserRotationSlot(slot: idx, playerIndex: playerIndex, position: player.bio.position.rawValue, minutes: starterMinutes[idx])
+        let minutes = playerIndex.flatMap { $0 < minutesByRosterIndex.count ? minutesByRosterIndex[$0] : nil } ?? 0
+        return UserRotationSlot(slot: idx, playerIndex: playerIndex, position: player.bio.position.rawValue, minutes: minutes)
     }
 
     let benchSlots = benchPairs.enumerated().map { benchIdx, pair -> UserRotationSlot in
-        UserRotationSlot(slot: benchIdx + 5, playerIndex: pair.offset, position: pair.element.bio.position.rawValue, minutes: benchMinutes[benchIdx])
+        let minutes = pair.offset < minutesByRosterIndex.count ? minutesByRosterIndex[pair.offset] : 0
+        return UserRotationSlot(slot: benchIdx + 5, playerIndex: pair.offset, position: pair.element.bio.position.rawValue, minutes: minutes)
     }
 
     return starterSlots + benchSlots
+}
+
+func rotationMinuteTargets(for team: Team, roster: [Player]) -> [Double] {
+    guard !roster.isEmpty else { return [] }
+
+    let totalTarget = min(200.0, Double(roster.count) * 40.0)
+    let starterIndices = rotationStarterIndices(for: team, roster: roster)
+    var starterIndexSet = Set(starterIndices)
+    if starterIndexSet.isEmpty {
+        starterIndexSet = Set(roster.indices.prefix(min(5, roster.count)))
+    }
+
+    let benchIndicesByRole = roster.indices
+        .filter { !starterIndexSet.contains($0) }
+        .sorted {
+            let leftOverall = playerOverall(roster[$0])
+            let rightOverall = playerOverall(roster[$1])
+            if leftOverall != rightOverall { return leftOverall > rightOverall }
+            return $0 < $1
+        }
+    let benchRankByIndex = Dictionary(uniqueKeysWithValues: benchIndicesByRole.enumerated().map { ($0.element, $0.offset) })
+
+    let overalls = roster.map { Double(playerOverall($0)) }
+    let mean = overalls.reduce(0, +) / Double(overalls.count)
+    var values = roster.indices.map { idx -> Double in
+        let qualityAdjustment = (overalls[idx] - mean) * 0.16
+        if starterIndexSet.contains(idx) {
+            return clamp(29 + qualityAdjustment, min: 25, max: 34)
+        }
+
+        let rank = benchRankByIndex[idx] ?? benchIndicesByRole.count
+        let base: Double
+        switch rank {
+        case 0: base = 14
+        case 1: base = 12
+        case 2: base = 10
+        case 3: base = 8
+        case 4: base = 6
+        case 5: base = 3
+        case 6: base = 1
+        default: base = 0
+        }
+        return clamp(base + qualityAdjustment * 0.45, min: 0, max: 20)
+    }
+
+    values = values.map { ($0 * 2).rounded() / 2 }
+    forceTotal(&values, target: totalTarget, hardMin: 0, hardMax: 40, preferredMin: 0, preferredMax: 36, overalls: overalls)
+    return values
+}
+
+func rotationStarterIndices(for team: Team, roster: [Player]) -> [Int] {
+    let listedStarters = Array((team.lineup.isEmpty ? roster : team.lineup).prefix(5))
+    var used: Set<Int> = []
+    var starterIndices: [Int] = []
+    for starter in listedStarters {
+        if let idx = roster.enumerated().first(where: { pair in
+            !used.contains(pair.offset)
+                && pair.element.bio.name == starter.bio.name
+                && pair.element.bio.position == starter.bio.position
+        })?.offset {
+            starterIndices.append(idx)
+            used.insert(idx)
+        }
+    }
+    if starterIndices.count < min(5, roster.count) {
+        for idx in roster.indices where !used.contains(idx) {
+            starterIndices.append(idx)
+            used.insert(idx)
+            if starterIndices.count == min(5, roster.count) { break }
+        }
+    }
+    return starterIndices
 }
 
 func balancedMinutes(overalls: [Double], target: Double, softMin: Double, softMax: Double) -> [Double] {
