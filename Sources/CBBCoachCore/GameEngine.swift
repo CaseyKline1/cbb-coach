@@ -420,7 +420,71 @@ func teamIndex(for player: Player, in stored: NativeGameStateStore.StoredState) 
     return nil
 }
 
+private let gameFormWeightTable: [String: Double] = [
+    // 0.0 — rotation/rebound (rebound_ prefix and rotation_swap)
+    "rotation_swap": 0,
+    "rebound_carom_direction": 0,
+    "rebound_scramble_matchup": 0,
+    "rebound_boxout_battle": 0,
+    "rebound_gather_battle": 0,
+    "rebound_collector_offense": 0,
+    "rebound_collector_defense": 0,
+    // 0.28 — free_throw_ prefix
+    "free_throw_focus_technical": 0.28,
+    "free_throw_focus_bonus": 0.28,
+    "free_throw_focus_one_and_one": 0.28,
+    // 0.42 — composure
+    "technical_composure": 0.42,
+    "timeout_composure": 0.42,
+    // 1.15 — labels containing "shot" or "finish"
+    "half_court_shot": 1.15,
+    "shot_spot_selection": 1.15,
+    "shot_type_selection": 1.15,
+    "fast_break_finish": 1.15,
+    "fast_break_finish_quality": 1.15,
+    // 0.92 — labels containing "turnover", "press", or "trap"
+    "turnover_check": 0.92,
+    "press_setup": 0.92,
+    "trap_ball_security": 0.92,
+    "non_shooting_foul_pressure": 0.92,
+    "timeout_pressure": 0.92,
+    // 0.76 — default bucket (enumerated for fast hash-lookup)
+    "possession_advantage": 0.76,
+    "rim_block_attempt": 0.76,
+    "and_one_contact": 0.76,
+    "shooting_foul_contact": 0.76,
+    "loose_ball_scramble": 0.76,
+    "charge_call": 0.76,
+    "assist_pass_window": 0.76,
+    "assist_receiver_timing": 0.76,
+    "play_type_drive": 0.76,
+    "play_type_post": 0.76,
+    "play_type_pnr": 0.76,
+    "play_type_pnp": 0.76,
+    "play_type_motion": 0.76,
+    "help_rotation": 0.76,
+    "post_up_advantage": 0.76,
+    "pick_pop_read": 0.76,
+    "pass_around_creation": 0.76,
+    "drive_advantage": 0.76,
+    "drive_strip": 0.76,
+    "screen_navigation_point": 0.76,
+    "screen_navigation_big": 0.76,
+    "roller_seal": 0.76,
+    "pnr_handler_read": 0.76,
+    "pop_destination": 0.76,
+    "technical_temper": 0.76,
+    "break_advantage": 0.76,
+    "pass_interception_lane": 0.76,
+    "fast_break_push": 0.76,
+    "fast_break_race": 0.76,
+]
+
 func gameFormWeight(for label: String) -> Double {
+    if let cached = gameFormWeightTable[label] {
+        return cached
+    }
+    // Fallback preserves original semantics for any label not in the table.
     switch label {
     case "rotation_swap":
         return 0
