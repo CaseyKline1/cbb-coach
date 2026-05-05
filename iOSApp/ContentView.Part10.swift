@@ -1947,6 +1947,26 @@ struct TransferPortalView: View {
         case previousTeam = "From You"
     }
 
+    private enum InterestRankFilter: String, CaseIterable, Hashable {
+        case all = "All"
+        case topSchool = "Top School"
+        case top3 = "Top 3"
+        case top5 = "Top 5"
+        case top10 = "Top 10"
+        case top20 = "Top 20"
+
+        var maxRank: Int? {
+            switch self {
+            case .all: return nil
+            case .topSchool: return 1
+            case .top3: return 3
+            case .top5: return 5
+            case .top10: return 10
+            case .top20: return 20
+            }
+        }
+    }
+
     let summary: TransferPortalSummary?
     let games: [LeagueGameSummary]
     let roster: [UserRosterPlayerSummary]
@@ -1958,6 +1978,7 @@ struct TransferPortalView: View {
     @State private var searchText = ""
     @State private var positionFilter = "All"
     @State private var statusFilter: PortalStatusFilter = .available
+    @State private var interestRankFilter: InterestRankFilter = .all
     @State private var sortColumn: PortalTableColumn = .overall
     @State private var isAscending = false
     @State private var boardSortColumn: BoardTableColumn = .overall
@@ -2027,7 +2048,13 @@ struct TransferPortalView: View {
             case .previousTeam:
                 matchesStatus = row.previousTeamId == summary?.userTeamId
             }
-            return matchesSearch && matchesPosition && matchesStatus
+            let matchesInterestRank: Bool
+            if let maxRank = interestRankFilter.maxRank {
+                matchesInterestRank = userInterestRank(row).map { $0 <= maxRank } ?? false
+            } else {
+                matchesInterestRank = true
+            }
+            return matchesSearch && matchesPosition && matchesStatus && matchesInterestRank
         })
     }
 
@@ -2200,13 +2227,22 @@ struct TransferPortalView: View {
                         )
                         .frame(width: 104)
                     }
-                    FilterDropdown(
-                        title: "",
-                        selection: $statusFilter,
-                        options: PortalStatusFilter.allCases.map { ($0.rawValue, $0) },
-                        isSearchEnabled: false,
-                        isCompact: true
-                    )
+                    HStack(spacing: 8) {
+                        FilterDropdown(
+                            title: "",
+                            selection: $statusFilter,
+                            options: PortalStatusFilter.allCases.map { ($0.rawValue, $0) },
+                            isSearchEnabled: false,
+                            isCompact: true
+                        )
+                        FilterDropdown(
+                            title: "",
+                            selection: $interestRankFilter,
+                            options: InterestRankFilter.allCases.map { ($0.rawValue, $0) },
+                            isSearchEnabled: false,
+                            isCompact: true
+                        )
+                    }
                 }
 
                 if filteredPortalRows.isEmpty {
@@ -2465,6 +2501,19 @@ struct TransferPortalView: View {
         row.interestByTeamId[summary?.userTeamId ?? ""] ?? 0
     }
 
+    private func userInterestRank(_ row: TransferPortalEntry) -> Int? {
+        guard let userTeamId = summary?.userTeamId,
+              let userValue = row.interestByTeamId[userTeamId] else {
+            return nil
+        }
+        let higherCount = row.interestByTeamId.reduce(into: 0) { count, pair in
+            if pair.key != userTeamId && pair.value > userValue {
+                count += 1
+            }
+        }
+        return higherCount + 1
+    }
+
     private func interestText(_ row: TransferPortalEntry) -> String {
         let interest = userInterest(row)
         return interest > 0 ? "\(Int(interest.rounded()))" : "-"
@@ -2476,7 +2525,7 @@ struct TransferPortalView: View {
 
     private func statusText(_ row: TransferPortalEntry) -> String {
         if let committed = row.committedTeamName {
-            return "Committed \(committed)"
+            return "Committed to \(TeamNameAbbreviation.abbreviated(committed))"
         }
         if row.previousTeamId == summary?.userTeamId {
             return "From you"
