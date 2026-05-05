@@ -214,6 +214,7 @@ struct CollegeLeagueHomeView: View {
             }
             .background(AppTheme.background)
             .navigationDestination(for: LeagueMenuDestination.self) { destination in
+                Group {
                 switch destination {
                 case .seasonRecap:
                     SeasonRecapView(
@@ -373,6 +374,8 @@ struct CollegeLeagueHomeView: View {
                         )
                     }
                 }
+                }
+                .navigationBarBackButtonHidden(destination.isOffseasonWorkflowDestination)
             }
             .navigationDestination(isPresented: $showingSeasonRecap) {
                 SeasonRecapView(
@@ -394,6 +397,7 @@ struct CollegeLeagueHomeView: View {
                     teamRostersByName: teamRostersByName,
                     onAdvanceToOffseasonSchedule: advanceToOffseasonScheduleFromRecap
                 )
+                .navigationBarBackButtonHidden(true)
             }
             .navigationDestination(isPresented: $showingOffseasonSchedule) {
                 OffseasonScheduleView(
@@ -408,6 +412,7 @@ struct CollegeLeagueHomeView: View {
                     teamRostersByName: teamRostersByName,
                     onAdvance: advanceOffseasonScheduleAndNavigate
                 )
+                .navigationBarBackButtonHidden(true)
             }
             .onAppear {
                 if league == nil {
