@@ -34,15 +34,25 @@ let args = Array(CommandLine.arguments.dropFirst())
 if args.contains("--nil-balance") {
     struct NILBalanceRun {
         let portalCount: Int
+        let portalCommitted: Int
         let teams: Int
         let nationalBudget: Double
-        let acceptedSpend: Double
+        let retentionSpend: Double
+        let portalSpend: Double
         let openDemand: Double
         let userBudget: Double
         let userSpend: Double
         let userRemaining: Double
         let topPortalAsk: Double
         let majorTeamAverageBudget: Double
+        let teamSpendShares: [Double]
+        let pctTeamsAbove80: Double
+        let pctTeamsAbove60: Double
+        let pctTeamsAbove40: Double
+        let pctTeamsBelow20: Double
+        let medianShare: Double
+        let majorMedianShare: Double
+        let minorMedianShare: Double
     }
 
     let teamCycle = ["Duke", "UConn", "Kansas", "Kentucky", "North Carolina", "Alabama", "Gonzaga", "Memphis"]
@@ -59,31 +69,105 @@ if args.contains("--nil-balance") {
             _ = advanceOffseason(&league)
         }
         _ = delegateNILRetentionToAssistants(&league)
-        _ = advanceOffseason(&league)
 
         let budgets = getNILBudgetSummary(league)
         let retention = getNILRetentionSummary(league)
-        let portal = getTransferPortalSummary(league)
-        let acceptedSpend = retention.entries.filter { $0.status == .accepted }.reduce(0.0) { $0 + $1.offer }
+
+        var capturedPortal: TransferPortalSummary? = nil
+        var loopGuard = 0
+        while loopGuard < 64 {
+            let summary = getTransferPortalSummary(league)
+            capturedPortal = summary
+            let progress = getOffseasonProgress(league)
+            if args.contains("--verbose") {
+                let stage = progress?.stage.rawValue ?? "nil"
+                let committed = summary.entries.filter { $0.committedTeamId != nil }.count
+                print("  loop=\(loopGuard) stage=\(stage) week=\(summary.week)/\(summary.maxWeeks) entries=\(summary.entries.count) committed=\(committed)")
+            }
+            guard let stageProgress = progress, stageProgress.stage != .complete else { break }
+            if summary.week > summary.maxWeeks {
+                break
+            }
+            _ = advanceOffseason(&league)
+            loopGuard += 1
+        }
+        let portal = capturedPortal ?? TransferPortalSummary(userTeamId: retention.userTeamId, entries: [])
+        let retentionByTeam = Dictionary(
+            grouping: retention.entries.filter { $0.status == .accepted },
+            by: { $0.teamId }
+        ).mapValues { entries in entries.reduce(0.0) { $0 + $1.offer } }
+        let portalCommitsByTeam = Dictionary(
+            grouping: portal.entries.compactMap { entry -> (String, Double)? in
+                guard let committed = entry.committedTeamId else { return nil }
+                return (committed, entry.askingPrice)
+            },
+            by: { $0.0 }
+        ).mapValues { pairs in pairs.reduce(0.0) { $0 + $1.1 } }
+
+        let retentionSpend = retentionByTeam.values.reduce(0, +)
+        let portalSpend = portalCommitsByTeam.values.reduce(0, +)
         let openDemand = retention.entries.reduce(0.0) { $0 + $1.demand }
-        let userSpend = retention.userEntries.filter { $0.status == .accepted }.reduce(0.0) { $0 + $1.offer }
+        let userSpend = (retentionByTeam[retention.userTeamId] ?? 0) + (portalCommitsByTeam[retention.userTeamId] ?? 0)
+        let userRemaining = max(0, retention.budget.total - userSpend)
+
+        let majorConferences: Set<String> = ["acc", "big-ten", "big-12", "sec"]
+        var teamShares: [Double] = []
+        var majorShares: [Double] = []
+        var minorShares: [Double] = []
+        for team in budgets.teams where team.total > 0 {
+            let spend = (retentionByTeam[team.teamId] ?? 0) + (portalCommitsByTeam[team.teamId] ?? 0)
+            let share = min(2.0, spend / team.total)
+            teamShares.append(share)
+            if majorConferences.contains(team.conferenceId) {
+                majorShares.append(share)
+            } else {
+                minorShares.append(share)
+            }
+        }
+
+        func percent(_ shares: [Double], satisfying predicate: (Double) -> Bool) -> Double {
+            guard !shares.isEmpty else { return 0 }
+            let count = shares.filter(predicate).count
+            return Double(count) / Double(shares.count) * 100
+        }
+
+        func median(_ shares: [Double]) -> Double {
+            guard !shares.isEmpty else { return 0 }
+            let sorted = shares.sorted()
+            if sorted.count % 2 == 1 {
+                return sorted[sorted.count / 2]
+            }
+            return (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2.0
+        }
+
         let majorBudgets = budgets.teams
-            .filter { ["acc", "big-ten", "big-12", "sec"].contains($0.conferenceId) || $0.total >= 5_000_000 }
+            .filter { majorConferences.contains($0.conferenceId) || $0.total >= 5_000_000 }
             .map(\.total)
         let run = NILBalanceRun(
             portalCount: portal.entries.count,
+            portalCommitted: portal.entries.filter { $0.committedTeamId != nil }.count,
             teams: budgets.teams.count,
             nationalBudget: budgets.teams.reduce(0.0) { $0 + $1.total },
-            acceptedSpend: acceptedSpend,
+            retentionSpend: retentionSpend,
+            portalSpend: portalSpend,
             openDemand: openDemand,
             userBudget: retention.budget.total,
             userSpend: userSpend,
-            userRemaining: retention.budget.remaining,
+            userRemaining: userRemaining,
             topPortalAsk: portal.entries.map(\.askingPrice).max() ?? 0,
-            majorTeamAverageBudget: majorBudgets.isEmpty ? 0 : majorBudgets.reduce(0, +) / Double(majorBudgets.count)
+            majorTeamAverageBudget: majorBudgets.isEmpty ? 0 : majorBudgets.reduce(0, +) / Double(majorBudgets.count),
+            teamSpendShares: teamShares,
+            pctTeamsAbove80: percent(teamShares, satisfying: { $0 >= 0.80 }),
+            pctTeamsAbove60: percent(teamShares, satisfying: { $0 >= 0.60 }),
+            pctTeamsAbove40: percent(teamShares, satisfying: { $0 >= 0.40 }),
+            pctTeamsBelow20: percent(teamShares, satisfying: { $0 < 0.20 }),
+            medianShare: median(teamShares),
+            majorMedianShare: median(majorShares),
+            minorMedianShare: median(minorShares)
         )
         runs.append(run)
-        print("run \(iteration): team=\(simTeam) portal=\(run.portalCount) portal/team=\(String(format: "%.2f", Double(run.portalCount) / Double(max(1, run.teams)))) spend=\(String(format: "%.1f", run.acceptedSpend / 1_000_000))M budget=\(String(format: "%.1f", run.nationalBudget / 1_000_000))M userLeft=\(String(format: "%.1f", run.userRemaining / 1_000_000))M topAsk=\(String(format: "%.1f", run.topPortalAsk / 1_000_000))M")
+        let totalSpend = run.retentionSpend + run.portalSpend
+        print("run \(iteration): team=\(simTeam) portal=\(run.portalCount) committed=\(run.portalCommitted) retention=\(String(format: "%.1f", run.retentionSpend / 1_000_000))M portal=\(String(format: "%.1f", run.portalSpend / 1_000_000))M spend/budget=\(String(format: "%.0f", (totalSpend / max(1, run.nationalBudget)) * 100))% medianShare=\(String(format: "%.0f", run.medianShare * 100))% >=80%:\(String(format: "%.0f", run.pctTeamsAbove80))% >=60%:\(String(format: "%.0f", run.pctTeamsAbove60))% <20%:\(String(format: "%.0f", run.pctTeamsBelow20))%")
     }
 
     func avg(_ values: [Double]) -> Double {
@@ -92,19 +176,34 @@ if args.contains("--nil-balance") {
     }
 
     let avgPortal = avg(runs.map { Double($0.portalCount) })
+    let avgCommitted = avg(runs.map { Double($0.portalCommitted) })
     let avgTeams = avg(runs.map { Double($0.teams) })
     let avgBudget = avg(runs.map(\.nationalBudget))
-    let avgSpend = avg(runs.map(\.acceptedSpend))
+    let avgRetention = avg(runs.map(\.retentionSpend))
+    let avgPortalSpend = avg(runs.map(\.portalSpend))
     let avgDemand = avg(runs.map(\.openDemand))
     let avgMajorBudget = avg(runs.map(\.majorTeamAverageBudget))
     let avgTopAsk = avg(runs.map(\.topPortalAsk))
+    let avgAbove80 = avg(runs.map(\.pctTeamsAbove80))
+    let avgAbove60 = avg(runs.map(\.pctTeamsAbove60))
+    let avgAbove40 = avg(runs.map(\.pctTeamsAbove40))
+    let avgBelow20 = avg(runs.map(\.pctTeamsBelow20))
+    let avgMedianShare = avg(runs.map(\.medianShare))
+    let avgMajorMedian = avg(runs.map(\.majorMedianShare))
+    let avgMinorMedian = avg(runs.map(\.minorMedianShare))
+    let avgTotalSpend = avgRetention + avgPortalSpend
     print("averages:")
-    print("  portal players: \(String(format: "%.0f", avgPortal)) (\(String(format: "%.2f", avgPortal / max(1, avgTeams))) per team)")
+    print("  portal players: \(String(format: "%.0f", avgPortal)) (\(String(format: "%.2f", avgPortal / max(1, avgTeams))) per team), committed: \(String(format: "%.0f", avgCommitted))")
     print("  national budget: \(String(format: "%.1f", avgBudget / 1_000_000))M")
-    print("  accepted retention spend: \(String(format: "%.1f", avgSpend / 1_000_000))M (\(String(format: "%.0f", (avgSpend / max(1, avgBudget)) * 100))% of budget)")
+    print("  retention spend: \(String(format: "%.1f", avgRetention / 1_000_000))M (\(String(format: "%.0f", (avgRetention / max(1, avgBudget)) * 100))% of budget)")
+    print("  portal commit spend: \(String(format: "%.1f", avgPortalSpend / 1_000_000))M (\(String(format: "%.0f", (avgPortalSpend / max(1, avgBudget)) * 100))% of budget)")
+    print("  combined NIL spend: \(String(format: "%.1f", avgTotalSpend / 1_000_000))M (\(String(format: "%.0f", (avgTotalSpend / max(1, avgBudget)) * 100))% of budget)")
     print("  total retention demand: \(String(format: "%.1f", avgDemand / 1_000_000))M")
     print("  major-team avg budget: \(String(format: "%.1f", avgMajorBudget / 1_000_000))M")
     print("  top portal ask avg: \(String(format: "%.1f", avgTopAsk / 1_000_000))M")
+    print("per-team NIL utilization (share of budget actually spent):")
+    print("  median share: \(String(format: "%.0f", avgMedianShare * 100))% (majors \(String(format: "%.0f", avgMajorMedian * 100))%, mid/lows \(String(format: "%.0f", avgMinorMedian * 100))%)")
+    print("  teams >=80%: \(String(format: "%.0f", avgAbove80))%  >=60%: \(String(format: "%.0f", avgAbove60))%  >=40%: \(String(format: "%.0f", avgAbove40))%  <20%: \(String(format: "%.0f", avgBelow20))%")
     exit(0)
 }
 

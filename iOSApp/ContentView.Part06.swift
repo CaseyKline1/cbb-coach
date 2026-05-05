@@ -140,7 +140,7 @@ struct PlayerCardDetailView: View {
             rows.append(
                 CareerYearRow(
                     year: season.year.isEmpty ? "N/A" : season.year,
-                    teamAbbreviation: teamAbbreviation(for: season.teamName),
+                    teamAbbreviation: TeamNameAbbreviation.abbreviated(season.teamName),
                     totals: PlayerCareerTotals(
                         games: season.games,
                         minutes: season.minutes,
@@ -187,7 +187,7 @@ struct PlayerCardDetailView: View {
             rows.append(
                 CareerYearRow(
                     year: playerYear,
-                    teamAbbreviation: teamAbbreviation(for: teamName),
+                    teamAbbreviation: TeamNameAbbreviation.abbreviated(teamName),
                     totals: current
                 )
             )
@@ -196,18 +196,6 @@ struct PlayerCardDetailView: View {
         return rows.enumerated().map { offset, row in
             (id: AnyHashable("\(offset):\(row.year):\(row.teamAbbreviation)"), data: row)
         }
-    }
-
-    private func teamAbbreviation(for name: String) -> String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "—" }
-        let words = trimmed.split(whereSeparator: { $0.isWhitespace })
-        if words.count >= 2 {
-            return words.prefix(4).map { String($0.first!).uppercased() }.joined()
-        }
-        let single = String(words.first ?? "")
-        let prefix = single.prefix(3)
-        return prefix.uppercased()
     }
 
     var body: some View {

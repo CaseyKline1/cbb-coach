@@ -40,6 +40,27 @@ enum AppTheme {
     static let cardBorder = Color(red: 0.88, green: 0.89, blue: 0.91)
 }
 
+// MARK: - Team name abbreviation
+
+/// Short label for school names (box scores, transfer portal, career tables).
+enum TeamNameAbbreviation {
+    private static let overrides: [String: String] = [
+        "North Carolina": "UNC",
+    ]
+
+    static func abbreviated(_ fullName: String) -> String {
+        let trimmed = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "—" }
+        if let over = overrides[trimmed] { return over }
+        let words = trimmed.split(whereSeparator: { $0.isWhitespace })
+        if words.count >= 2 {
+            return words.prefix(4).map { String($0.first!).uppercased() }.joined()
+        }
+        let single = String(words.first ?? "")
+        return String(single.prefix(3)).uppercased()
+    }
+}
+
 // MARK: - GameCard
 
 struct GameCard<Content: View>: View {
