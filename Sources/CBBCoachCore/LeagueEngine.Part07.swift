@@ -501,12 +501,14 @@ private func resolveCPUNILRetention(
     var rows = rows
     let rowIndexesByTeam = Dictionary(grouping: rows.indices, by: { rows[$0].teamId })
     for team in state.teams where team.teamId != state.userTeamId {
-        var remaining = max(0, (budgetByTeam[team.teamId] ?? 0) * 0.38)
+        var remaining = max(0, budgetByTeam[team.teamId] ?? 0)
         let indexes = (rowIndexesByTeam[team.teamId] ?? []).sorted {
             if rows[$0].priority != rows[$1].priority { return rows[$0].priority > rows[$1].priority }
             return rows[$0].playerName < rows[$1].playerName
         }
+        var accepted = 0
         for index in indexes {
+            guard accepted < cpuRetentionCoreCount else { break }
             var row = rows[index]
             let target = max(nilAcceptanceThreshold(row) * nilRetentionPremium(row), row.intrinsicValue * 0.84)
             let roll = deterministicNILValueRoll(seed: "\(state.optionsSeed):cpu-nil:\(row.id)")
@@ -518,10 +520,13 @@ private func resolveCPUNILRetention(
             row.responseText = "Accepted."
             rows[index] = row
             remaining -= offer
+            accepted += 1
         }
     }
     return rows
 }
+
+private let cpuRetentionCoreCount = 10
 
 private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueStore.State) {
     prepareNILRetentionIfNeeded(&state)
@@ -716,8 +721,20 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
     let week = state.transferPortalWeek ?? 1
     let userTargets = state.transferPortalUserTargets ?? []
     let userOffers = state.transferPortalUserOffers ?? [:]
-    let budgetByTeam = Dictionary(calculateNILBudgetSummary(state).teams.map { ($0.teamId, $0.total) }, uniquingKeysWith: { first, _ in first })
-    let cpuPlans = buildCPUTransferPortalPlans(state: state, portal: portal, budgetByTeam: budgetByTeam)
+    let totalBudgetByTeam = Dictionary(calculateNILBudgetSummary(state).teams.map { ($0.teamId, $0.total) }, uniquingKeysWith: { first, _ in first })
+    let retentionAcceptedByTeam = Dictionary(grouping: (state.nilRetention ?? []).filter { $0.status == .accepted }, by: { $0.teamId })
+        .mapValues { rows in rows.reduce(0.0) { $0 + $1.offer } }
+    var remainingByTeam: [String: Double] = [:]
+    for team in state.teams {
+        let total = totalBudgetByTeam[team.teamId] ?? 0
+        let retentionSpent = retentionAcceptedByTeam[team.teamId] ?? 0
+        var remaining = max(0, total - retentionSpent)
+        for entry in portal where entry.committedTeamId == team.teamId {
+            remaining -= entry.committedOffer ?? entry.askingPrice
+        }
+        remainingByTeam[team.teamId] = max(0, remaining)
+    }
+    let cpuPlans = buildCPUTransferPortalPlans(state: state, portal: portal, budgetByTeam: remainingByTeam)
     var cpuTeamIdsByEntryId: [String: Set<String>] = [:]
     for (teamId, entryIds) in cpuPlans {
         for entryId in entryIds {
@@ -726,6 +743,11 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
     }
     let teamById = Dictionary(state.teams.map { ($0.teamId, $0) }, uniquingKeysWith: { first, _ in first })
     var commitCountByTeam: [String: Int] = [:]
+    for entry in portal {
+        if let committedTeamId = entry.committedTeamId {
+            commitCountByTeam[committedTeamId, default: 0] += 1
+        }
+    }
 
     for index in portal.indices {
         guard portal[index].committedTeamId == nil else { continue }
@@ -744,7 +766,7 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
             guard let team = teamById[teamId] else { continue }
             let priorityIndex = (cpuPlans[teamId] ?? []).firstIndex(of: entry.id) ?? userTargets.firstIndex(of: entry.id) ?? 0
             let userOffer = teamId == state.userTeamId ? userOffers[entry.id, default: 0] : 0
-            let cpuOffer = teamId == state.userTeamId ? 0 : cpuTransferPortalOffer(entry: entry, team: team, budget: budgetByTeam[teamId] ?? 0)
+            let cpuOffer = teamId == state.userTeamId ? 0 : cpuTransferPortalOffer(entry: entry, team: team, budget: remainingByTeam[teamId] ?? 0)
             let gain = transferPortalWeeklyGain(
                 entry: entry,
                 team: team,
@@ -760,7 +782,7 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
             entry.interestByTeamId[teamId, default: 0] -= 1.0 + deterministicNILValueRoll(seed: "\(state.optionsSeed):portal-decay:\(week):\(entry.id):\(teamId)") * 1.8
         }
 
-        let orderedTeams = transferPortalOrderedTeams(for: entry, userOffers: userOffers, state: state, budgetByTeam: budgetByTeam)
+        let orderedTeams = transferPortalOrderedTeams(for: entry, userOffers: userOffers, state: state, budgetByTeam: remainingByTeam)
         if entry.finalistTeamIds.isEmpty,
            week >= 2,
            orderedTeams.count > 1 {
@@ -769,22 +791,46 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
             entry.finalistTeamNames = entry.finalistTeamIds.compactMap { teamById[$0]?.teamName }
         }
 
-        let remainingTeams = entry.finalistTeamIds.isEmpty
+        let candidateTeams = entry.finalistTeamIds.isEmpty
             ? orderedTeams
             : orderedTeams.filter { entry.finalistTeamIds.contains($0.teamId) }
+
+        func teamOffer(_ teamId: String) -> Double {
+            if teamId == state.userTeamId {
+                return userOffers[entry.id, default: 0]
+            }
+            guard let team = teamById[teamId] else { return 0 }
+            return cpuTransferPortalOffer(entry: entry, team: team, budget: remainingByTeam[teamId] ?? 0)
+        }
+
+        let minimumAcceptableOffer = max(1_000, entry.askingPrice * 0.35)
+        let affordableTeams = candidateTeams.filter { ranked in
+            let offer = teamOffer(ranked.teamId)
+            return offer >= minimumAcceptableOffer
+                && (remainingByTeam[ranked.teamId] ?? 0) >= offer
+        }
+        let remainingTeams = affordableTeams.isEmpty ? candidateTeams : affordableTeams
         if let best = remainingTeams.first {
             let second = remainingTeams.dropFirst().first?.score ?? (best.score - 9)
             let gap = max(0, best.score - second)
             let chance = clamp(0.04 + (Double(week) / Double(transferPortalRecruitingWeeks)) * 0.22 + gap / 58, min: 0.03, max: 0.82)
             let roll = deterministicNILValueRoll(seed: "\(state.optionsSeed):portal-commit:\(week):\(entry.id):\(best.teamId)")
             let finalWeek = week >= transferPortalRecruitingWeeks
+            let bestOffer = teamOffer(best.teamId)
+            let canAfford = bestOffer >= minimumAcceptableOffer
+                && (remainingByTeam[best.teamId] ?? 0) >= bestOffer
             if (roll < chance || finalWeek),
+               canAfford,
                transferPortalHasRoom(teamId: best.teamId, state: state, added: commitCountByTeam[best.teamId, default: 0]) {
                 entry.committedTeamId = best.teamId
                 entry.committedTeamName = teamById[best.teamId]?.teamName
+                entry.committedOffer = bestOffer
                 entry.finalistTeamIds = []
                 entry.finalistTeamNames = []
                 commitCountByTeam[best.teamId, default: 0] += 1
+                if best.teamId != state.userTeamId {
+                    remainingByTeam[best.teamId, default: 0] = max(0, (remainingByTeam[best.teamId] ?? 0) - bestOffer)
+                }
             }
         }
 
@@ -807,15 +853,27 @@ private func buildCPUTransferPortalPlans(
 ) -> [String: [String]] {
     var plans: [String: [String]] = [:]
     for team in state.teams where team.teamId != state.userTeamId {
-        let needCount = max(2, min(transferPortalMaxUserTargets, offseasonRosterTarget - team.teamModel.players.count + 3))
+        let alreadyCommitted = portal.filter { $0.committedTeamId == team.teamId }.count
+        let openSlots = max(0, offseasonRosterTarget - (team.teamModel.players.count + alreadyCommitted))
+        let remainingBudget = budgetByTeam[team.teamId] ?? 0
+        let plansNeeded: Int
+        if openSlots == 0 {
+            plansNeeded = remainingBudget > 100_000 ? 2 : 0
+        } else {
+            plansNeeded = min(transferPortalMaxUserTargets, openSlots + 4)
+        }
+        guard plansNeeded > 0 else {
+            plans[team.teamId] = []
+            continue
+        }
         var candidates: [(id: String, playerName: String, score: Double)] = []
         for entry in portal where entry.previousTeamId != team.teamId && entry.committedTeamId == nil {
             let candidate = (
                 id: entry.id,
                 playerName: entry.playerName,
-                score: transferPortalFitScore(entry: entry, team: team, state: state, budget: budgetByTeam[team.teamId] ?? 0)
+                score: transferPortalFitScore(entry: entry, team: team, state: state, budget: remainingBudget)
             )
-            if candidates.count < needCount {
+            if candidates.count < plansNeeded {
                 candidates.append(candidate)
                 candidates.sort(by: transferPortalWorseCandidate)
             } else if let weakest = candidates.first,
@@ -872,7 +930,10 @@ private func cpuTransferPortalOffer(entry: TransferPortalEntry, team: LeagueStor
     let need = clamp(transferRosterNeedScore(team.teamModel.players.count) / 5, min: 0, max: 1)
     let prestige = clamp(team.prestige, min: 0, max: 1)
     let willingness = 0.62 + need * 0.18 + prestige * 0.16
-    return roundToNearestThousand(min(entry.askingPrice * 1.08, min(budget * 0.22, entry.askingPrice * willingness)))
+    let willingnessCap = entry.askingPrice * willingness
+    let stretchCap = entry.askingPrice * 1.08
+    let baseOffer = min(stretchCap, willingnessCap)
+    return roundToNearestThousand(min(baseOffer, max(0, budget)))
 }
 
 private func transferPortalWeeklyGain(
@@ -1121,8 +1182,9 @@ private func applyTransferPortalCommits(_ state: inout LeagueStore.State) {
               let destinationIndex = state.teams.firstIndex(where: { $0.teamId == committedTeamId })
         else { continue }
 
+        let signingPrice = portal[portalIndex].committedOffer ?? portal[portalIndex].askingPrice
         var player = transferPortalPlayer(from: portal[portalIndex], seed: "\(state.optionsSeed):portal-player:\(portal[portalIndex].id)")
-        player.bio.nilDollarsLastYear = portal[portalIndex].askingPrice
+        player.bio.nilDollarsLastYear = signingPrice
         state.teams[destinationIndex].teamModel.players.append(player)
         state.teams[destinationIndex].teamModel.lineup.append(player)
         portal[portalIndex].committedTeamName = state.teams[destinationIndex].teamName
