@@ -277,6 +277,21 @@ extension CollegeLeagueHomeView {
         coachingStaff = getUserCoachingStaff(currentLeague)
     }
 
+    func savePlaybook(pace: PaceProfile, defenseScheme: DefenseScheme, offenseWeights: [String: Int]) {
+        guard var currentLeague = league else { return }
+        setUserPlaybook(&currentLeague, pace: pace, defenseScheme: defenseScheme, offenseWeights: offenseWeights)
+        league = currentLeague
+
+        UserDefaults.standard.set(pace.rawValue, forKey: "coachPace")
+        UserDefaults.standard.set(defenseScheme.rawValue, forKey: "coachDefense")
+        if let data = try? JSONEncoder().encode(offenseWeights) {
+            UserDefaults.standard.set(data, forKey: "coachOffenseWeights")
+        }
+        if let dominant = offenseWeights.max(by: { $0.value < $1.value })?.key {
+            UserDefaults.standard.set(dominant, forKey: "coachOffense")
+        }
+    }
+
     @discardableResult
     func advanceOffseasonSchedule(refreshLeague: Bool = true) -> LeagueOffseasonProgress? {
         guard var currentLeague = league else { return nil }
@@ -632,6 +647,7 @@ enum LeagueMenuDestination: Hashable {
     case roster
     case schedule
     case rotation
+    case playbook
     case playerStats
     case teamStats
     case statLeaders
@@ -645,7 +661,7 @@ enum LeagueMenuDestination: Hashable {
         switch self {
         case .seasonRecap, .offseasonSchedule, .nilBudgets, .playersLeaving, .draft, .playerRetention, .transferPortal:
             return true
-        case .bracket, .roster, .schedule, .rotation, .playerStats, .teamStats, .statLeaders, .standings, .rankings, .coachingStaff, .hallOfFame, .boxScore:
+        case .bracket, .roster, .schedule, .rotation, .playbook, .playerStats, .teamStats, .statLeaders, .standings, .rankings, .coachingStaff, .hallOfFame, .boxScore:
             return false
         }
     }

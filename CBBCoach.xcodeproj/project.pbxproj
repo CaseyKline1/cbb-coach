@@ -24,6 +24,7 @@
 		CAC9E1B8AC93BE8573BDDEAB /* ContentView.Part10.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EFC4E759F4FE96E71200F1 /* ContentView.Part10.swift */; };
 		DE92A1D6671211BA4401D387 /* ContentView.Part07.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CB22F4F81EB7D6037AB3CC0 /* ContentView.Part07.swift */; };
 		E5122D07E12E1240BDAFAC66 /* AppComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB79331F4DDA7BE27C24E4E /* AppComponents.swift */; };
+		EC527B9EAEFF02F88B7E417D /* PlaybookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F073AC13597CD7A2CCE6D472 /* PlaybookView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +45,7 @@
 		CAEE84DF38E8D2CAAF7CBE6A /* CBBCoachApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CBBCoachApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0D7F0523C735098D20C2209 /* AppTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTable.swift; sourceTree = "<group>"; };
 		D88A27BBFC1DA2A32FE35C09 /* ContentView.Part06.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.Part06.swift; sourceTree = "<group>"; };
+		F073AC13597CD7A2CCE6D472 /* PlaybookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybookView.swift; sourceTree = "<group>"; };
 		F8783153FA12519419B34E01 /* LeagueStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeagueStore.swift; sourceTree = "<group>"; };
 		FAB79331F4DDA7BE27C24E4E /* AppComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppComponents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -94,6 +96,7 @@
 				A95D0E601B2745C92AF4D82E /* ContentView.swift */,
 				92A57274091C29C6024125B1 /* Info.plist */,
 				F8783153FA12519419B34E01 /* LeagueStore.swift */,
+				F073AC13597CD7A2CCE6D472 /* PlaybookView.swift */,
 				BFB4F2AC81D052E6C9972E49 /* Components */,
 			);
 			path = iOSApp;
@@ -207,6 +210,7 @@
 				BAC5A2D4195FEBA68BD4F156 /* ContentView.swift in Sources */,
 				8E777E6698C0FD72023F14AD /* FilterDropdown.swift in Sources */,
 				B36A33804EC197B9C4FD5BF8 /* LeagueStore.swift in Sources */,
+				EC527B9EAEFF02F88B7E417D /* PlaybookView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

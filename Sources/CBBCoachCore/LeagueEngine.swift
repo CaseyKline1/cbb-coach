@@ -519,6 +519,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     public var previousTeamName: String
     public var committedTeamId: String? = nil
     public var committedTeamName: String? = nil
+    public var committedOffer: Double? = nil
     public var finalistTeamIds: [String] = []
     public var finalistTeamNames: [String] = []
     public var interestByTeamId: [String: Double] = [:]
@@ -542,6 +543,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
         previousTeamName: String,
         committedTeamId: String? = nil,
         committedTeamName: String? = nil,
+        committedOffer: Double? = nil,
         finalistTeamIds: [String] = [],
         finalistTeamNames: [String] = [],
         interestByTeamId: [String: Double] = [:],
@@ -564,6 +566,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
         self.previousTeamName = previousTeamName
         self.committedTeamId = committedTeamId
         self.committedTeamName = committedTeamName
+        self.committedOffer = committedOffer
         self.finalistTeamIds = finalistTeamIds
         self.finalistTeamNames = finalistTeamNames
         self.interestByTeamId = interestByTeamId
@@ -583,7 +586,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, previousTeamId, previousTeamName, committedTeamId, committedTeamName
+        case id, previousTeamId, previousTeamName, committedTeamId, committedTeamName, committedOffer
         case finalistTeamIds, finalistTeamNames, interestByTeamId
         case player, playerModel, stats, playerName, position, year, overall, potential
         case askingPrice, intrinsicValue, reason, loyalty, greed
@@ -597,6 +600,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
             previousTeamName: try container.decode(String.self, forKey: .previousTeamName),
             committedTeamId: try container.decodeIfPresent(String.self, forKey: .committedTeamId),
             committedTeamName: try container.decodeIfPresent(String.self, forKey: .committedTeamName),
+            committedOffer: try container.decodeIfPresent(Double.self, forKey: .committedOffer),
             finalistTeamIds: try container.decodeIfPresent([String].self, forKey: .finalistTeamIds) ?? [],
             finalistTeamNames: try container.decodeIfPresent([String].self, forKey: .finalistTeamNames) ?? [],
             interestByTeamId: try container.decodeIfPresent([String: Double].self, forKey: .interestByTeamId) ?? [:],
@@ -663,6 +667,9 @@ public struct CreateLeagueOptions: Codable, Equatable, Sendable {
     public var userHeadCoachSkills: CoachSkills?
     public var userHeadCoachAlmaMater: String?
     public var userHeadCoachPipelineState: String?
+    public var userPace: PaceProfile?
+    public var userDefenseScheme: DefenseScheme?
+    public var userOffenseWeights: [String: Int]?
 
     public init(userTeamName: String, seed: String = "default", totalRegularSeasonGames: Int = DEFAULT_TOTAL_REGULAR_SEASON_GAMES) {
         self.userTeamName = userTeamName
@@ -673,6 +680,9 @@ public struct CreateLeagueOptions: Codable, Equatable, Sendable {
         self.userHeadCoachSkills = nil
         self.userHeadCoachAlmaMater = nil
         self.userHeadCoachPipelineState = nil
+        self.userPace = nil
+        self.userDefenseScheme = nil
+        self.userOffenseWeights = nil
     }
 }
 

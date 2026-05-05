@@ -50,6 +50,20 @@ public func createD1League(options: CreateLeagueOptions) throws -> LeagueState {
             staffOptions.headCoach = head
             staffOptions.teamName = teamRef.name
             createTeamOptions.coachingStaff = createCoachingStaff(options: staffOptions, random: &random)
+
+            if let pace = options.userPace {
+                createTeamOptions.pace = pace
+            }
+            if let defense = options.userDefenseScheme {
+                createTeamOptions.defenseScheme = defense
+            }
+            if let weights = options.userOffenseWeights {
+                let sequence = expandOffenseWeights(weights)
+                if !sequence.isEmpty {
+                    createTeamOptions.formations = sequence
+                    createTeamOptions.formation = sequence[0]
+                }
+            }
         }
 
         let model = createTeam(options: createTeamOptions, random: &random)

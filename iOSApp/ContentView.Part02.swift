@@ -161,6 +161,11 @@ struct CollegeLeagueHomeView: View {
                             }
                             .buttonStyle(.plain)
 
+                            NavigationLink(value: LeagueMenuDestination.playbook) {
+                                MenuRow(title: "Playbook")
+                            }
+                            .buttonStyle(.plain)
+
                             NavigationLink(value: LeagueMenuDestination.playerStats) {
                                 MenuRow(title: "Player Stats")
                             }
@@ -296,6 +301,13 @@ struct CollegeLeagueHomeView: View {
                         slots: rotationSlots,
                         onSave: { updated in
                             saveRotation(updated)
+                        }
+                    )
+                case .playbook:
+                    PlaybookView(
+                        playbook: league.flatMap { getUserPlaybook($0) },
+                        onSave: { pace, defense, weights in
+                            savePlaybook(pace: pace, defenseScheme: defense, offenseWeights: weights)
                         }
                     )
                 case .playerStats:
@@ -563,6 +575,15 @@ struct CollegeLeagueHomeView: View {
             options.userHeadCoachSkills = profile.archetype.initialSkills
             options.userHeadCoachAlmaMater = profile.almaMater
             options.userHeadCoachPipelineState = profile.pipelineState
+            options.userPace = (UserDefaults.standard.string(forKey: "coachPace").flatMap(PaceProfile.init(rawValue:))) ?? profile.pace
+            options.userDefenseScheme = (UserDefaults.standard.string(forKey: "coachDefense").flatMap(DefenseScheme.init(rawValue:))) ?? profile.defense
+            if let data = UserDefaults.standard.data(forKey: "coachOffenseWeights"),
+               let dict = try? JSONDecoder().decode([String: Int].self, from: data),
+               dict.values.contains(where: { $0 > 0 }) {
+                options.userOffenseWeights = dict
+            } else {
+                options.userOffenseWeights = [profile.offense.rawValue: 100]
+            }
             let created = try createD1League(options: options)
             league = created
             refreshFromLeague(created)
