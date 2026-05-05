@@ -35,6 +35,7 @@ func computeTargetMinutesMap(tracker: NativeGameStateStore.TeamTracker) -> [Int:
 
 func rankSubCandidates(tracker: NativeGameStateStore.TeamTracker, blowoutMode: BlowoutRotationMode) -> [SubCandidate] {
     let roster = tracker.team.players
+    let rotationOrderRank = rotationOrderRankByRosterIndex(team: tracker.team, roster: roster)
     return roster.indices.map { idx in
         let box = idx < tracker.boxPlayers.count ? tracker.boxPlayers[idx] : PlayerBoxScore(playerName: "", position: "", minutes: 0, points: 0, fgMade: 0, fgAttempts: 0, threeMade: 0, threeAttempts: 0, ftMade: 0, ftAttempts: 0, rebounds: 0, offensiveRebounds: 0, defensiveRebounds: 0, assists: 0, steals: 0, blocks: 0, turnovers: 0, fouls: 0, plusMinus: 0, energy: 100)
         let energy = box.energy ?? 100
@@ -64,7 +65,10 @@ func rankSubCandidates(tracker: NativeGameStateStore.TeamTracker, blowoutMode: B
             fouls: box.fouls,
             fouledOut: fouledOut
         )
-    }.sorted { $0.score > $1.score }
+    }.sorted {
+        if abs($0.score - $1.score) > 0.001 { return $0.score > $1.score }
+        return (rotationOrderRank[$0.rosterIndex] ?? Int.max) < (rotationOrderRank[$1.rosterIndex] ?? Int.max)
+    }
 }
 
 func isInFoulTrouble(stored: NativeGameStateStore.StoredState, fouls: Int) -> Bool {

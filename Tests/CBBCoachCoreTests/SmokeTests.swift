@@ -492,6 +492,109 @@ func defaultCPURotationUsesFullRosterWithoutFlatteningMinutes() {
     #expect(Set(minutes).count > 4)
 }
 
+@Test("Default rotation ranks bench rows by role minutes")
+func defaultRotationRanksBenchRowsByRoleMinutes() {
+    var random = SeededRandom(seed: 6161)
+    var players: [Player] = []
+    for idx in 0..<13 {
+        var p = createPlayer()
+        p.bio.name = "Role P\(idx + 1)"
+        p.bio.position = [.pg, .sg, .sf, .pf, .c, .cg, .wing, .f, .big, .pg, .sg, .sf, .pf][idx]
+        let rating: Int
+        switch idx {
+        case 5: rating = 50
+        case 6: rating = 78
+        default: rating = 82 - idx
+        }
+        p.skills.shotIQ = rating
+        p.skills.ballHandling = rating
+        p.skills.passingIQ = rating
+        p.shooting.threePointShooting = rating
+        p.shooting.midrangeShot = rating
+        p.shooting.closeShot = rating
+        p.defense.perimeterDefense = rating
+        p.defense.postDefense = rating
+        p.rebounding.defensiveRebound = rating
+        p.athleticism.speed = rating
+        p.athleticism.agility = rating
+        players.append(p)
+    }
+
+    var options = CreateTeamOptions(name: "Role U", players: players)
+    options.lineup = Array(players.prefix(5))
+    let team = createTeam(options: options, random: &random)
+    let slots = defaultRotationSlots(for: team)
+
+    #expect(slots.count == players.count)
+    #expect(slots[5].playerIndex == 6)
+    #expect(slots[5].minutes > slots.first(where: { $0.playerIndex == 5 })?.minutes ?? 0)
+    #expect(slots.dropFirst(5).map(\.minutes) == slots.dropFirst(5).map(\.minutes).sorted(by: >))
+}
+
+@Test("Saved rotation order breaks substitution ranking ties")
+func savedRotationOrderBreaksSubstitutionRankingTies() {
+    var random = SeededRandom(seed: 7171)
+    var players: [Player] = []
+    for idx in 0..<7 {
+        var p = createPlayer()
+        p.bio.name = "Tie P\(idx + 1)"
+        p.bio.position = [.pg, .sg, .sf, .pf, .c, .cg, .wing][idx]
+        players.append(p)
+    }
+
+    var options = CreateTeamOptions(name: "Tie U", players: players)
+    options.lineup = Array(players.prefix(5))
+    options.rotation = TeamRotation(
+        minuteTargets: Dictionary(uniqueKeysWithValues: players.map { ($0.bio.name, 10.0) }),
+        slotPlayerNames: ["Tie P7", "Tie P6", "Tie P1", "Tie P2", "Tie P3", "Tie P4", "Tie P5"]
+    )
+    let team = createTeam(options: options, random: &random)
+    let boxPlayers = players.map { player in
+        PlayerBoxScore(
+            playerName: player.bio.name,
+            position: player.bio.position.rawValue,
+            minutes: 0,
+            points: 0,
+            fgMade: 0,
+            fgAttempts: 0,
+            threeMade: 0,
+            threeAttempts: 0,
+            ftMade: 0,
+            ftAttempts: 0,
+            rebounds: 0,
+            offensiveRebounds: 0,
+            defensiveRebounds: 0,
+            assists: 0,
+            steals: 0,
+            blocks: 0,
+            turnovers: 0,
+            fouls: 0,
+            plusMinus: 0,
+            energy: 100
+        )
+    }
+    let tracker = NativeGameStateStore.TeamTracker(
+        team: team,
+        score: 0,
+        activeLineup: Array(players.prefix(5)),
+        activeLineupBoxIndices: Array(0..<5),
+        boxPlayers: boxPlayers,
+        teamExtras: [:],
+        gameForm: 0,
+        reboundFocusBoxIndex: nil,
+        reboundFocusBoost: 0,
+        targetMinutesByRosterIndex: Array(repeating: 10, count: players.count),
+        baseSkillByRosterIndex: Array(repeating: 70, count: players.count),
+        initiatedActionCount: 0,
+        initiatedActionCountByBoxIndex: [:]
+    )
+
+    let rankedBench = rankSubCandidates(tracker: tracker, blowoutMode: .none)
+        .filter { !tracker.activeLineupBoxIndices.contains($0.rosterIndex) }
+
+    #expect(rankedBench.map(\.rosterIndex).prefix(2) == [6, 5])
+}
+
 @Test("Simulation fallback minute targets give CPU bench real roles")
 func simulationFallbackMinuteTargetsGiveCPUBenchRealRoles() {
     var random = SeededRandom(seed: 6262)

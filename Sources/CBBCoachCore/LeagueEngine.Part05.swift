@@ -441,24 +441,83 @@ func coachingQuality(_ staff: CoachingStaff) -> Double {
 }
 
 func defaultRotationSlots(for team: Team) -> [UserRotationSlot] {
-    let starters = Array((team.lineup.isEmpty ? team.players : team.lineup).prefix(5))
-    let lineupNames = Set(starters.map { $0.bio.name })
-
-    let benchPairs = Array(team.players.enumerated().filter { !lineupNames.contains($0.element.bio.name) })
     let minutesByRosterIndex = rotationMinuteTargets(for: team, roster: team.players)
+    let starterIndices = rotationStarterIndices(for: team, roster: team.players)
+    let starterIndexSet = Set(starterIndices)
 
-    let starterSlots = starters.enumerated().map { idx, player -> UserRotationSlot in
-        let playerIndex = team.players.firstIndex(where: { $0.bio.name == player.bio.name })
-        let minutes = playerIndex.flatMap { $0 < minutesByRosterIndex.count ? minutesByRosterIndex[$0] : nil } ?? 0
+    let starterSlots = starterIndices.enumerated().map { idx, playerIndex -> UserRotationSlot in
+        let player = team.players[playerIndex]
+        let minutes = playerIndex < minutesByRosterIndex.count ? minutesByRosterIndex[playerIndex] : 0
         return UserRotationSlot(slot: idx, playerIndex: playerIndex, position: player.bio.position.rawValue, minutes: minutes)
     }
 
-    let benchSlots = benchPairs.enumerated().map { benchIdx, pair -> UserRotationSlot in
-        let minutes = pair.offset < minutesByRosterIndex.count ? minutesByRosterIndex[pair.offset] : 0
-        return UserRotationSlot(slot: benchIdx + 5, playerIndex: pair.offset, position: pair.element.bio.position.rawValue, minutes: minutes)
+    let benchIndices = rotationBenchOrderIndices(
+        roster: team.players,
+        starterIndexSet: starterIndexSet,
+        minuteTargets: minutesByRosterIndex
+    )
+    let benchSlots = benchIndices.enumerated().map { benchIdx, playerIndex -> UserRotationSlot in
+        let player = team.players[playerIndex]
+        let minutes = playerIndex < minutesByRosterIndex.count ? minutesByRosterIndex[playerIndex] : 0
+        return UserRotationSlot(slot: benchIdx + 5, playerIndex: playerIndex, position: player.bio.position.rawValue, minutes: minutes)
     }
 
     return starterSlots + benchSlots
+}
+
+func rotationBenchOrderIndices(roster: [Player], starterIndexSet: Set<Int>, minuteTargets: [Double]) -> [Int] {
+    roster.indices
+        .filter { !starterIndexSet.contains($0) }
+        .sorted {
+            let leftMinutes = $0 < minuteTargets.count ? minuteTargets[$0] : 0
+            let rightMinutes = $1 < minuteTargets.count ? minuteTargets[$1] : 0
+            if abs(leftMinutes - rightMinutes) > 0.001 { return leftMinutes > rightMinutes }
+
+            let leftOverall = playerOverall(roster[$0])
+            let rightOverall = playerOverall(roster[$1])
+            if leftOverall != rightOverall { return leftOverall > rightOverall }
+
+            return $0 < $1
+        }
+}
+
+func rotationOrderRankByRosterIndex(team: Team, roster: [Player]) -> [Int: Int] {
+    var orderedIndices: [Int] = []
+    var usedIndices: Set<Int> = []
+
+    if let slotPlayerNames = team.rotation?.slotPlayerNames, !slotPlayerNames.isEmpty {
+        for playerName in slotPlayerNames {
+            guard let index = roster.indices.first(where: { !usedIndices.contains($0) && roster[$0].bio.name == playerName }) else {
+                continue
+            }
+            orderedIndices.append(index)
+            usedIndices.insert(index)
+        }
+    }
+
+    let starterIndices = rotationStarterIndices(for: team, roster: roster)
+    for index in starterIndices where !usedIndices.contains(index) {
+        orderedIndices.append(index)
+        usedIndices.insert(index)
+    }
+
+    let minuteTargets = rotationMinuteTargets(for: team, roster: roster)
+    let benchIndices = rotationBenchOrderIndices(
+        roster: roster,
+        starterIndexSet: Set(starterIndices),
+        minuteTargets: minuteTargets
+    )
+    for index in benchIndices where !usedIndices.contains(index) {
+        orderedIndices.append(index)
+        usedIndices.insert(index)
+    }
+
+    for index in roster.indices where !usedIndices.contains(index) {
+        orderedIndices.append(index)
+        usedIndices.insert(index)
+    }
+
+    return Dictionary(uniqueKeysWithValues: orderedIndices.enumerated().map { ($0.element, $0.offset) })
 }
 
 func rotationMinuteTargets(for team: Team, roster: [Player]) -> [Double] {
