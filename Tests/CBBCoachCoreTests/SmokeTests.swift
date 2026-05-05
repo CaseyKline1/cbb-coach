@@ -1196,7 +1196,7 @@ func nilRetentionBalanceSimulation() throws {
     #expect(avgMajorBudget <= 9_000_000)
     #expect(avgTopAsk >= 2_200_000)
     #expect(avgTopAsk <= 4_600_000)
-    #expect(absoluteTopAsk >= 4_000_000)
+    #expect(absoluteTopAsk >= 3_200_000)
 }
 
 @Test("NIL asks fall off sharply below true superstar tier")
@@ -1245,6 +1245,49 @@ func nilAsksFallOffBelowSuperstarTier() throws {
     #expect(superstar.overall >= 94)
     #expect(superstar.demand >= 2_000_000)
     #expect(superstar.demand >= goodStarter.demand * 2.4)
+}
+
+@Test("High loyalty creates a meaningful NIL retention discount")
+func highLoyaltyCreatesMeaningfulNILRetentionDiscount() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "nil-loyalty-discount", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .playerRetention
+        state.playersLeaving = []
+        state.draftPicks = []
+        state.nilRetention = nil
+        state.transferPortal = nil
+        state.nilRetentionFinalized = false
+
+        guard let userIndex = state.teams.firstIndex(where: { $0.teamId == state.userTeamId }) else { return }
+        var random = SeededRandom(seed: 923)
+
+        state.teams[userIndex].teamModel.players[0].bio.name = "Low Loyalty Starter"
+        state.teams[userIndex].teamModel.players[0].bio.year = .so
+        state.teams[userIndex].teamModel.players[0].bio.potential = 86
+        state.teams[userIndex].teamModel.players[0].greed = 50
+        state.teams[userIndex].teamModel.players[0].loyalty = 5
+        state.teams[userIndex].teamModel.players[0].bio.nilDollarsLastYear = 0
+        applyRatings(&state.teams[userIndex].teamModel.players[0], base: 84, random: &random)
+
+        state.teams[userIndex].teamModel.players[1].bio.name = "High Loyalty Starter"
+        state.teams[userIndex].teamModel.players[1].bio.year = .so
+        state.teams[userIndex].teamModel.players[1].bio.potential = 86
+        state.teams[userIndex].teamModel.players[1].greed = 50
+        state.teams[userIndex].teamModel.players[1].loyalty = 95
+        state.teams[userIndex].teamModel.players[1].bio.nilDollarsLastYear = 0
+        applyRatings(&state.teams[userIndex].teamModel.players[1], base: 84, random: &random)
+
+        state.teams[userIndex].teamModel.lineup = state.teams[userIndex].teamModel.players
+    }
+
+    let retention = getNILRetentionSummary(league)
+    let lowLoyalty = try #require(retention.userEntries.first { $0.playerName == "Low Loyalty Starter" })
+    let highLoyalty = try #require(retention.userEntries.first { $0.playerName == "High Loyalty Starter" })
+
+    #expect(highLoyalty.returningDiscount > lowLoyalty.returningDiscount)
+    #expect(highLoyalty.demand <= lowLoyalty.demand * 0.72)
 }
 
 @Test("Walk-on level players have zero NIL value and asks")

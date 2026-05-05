@@ -1064,18 +1064,20 @@ private func initialNILDemand(
 
     let greedFactor = clamp(greed / 100, min: 0, max: 1)
     let loyaltyFactor = clamp(loyalty / 100, min: 0, max: 1)
+    let loyaltyDiscountFactor = pow(loyaltyFactor, 1.8)
     let variance = 0.91 + deterministicNILValueRoll(seed: seed) * 0.20
-    let marketDemand = intrinsicValue * (1.02 + greedFactor * 0.28 - loyaltyFactor * 0.08) * (1.0 - returningDiscount) * variance
+    let marketDemand = intrinsicValue * (1.02 + greedFactor * 0.28 - loyaltyDiscountFactor * 0.20) * (1.0 - returningDiscount) * variance
     guard lastYearAmount > 0 else { return roundToNearestThousand(max(0, marketDemand)) }
-    let anchor = lastYearAmount * (0.76 + greedFactor * 0.30 - loyaltyFactor * 0.13)
+    let anchor = lastYearAmount * (0.76 + greedFactor * 0.30 - loyaltyDiscountFactor * 0.28)
     return roundToNearestThousand(max(marketDemand, anchor))
 }
 
 private func returningDiscount(loyalty: Double, greed: Double, lastYearAmount: Double, intrinsicValue: Double) -> Double {
     let loyaltyFactor = clamp(loyalty / 100, min: 0, max: 1)
+    let loyaltyDiscountFactor = pow(loyaltyFactor, 1.8)
     let greedFactor = clamp(greed / 100, min: 0, max: 1)
     let paidComfort = lastYearAmount > 0 ? clamp(lastYearAmount / max(1, intrinsicValue), min: 0, max: 1) * 0.04 : 0
-    return clamp(0.02 + loyaltyFactor * 0.16 + paidComfort - greedFactor * 0.11, min: 0, max: 0.24)
+    return clamp(0.02 + loyaltyDiscountFactor * 0.34 + paidComfort - greedFactor * 0.11, min: 0, max: 0.42)
 }
 
 private func nilAcceptanceThreshold(_ row: NILNegotiationEntry) -> Double {
