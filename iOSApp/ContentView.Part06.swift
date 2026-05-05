@@ -292,9 +292,9 @@ struct PlayerCardDetailView: View {
                             AppTableTextCell(text: pct(row.totals.threePct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.ftPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
                             AppTableTextCell(text: pct(row.totals.efgPct), width: 64, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: "\(row.totals.fgMade)/\(row.totals.fgAttempts)", width: 72, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: "\(row.totals.threeMade)/\(row.totals.threeAttempts)", width: 72, font: .caption.monospacedDigit().weight(.semibold))
-                            AppTableTextCell(text: "\(row.totals.ftMade)/\(row.totals.ftAttempts)", width: 72, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: "\(format(row.totals.fgMadePerGame))/\(format(row.totals.fgAttemptsPerGame))", width: 72, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: "\(format(row.totals.threeMadePerGame))/\(format(row.totals.threeAttemptsPerGame))", width: 72, font: .caption.monospacedDigit().weight(.semibold))
+                            AppTableTextCell(text: "\(format(row.totals.ftMadePerGame))/\(format(row.totals.ftAttemptsPerGame))", width: 72, font: .caption.monospacedDigit().weight(.semibold))
                         }
                     }
                 }
