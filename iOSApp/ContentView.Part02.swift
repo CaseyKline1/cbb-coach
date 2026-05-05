@@ -125,15 +125,17 @@ struct CollegeLeagueHomeView: View {
                         .buttonStyle(GameButtonStyle(variant: .primary))
                         .disabled(isSkipAheadInProgress || offseasonAdvanceLoading != nil)
 
-                        Button("Skip Ahead") {
-                            if hasSkipAheadTargets {
-                                showingSkipAheadOptions = true
-                            } else {
-                                statusText = "Already at the offseason checkpoint."
+                        if !seasonIsComplete {
+                            Button("Skip Ahead") {
+                                if hasSkipAheadTargets {
+                                    showingSkipAheadOptions = true
+                                } else {
+                                    statusText = "Already at the offseason checkpoint."
+                                }
                             }
+                            .buttonStyle(GameButtonStyle(variant: .secondary))
+                            .disabled(isSkipAheadInProgress || offseasonAdvanceLoading != nil)
                         }
-                        .buttonStyle(GameButtonStyle(variant: .secondary))
-                        .disabled(isSkipAheadInProgress || offseasonAdvanceLoading != nil)
                     }
 
                     GameCard {
@@ -496,7 +498,7 @@ struct CollegeLeagueHomeView: View {
     }
 
     private var primaryAdvanceButtonTitle: String {
-        seasonIsComplete ? "Advance to Offseason" : "Sim Next User Game"
+        seasonIsComplete ? "Start Offseason" : "Sim Next User Game"
     }
 
     private var userRanking: Int? {
