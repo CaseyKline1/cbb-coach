@@ -390,13 +390,13 @@ struct CoachBackgroundStepView: View {
             GameCard {
                 VStack(alignment: .leading, spacing: 16) {
                     FilterDropdown(
-                        label: "Alma Mater",
+                        title: "Alma Mater",
                         selection: $almaMater,
                         options: almaMaterOptions.map { (label: $0, value: $0) }
                     )
 
                     FilterDropdown(
-                        label: "Pipeline",
+                        title: "Pipeline",
                         selection: $pipelineState,
                         options: Self.pipelineOptions
                     )

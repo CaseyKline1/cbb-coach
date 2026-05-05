@@ -500,6 +500,30 @@ func simulationFallbackMinuteTargetsGiveCPUBenchRealRoles() {
     #expect(targets.dropFirst(5).filter { $0 > 0 }.count >= 5)
 }
 
+@Test("Saved user rotation order survives reopening")
+func savedUserRotationOrderSurvivesReopening() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "saved-rotation-order", totalRegularSeasonGames: 1))
+    let original = getUserRotation(league)
+    #expect(original.count >= 7)
+
+    var edited = original.enumerated().map { index, slot in
+        UserRotationSlot(slot: index + 1, playerIndex: slot.playerIndex, position: slot.position, minutes: slot.minutes)
+    }
+    let firstPlayer = edited[0].playerIndex
+    edited[0].playerIndex = edited[6].playerIndex
+    edited[6].playerIndex = firstPlayer
+    edited[0].minutes = 12
+    edited[6].minutes = 30
+
+    let saved = setUserRotation(&league, slots: edited)
+    let reopened = getUserRotation(league)
+
+    #expect(saved.prefix(edited.count).map(\.playerIndex) == edited.map(\.playerIndex))
+    #expect(reopened.map(\.playerIndex) == saved.map(\.playerIndex))
+    #expect(reopened[0].minutes == 12)
+    #expect(reopened[6].minutes == 30)
+}
+
 @Test("Fatigue keeps high-usage scorers out of unrealistic average ranges")
 func fatigueSuppressesExtremeScorerAverages() {
     func makePlayer(
