@@ -65,6 +65,7 @@ struct ContentView: View {
     }
 
     private func saveProfile(_ profile: CoachCreationProfile) {
+        clearPlaybookOverridesForNewCoach()
         coachFirstName = profile.firstName
         coachLastName = profile.lastName
         coachAge = profile.age
@@ -79,10 +80,15 @@ struct ContentView: View {
 
     private func resetCoachCreation() {
         LeagueStore.clear()
+        clearPlaybookOverridesForNewCoach()
         coachCareerTeam = ""
         coachAlmaMater = "Independent"
         coachPipelineState = "CA"
         coachCreationComplete = false
+    }
+
+    private func clearPlaybookOverridesForNewCoach() {
+        UserDefaults.standard.removeObject(forKey: "coachOffenseWeights")
     }
 }
 
