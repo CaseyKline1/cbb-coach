@@ -1939,6 +1939,7 @@ struct NILRetentionView: View {
 
 struct TransferPortalView: View {
     private let maxUserTargets = 12
+    private let boardStatusWidth: CGFloat = 136
 
     private enum PortalTableColumn: String, Hashable {
         case target, player, position, year, previous, overall, potential, points, rebounds, assists, steals, blocks, turnovers, assistTurnover, fieldGoal, threePoint, effectiveFieldGoal, minutes, ask, status
@@ -2120,7 +2121,7 @@ struct TransferPortalView: View {
             .init(id: .offer, title: "OFFER", width: 140),
             .init(id: .interest, title: "INT", width: 46),
             .init(id: .finalists, title: "FINALISTS", width: 150, alignment: .leading),
-            .init(id: .status, title: "STATUS", width: 96, alignment: .leading),
+            .init(id: .status, title: "STATUS", width: boardStatusWidth, alignment: .leading),
             .init(id: .actions, title: "", width: 38),
         ]
     }
@@ -2211,7 +2212,7 @@ struct TransferPortalView: View {
                             offerControl(row)
                             AppTableTextCell(text: interestText(row), width: 46)
                             AppTableTextCell(text: finalistsText(row), width: 150, alignment: .leading)
-                            AppTableTextCell(text: statusText(row), width: 96, alignment: .leading)
+                            AppTableTextCell(text: statusText(row), width: boardStatusWidth, alignment: .leading)
                             boardActions(row)
                         }
                     }
