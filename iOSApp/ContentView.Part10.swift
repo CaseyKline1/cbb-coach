@@ -1385,11 +1385,20 @@ struct DraftView: View {
                                     .frame(width: 42, alignment: .leading)
 
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(pick.player.name)
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(isUserSchoolPick(pick) ? userSchoolGold : AppTheme.ink)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
+                                    NavigationLink {
+                                        PlayerCardDetailView(
+                                            player: pick.player,
+                                            games: games,
+                                            teamName: pick.teamName
+                                        )
+                                    } label: {
+                                        Text(pick.player.name)
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundStyle(isUserSchoolPick(pick) ? userSchoolGold : AppTheme.ink)
+                                            .lineLimit(1)
+                                            .truncationMode(.tail)
+                                    }
+                                    .buttonStyle(.plain)
 
                                     Text(playerDetail(for: pick))
                                         .font(.system(size: 11, weight: .regular))
