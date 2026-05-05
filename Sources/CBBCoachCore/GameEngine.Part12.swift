@@ -335,6 +335,7 @@ func maybeResolveFastBreak(
         baseMakeProbability(for: shotType)
             + (logistic(shotInteraction.edge + 0.3) - 0.5) * makeScale(for: shotType) * 0.34
             + (logistic(finishQuality.edge) - 0.5) * 0.22
+            + shooterTalentBonus(for: shotType, shooter: runner)
             + transitionStyle * 0.055
             + sourceBoost * 0.022
             + styleBurst * 0.01

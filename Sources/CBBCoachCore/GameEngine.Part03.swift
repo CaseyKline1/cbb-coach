@@ -160,9 +160,11 @@ func resolveHalfCourtAction(
             }()
             let baseMinMake = minMakeProbability(for: shotType)
             let usageAdjustedMinMake = clamp(baseMinMake - shooterUsageTax * 0.6, min: baseMinMake - 0.11, max: baseMinMake)
+            let talentBonus = shooterTalentBonus(for: shotType, shooter: shooter)
             let madeProbability = clamp(
                 shotMakeBase + shotTypeEdgeBonus + play.makeBonus + zoneMod + trailingBoost
                     + (logistic(shotInteraction.edge + play.edgeBonus) - 0.5) * shotMakeScale
+                    + talentBonus
                     - shooterUsageTax,
                 min: usageAdjustedMinMake,
                 max: maxMakeProbability(for: shotType)

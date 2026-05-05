@@ -464,23 +464,47 @@ func shotProfile(for shotType: ShotType) -> ShotProfile {
 
 func baseMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.320
-    case .midrange: return 0.388
-    case .close: return 0.468
-    case .layup: return 0.564
-    case .dunk: return 0.728
-    case .hook: return 0.431
-    case .fadeaway: return 0.395
+    case .three: return 0.250
+    case .midrange: return 0.378
+    case .close: return 0.456
+    case .layup: return 0.548
+    case .dunk: return 0.712
+    case .hook: return 0.420
+    case .fadeaway: return 0.382
     }
 }
 
 func makeScale(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.09
-    case .midrange: return 0.10
-    case .close, .hook, .fadeaway: return 0.11
-    case .layup, .dunk: return 0.13
+    case .three: return 0.18
+    case .midrange: return 0.14
+    case .close: return 0.14
+    case .layup: return 0.16
+    case .dunk: return 0.14
+    case .hook: return 0.13
+    case .fadeaway: return 0.13
     }
+}
+
+// Direct shooter-rating bonus on top of the matchup logistic.
+// The (off−def)/34 → logistic dampens rating spread heavily, so we add a
+// linear talent term that scales with the shooter's primary shot rating.
+// At rating 65 the bonus is 0; an elite 99 adds ~+0.16, a 25 subtracts ~−0.18.
+func primaryShotRatingPath(for shotType: ShotType) -> String {
+    switch shotType {
+    case .three: return "shooting.threePointShooting"
+    case .midrange: return "shooting.midrangeShot"
+    case .close: return "shooting.closeShot"
+    case .layup: return "shooting.layups"
+    case .dunk: return "shooting.dunks"
+    case .hook: return "postGame.postHooks"
+    case .fadeaway: return "postGame.postFadeaways"
+    }
+}
+
+func shooterTalentBonus(for shotType: ShotType, shooter: Player) -> Double {
+    let rating = getRating(shooter, path: primaryShotRatingPath(for: shotType))
+    return clamp((rating - 65) / 220, min: -0.18, max: 0.16)
 }
 
 func shotTypeEdge(for shotType: ShotType) -> Double {
@@ -489,7 +513,7 @@ func shotTypeEdge(for shotType: ShotType) -> Double {
     case .dunk: return 0.03
     case .midrange: return -0.03
     case .fadeaway: return -0.02
-    case .three: return -0.038
+    case .three: return 0.0
     case .hook: return 0.0
     case .close: return 0.0
     }
@@ -497,19 +521,19 @@ func shotTypeEdge(for shotType: ShotType) -> Double {
 
 func minMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.256
-    case .midrange: return 0.35
-    case .close: return 0.42
-    case .layup: return 0.52
-    case .dunk: return 0.675
-    case .hook: return 0.385
-    case .fadeaway: return 0.34
+    case .three: return 0.21
+    case .midrange: return 0.30
+    case .close: return 0.38
+    case .layup: return 0.48
+    case .dunk: return 0.62
+    case .hook: return 0.34
+    case .fadeaway: return 0.30
     }
 }
 
 func maxMakeProbability(for shotType: ShotType) -> Double {
     switch shotType {
-    case .three: return 0.496
+    case .three: return 0.55
     case .midrange: return 0.58
     case .close: return 0.66
     case .layup: return 0.79
