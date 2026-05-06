@@ -679,20 +679,8 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
     let detail: String
     let stage: LeagueOffseasonStage
 
-    static func phases(highSchoolWeeks: Int, transferPortalWeeks: Int) -> [OffseasonSchedulePhase] {
+    static func phases(highSchoolWeeks: Int) -> [OffseasonSchedulePhase] {
         [
-            OffseasonSchedulePhase(
-                id: "season-recap",
-                title: "Season Recap",
-                detail: "Review the final record, tournament run, awards, and team results.",
-                stage: .seasonRecap
-            ),
-            OffseasonSchedulePhase(
-                id: "offseason-schedule",
-                title: "Offseason Schedule",
-                detail: "Open the offseason calendar before phase-by-phase processing begins.",
-                stage: .schedule
-            ),
             OffseasonSchedulePhase(
                 id: "nil-budgets",
                 title: "NIL Budgets",
@@ -726,37 +714,19 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
             OffseasonSchedulePhase(
                 id: "travel-ball-circuit",
                 title: "Travel Ball Circuit",
-                detail: "Incoming recruits play 25 travel games before rankings lock in.",
+                detail: "The freshman class plays 25 travel games before rankings lock in.",
                 stage: .travelBallCircuit
-            ),
-            OffseasonSchedulePhase(
-                id: "recruiting-rankings",
-                title: "Recruiting Rankings",
-                detail: "Travel-ball production, potential, and fit shape the national recruit board.",
-                stage: .highSchoolRecruiting
             ),
             OffseasonSchedulePhase(
                 id: "high-school-recruiting",
                 title: "High School Recruiting",
-                detail: "Run \(highSchoolWeeks) weekly rounds of targets, offers, finalists, and commitments.",
+                detail: "Recruit incoming freshmen across \(highSchoolWeeks) weekly rounds, then apply signing-day commits before the portal opens.",
                 stage: .highSchoolRecruiting
-            ),
-            OffseasonSchedulePhase(
-                id: "signing-day",
-                title: "Freshman Signing Day",
-                detail: "Committed high school recruits join rosters before the portal market opens.",
-                stage: .transferPortal
-            ),
-            OffseasonSchedulePhase(
-                id: "portal-build",
-                title: "Transfer Portal Opens",
-                detail: "Unsigned recruits, unresolved retention cases, and transfer departures enter the national market.",
-                stage: .transferPortal
             ),
             OffseasonSchedulePhase(
                 id: "transfer-portal",
                 title: "Transfer Portal",
-                detail: "Run \(transferPortalWeeks) weekly rounds of targets, offers, finalists, and commitments.",
+                detail: "Unsigned recruits, unresolved retention cases, and transfer departures enter the national market.",
                 stage: .transferPortal
             ),
             OffseasonSchedulePhase(
@@ -788,8 +758,7 @@ struct OffseasonScheduleView: View {
 
     private var phases: [OffseasonSchedulePhase] {
         OffseasonSchedulePhase.phases(
-            highSchoolWeeks: highSchoolRecruitingSummary?.maxWeeks ?? 5,
-            transferPortalWeeks: transferPortalSummary?.maxWeeks ?? 6
+            highSchoolWeeks: highSchoolRecruitingSummary?.maxWeeks ?? 5
         )
     }
 
@@ -844,7 +813,6 @@ struct OffseasonScheduleView: View {
                 HStack(alignment: .center, spacing: 0) {
                     scheduleHeader("Order", width: 48, alignment: .leading)
                     scheduleHeader("Event", alignment: .leading)
-                    scheduleHeader("Status", width: 88, alignment: .trailing)
                 }
                 .padding(.vertical, 8)
                 .overlay(alignment: .bottom) {
@@ -871,9 +839,6 @@ struct OffseasonScheduleView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-
-                            phaseStatusPill(for: phase)
-                                .frame(width: 88, alignment: .trailing)
                         }
                         .padding(.vertical, 12)
 
@@ -896,41 +861,6 @@ struct OffseasonScheduleView: View {
             .foregroundStyle(.secondary)
             .frame(width: width, alignment: alignment)
             .frame(maxWidth: width == nil ? .infinity : nil, alignment: alignment)
-    }
-
-    private func phaseStatusPill(for phase: OffseasonSchedulePhase) -> some View {
-        let status = phaseStatus(for: phase)
-        return GamePill(text: status.text, color: status.color)
-    }
-
-    private func phaseStatus(for phase: OffseasonSchedulePhase) -> (text: String, color: Color) {
-        let phaseOrder = stageOrder(phase.stage)
-        let currentOrder = stageOrder(currentStage)
-
-        if currentStage == .complete || phaseOrder < currentOrder {
-            return ("DONE", AppTheme.success)
-        }
-
-        if phase.stage == currentStage {
-            return ("NOW", AppTheme.accent)
-        }
-
-        return ("NEXT", Color.secondary)
-    }
-
-    private func stageOrder(_ stage: LeagueOffseasonStage) -> Int {
-        switch stage {
-        case .seasonRecap: return 0
-        case .schedule: return 1
-        case .nilBudgets: return 2
-        case .playersLeaving: return 3
-        case .draft: return 4
-        case .playerRetention: return 5
-        case .travelBallCircuit: return 6
-        case .highSchoolRecruiting: return 7
-        case .transferPortal: return 8
-        case .complete: return 9
-        }
     }
 }
 
