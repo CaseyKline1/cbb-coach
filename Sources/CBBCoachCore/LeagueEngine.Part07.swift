@@ -775,6 +775,16 @@ private func rankedTransferPortalEntries(_ entries: [TransferPortalEntry]) -> [T
     return entries.map { entry in
         var ranked = entry
         ranked.transferRank = rankById[entry.id] ?? 0
+        if ranked.previousTeamId == highSchoolPreviousTeamId {
+            ranked.player?.recruitRank = ranked.transferRank
+            ranked.playerModel?.bio.recruitRank = ranked.transferRank
+            ranked.askingPrice = highSchoolRecruitAskingPrice(
+                intrinsicValue: ranked.intrinsicValue,
+                greed: ranked.greed,
+                loyalty: ranked.loyalty,
+                rank: ranked.transferRank
+            )
+        }
         return ranked
     }
 }
@@ -1151,6 +1161,24 @@ private func highSchoolRecruitIntrinsicValue(overall: Int, potential: Int) -> Do
         + current * upside * 150_000
         + pow(eliteUpside, 2.0) * 520_000
     return roundToNearestThousand(base)
+}
+
+private func highSchoolRecruitAskingPrice(intrinsicValue: Double, greed: Double, loyalty: Double, rank: Int) -> Double {
+    guard intrinsicValue > 1_000 else { return 0 }
+
+    let greedFactor = clamp(greed / 100, min: 0, max: 1)
+    let loyaltyFactor = clamp(loyalty / 100, min: 0, max: 1)
+    let prospectPremium: Double
+    if rank > 0 {
+        let top25Premium = clamp((25.0 - Double(rank)) / 24.0, min: 0, max: 1)
+        let top100Premium = clamp((100.0 - Double(rank)) / 75.0, min: 0, max: 1)
+        prospectPremium = pow(top25Premium, 1.25) * 1_200_000 + pow(top100Premium, 1.8) * 450_000
+    } else {
+        prospectPremium = 0
+    }
+    let baseMarket = intrinsicValue * (0.78 + greedFactor * 0.20 - loyaltyFactor * 0.09)
+    let top25Floor = rank > 0 && rank <= 25 ? 800_000 + pow((25.0 - Double(rank)) / 24.0, 1.7) * 1_050_000 : 0
+    return roundToNearestThousand(max(baseMarket + prospectPremium, top25Floor))
 }
 
 private func simulateTravelBallCircuit(recruits: [TransferPortalEntry], state: LeagueStore.State) -> [TransferPortalEntry] {
@@ -2012,6 +2040,7 @@ private func applyHighSchoolRecruitingCommits(_ state: inout LeagueStore.State) 
         var player = transferPortalPlayer(from: recruits[recruitIndex], seed: "\(state.optionsSeed):hs-player:\(recruits[recruitIndex].id)")
         player.bio.year = .hs
         player.bio.nilDollarsLastYear = recruits[recruitIndex].committedOffer ?? recruits[recruitIndex].askingPrice
+        player.bio.recruitRank = recruits[recruitIndex].transferRank
         state.teams[destinationIndex].teamModel.players.append(player)
         state.teams[destinationIndex].teamModel.lineup.append(player)
         recruits[recruitIndex].committedTeamName = state.teams[destinationIndex].teamName

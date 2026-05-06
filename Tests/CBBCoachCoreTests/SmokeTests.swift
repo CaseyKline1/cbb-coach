@@ -1896,6 +1896,59 @@ func travelBallCircuitAddsProductionBeforeRecruitingRankings() throws {
     #expect(recruiting.entries.contains { $0.transferRank > 0 })
 }
 
+@Test("High school recruit rankings persist onto college player cards")
+func highSchoolRecruitRankingsPersistOntoCollegePlayerCards() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "hs-rank-card", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .highSchoolRecruiting
+    }
+
+    let summary = getHighSchoolRecruitingSummary(league)
+    let recruit = try #require(summary.entries.first { $0.transferRank > 0 })
+    #expect(recruit.player?.recruitRank == recruit.transferRank)
+    #expect(recruit.playerModel?.bio.recruitRank == recruit.transferRank)
+
+    _ = LeagueStore.update(league.handle) { state in
+        let userTeamId = state.userTeamId
+        let index = state.highSchoolRecruits?.firstIndex { $0.id == recruit.id }
+        if let index {
+            state.highSchoolRecruits?[index].committedTeamId = userTeamId
+            state.highSchoolRecruits?[index].committedOffer = recruit.askingPrice
+        }
+        state.highSchoolRecruitingWeek = 6
+        state.offseasonStage = .highSchoolRecruiting
+    }
+
+    _ = advanceOffseason(&league)
+
+    let roster = getUserRoster(league)
+    let signedPlayer = try #require(roster.first { $0.name == recruit.playerName })
+    #expect(signedPlayer.recruitRank == recruit.transferRank)
+}
+
+@Test("High school recruit NIL asks price the top of the class aggressively")
+func highSchoolRecruitNILAsksPriceTopOfClassAggressively() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "hs-nil-curve", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .highSchoolRecruiting
+    }
+
+    let summary = getHighSchoolRecruitingSummary(league)
+    let ranked = summary.entries.sorted { $0.transferRank < $1.transferRank }
+    let topRecruit = try #require(ranked.first)
+    let twentyFifthRecruit = try #require(ranked.first { $0.transferRank == 25 })
+    let medianRecruit = try #require(ranked.first { $0.transferRank == 700 })
+
+    #expect(topRecruit.askingPrice >= 1_500_000)
+    #expect(twentyFifthRecruit.askingPrice >= 800_000)
+    #expect(twentyFifthRecruit.askingPrice <= 1_000_000)
+    #expect(medianRecruit.askingPrice < twentyFifthRecruit.askingPrice * 0.35)
+}
+
 @Test("School legacy archive nudges prestige upward slowly for major success and draft picks")
 func schoolLegacyArchiveRaisesPrestigeSlowlyForBreakoutPrograms() throws {
     let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "prestige-breakout", totalRegularSeasonGames: 1))

@@ -30,6 +30,7 @@ public struct Player: Codable, Equatable, Sendable {
         public var redshirtUsed: Bool = false
         public var potential: Int = 1
         public var nilDollarsLastYear: Double? = nil
+        public var recruitRank: Int? = nil
     }
 
     public struct Athleticism: Codable, Equatable, Sendable {

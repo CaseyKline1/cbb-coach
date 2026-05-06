@@ -241,6 +241,11 @@ struct PlayerCardDetailView: View {
                                 .font(.subheadline.monospacedDigit().weight(.bold))
                                 .foregroundStyle(AppTheme.accent)
                         }
+                        if let recruitRank = player.recruitRank {
+                            Text("Recruit: #\(recruitRank)")
+                                .font(.subheadline.monospacedDigit().weight(.bold))
+                                .foregroundStyle(AppTheme.accent)
+                        }
                         if let measurements = measurementsLine {
                             Text(measurements)
                                 .font(.subheadline)
