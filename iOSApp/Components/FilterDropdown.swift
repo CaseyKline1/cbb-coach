@@ -68,12 +68,12 @@ struct FilterDropdown<Option: Hashable>: View {
     }
 
     private var visibleOptions: [(label: String, value: Option)] {
-        guard isSearchEnabled, !searchText.isEmpty else { return options }
+        guard shouldShowSearch, !searchText.isEmpty else { return options }
         return options.filter { $0.label.localizedCaseInsensitiveContains(searchText) }
     }
 
     private var shouldShowSearch: Bool {
-        isSearchEnabled && options.count > 6
+        isSearchEnabled && options.count >= 20
     }
 
     private var hasTitle: Bool {
@@ -117,112 +117,105 @@ struct FilterDropdown<Option: Hashable>: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(title): \(selectedLabel)"))
-        .sheet(isPresented: $isPresented) {
-            NavigationStack {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Current")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Text(selectedLabel)
-                            .font(.headline.weight(.semibold))
-                            .lineLimit(2)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(Color(UIColor.systemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(Color.black.opacity(0.14), lineWidth: 1)
-                    )
-
-                    if shouldShowSearch {
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                            TextField("Search", text: $searchText)
-                                .font(.callout)
-                                .autocorrectionDisabled()
-                            if !searchText.isEmpty {
-                                Button { searchText = "" } label: {
-                                    Text("Clear")
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(12)
-                        .background(Color(UIColor.systemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(Color.black.opacity(0.14), lineWidth: 1)
-                        )
-                    }
-
-                    ScrollView {
-                        LazyVStack(spacing: 8) {
-                            ForEach(visibleOptions.indices, id: \.self) { index in
-                                let option = visibleOptions[index]
-                                let isSelected = option.value == selection
-                                Button {
-                                    selection = option.value
-                                    isPresented = false
-                                } label: {
-                                    HStack(spacing: 10) {
-                                        Text(option.label)
-                                            .font(.callout.weight(.medium))
-                                            .foregroundStyle(.primary)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                        if isSelected {
-                                            Image(systemName: "checkmark")
-                                                .font(.caption.weight(.bold))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 10)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(isSelected ? Color(UIColor.secondarySystemBackground) : Color(UIColor.systemBackground))
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .strokeBorder(isSelected ? AppTheme.ink.opacity(0.32) : Color.black.opacity(0.12), lineWidth: 1)
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            if visibleOptions.isEmpty {
-                                Text("No results")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(12)
-                            }
-                        }
-                        .padding(.bottom, 24)
-                    }
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Close") { isPresented = false }
-                    }
-                }
-            }
-            .presentationDetents(shouldShowSearch ? [.medium, .large] : [.medium])
-            .presentationDragIndicator(.visible)
+        .popover(
+            isPresented: $isPresented,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .top
+        ) {
+            dropdownContent
+                .presentationCompactAdaptation(.popover)
         }
         .onChange(of: isPresented) { _, presented in
             if !presented { searchText = "" }
         }
+    }
+
+    private var dropdownContent: some View {
+        VStack(alignment: .leading, spacing: shouldShowSearch ? 8 : 4) {
+            if shouldShowSearch {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    TextField("Search", text: $searchText)
+                        .font(.callout)
+                        .autocorrectionDisabled()
+                    if !searchText.isEmpty {
+                        Button { searchText = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Clear search")
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .background(Color(UIColor.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+
+            ScrollView {
+                LazyVStack(spacing: 3) {
+                    ForEach(visibleOptions.indices, id: \.self) { index in
+                        let option = visibleOptions[index]
+                        dropdownOptionButton(option)
+                    }
+                    if visibleOptions.isEmpty {
+                        Text("No results")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 9)
+                    }
+                }
+            }
+            .frame(maxHeight: dropdownListMaxHeight)
+        }
+        .padding(6)
+        .frame(width: isCompact ? 220 : 300)
+        .background(Color(UIColor.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.14), lineWidth: 1)
+        )
+    }
+
+    private var dropdownListMaxHeight: CGFloat {
+        let rowHeight: CGFloat = 40
+        let visibleRowCount = min(max(visibleOptions.count, 1), shouldShowSearch ? 8 : 7)
+        return CGFloat(visibleRowCount) * rowHeight
+    }
+
+    private func dropdownOptionButton(_ option: (label: String, value: Option)) -> some View {
+        let isSelected = option.value == selection
+        return Button {
+            selection = option.value
+            isPresented = false
+        } label: {
+            HStack(spacing: 9) {
+                Text(option.label)
+                    .font(.callout.weight(isSelected ? .semibold : .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppTheme.ink.opacity(0.72))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color(UIColor.secondarySystemBackground) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
