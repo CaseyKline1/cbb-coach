@@ -65,6 +65,9 @@ struct RotationSettingsView: View {
                 ? "Minutes balanced at \(Int(targetTotal.rounded())). Back out to save."
                 : "Total is \(Int(totalMinutes.rounded())) / \(Int(targetTotal.rounded())). You can fix now or let assistants fix when leaving."
         }
+        .onDisappear {
+            saveBalancedEditsIfNeeded()
+        }
         .alert("Minutes Need To Add Up", isPresented: $showExitBalancePrompt) {
             Button("Fix Manually", role: .cancel) {
                 statusText = "Adjust minutes to \(Int(targetTotal.rounded())) before leaving, or use Let Assistants Fix."
@@ -196,6 +199,91 @@ struct RotationSettingsView: View {
         return base
     }
 
+    private func positionFixedStarterSlots(_ source: [UserRotationSlot]) -> [UserRotationSlot] {
+        guard source.count > 1 else { return source }
+
+        var fixed = source
+        var starterPlayerIndexes = fixed.prefix(min(5, fixed.count)).compactMap(\.playerIndex)
+        guard starterPlayerIndexes.count > 1 else { return fixed }
+
+        let slotPositions = Array(starterPositions.prefix(starterPlayerIndexes.count))
+        var orderedPlayerIndexes: [Int] = []
+        orderedPlayerIndexes.reserveCapacity(starterPlayerIndexes.count)
+
+        for slotPosition in slotPositions {
+            guard let best = starterPlayerIndexes.max(by: { lhs, rhs in
+                let left = roster.first(where: { $0.playerIndex == lhs })
+                let right = roster.first(where: { $0.playerIndex == rhs })
+                let leftScore = starterPositionFitScore(left?.position ?? "", slot: slotPosition)
+                let rightScore = starterPositionFitScore(right?.position ?? "", slot: slotPosition)
+                if leftScore != rightScore { return leftScore < rightScore }
+                return (left?.overall ?? 0) < (right?.overall ?? 0)
+            }) else {
+                continue
+            }
+            orderedPlayerIndexes.append(best)
+            starterPlayerIndexes.removeAll { $0 == best }
+        }
+
+        orderedPlayerIndexes.append(contentsOf: starterPlayerIndexes)
+        for index in orderedPlayerIndexes.indices where index < fixed.count {
+            fixed[index].playerIndex = orderedPlayerIndexes[index]
+        }
+        return sanitized(fixed)
+    }
+
+    private func starterPositionFitScore(_ position: String, slot: String) -> Int {
+        let normalizedPosition = position.uppercased()
+        let normalizedSlot = slot.uppercased()
+        if normalizedPosition == normalizedSlot { return 100 }
+
+        switch normalizedSlot {
+        case "PG":
+            switch normalizedPosition {
+            case "CG": return 88
+            case "SG": return 70
+            case "WING": return 46
+            default: return 10
+            }
+        case "SG":
+            switch normalizedPosition {
+            case "CG": return 90
+            case "WING": return 82
+            case "PG": return 76
+            case "SF": return 64
+            default: return 18
+            }
+        case "SF":
+            switch normalizedPosition {
+            case "WING": return 92
+            case "F": return 84
+            case "SG": return 70
+            case "PF": return 68
+            case "BIG": return 46
+            default: return 20
+            }
+        case "PF":
+            switch normalizedPosition {
+            case "F": return 92
+            case "BIG": return 86
+            case "C": return 78
+            case "SF": return 72
+            case "WING": return 60
+            default: return 20
+            }
+        case "C":
+            switch normalizedPosition {
+            case "BIG": return 94
+            case "PF": return 84
+            case "F": return 66
+            case "SF": return 42
+            default: return 18
+            }
+        default:
+            return 0
+        }
+    }
+
     private func clampMinutes(_ value: Double) -> Double {
         min(40, max(0, (value * 2).rounded() / 2))
     }
@@ -242,11 +330,18 @@ struct RotationSettingsView: View {
 
     private func assistantFixedSlots(_ source: [UserRotationSlot]) -> [UserRotationSlot] {
         let sanitizedSource = sanitized(source)
-        return normalizeMinutes(sanitizedSource, targetTotal: targetTotal)
+        let positionedSource = positionFixedStarterSlots(sanitizedSource)
+        return normalizeMinutes(positionedSource, targetTotal: targetTotal)
     }
 
     private func totalIsBalanced(_ source: [UserRotationSlot]) -> Bool {
         abs(source.reduce(0) { $0 + $1.minutes } - targetTotal) < 0.49
+    }
+
+    private func saveBalancedEditsIfNeeded() {
+        let cleaned = sanitized(editedSlots)
+        guard !cleaned.isEmpty, totalIsBalanced(cleaned), !areSlotsEqual(cleaned, slots) else { return }
+        onSave(cleaned)
     }
 
     private func attemptExit() {

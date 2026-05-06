@@ -692,6 +692,10 @@ enum LeagueMenuDestination: Hashable {
             return false
         }
     }
+
+    var hidesSystemBackButton: Bool {
+        isOffseasonWorkflowDestination || self == .rotation
+    }
 }
 
 struct StatChip: View {

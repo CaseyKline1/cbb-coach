@@ -393,7 +393,7 @@ struct CollegeLeagueHomeView: View {
                     }
                 }
                 }
-                .navigationBarBackButtonHidden(destination.isOffseasonWorkflowDestination)
+                .navigationBarBackButtonHidden(destination.hidesSystemBackButton)
             }
             .navigationDestination(isPresented: $showingSeasonRecap) {
                 SeasonRecapView(
