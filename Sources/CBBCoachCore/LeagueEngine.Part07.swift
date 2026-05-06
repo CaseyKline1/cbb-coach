@@ -703,7 +703,35 @@ private func transferPortalRecruitScore(_ entry: TransferPortalEntry) -> Double 
     return Double(entry.overall) * overallWeight
         + potentialScore * potentialWeight
         + transferPortalProductionScore(entry) * statsWeight
+        + transferPortalMeasurementBonus(entry)
         + youthBonus
+}
+
+private func transferPortalMeasurementBonus(_ entry: TransferPortalEntry) -> Double {
+    let height = entry.player?.height ?? entry.playerModel?.size.height
+    let wingspan = entry.player?.wingspan ?? entry.playerModel?.size.wingspan
+    let score = transferPortalMeasurementScore(position: entry.position, height: height, wingspan: wingspan)
+    return clamp((score - 50) / 25, min: -1.2, max: 2.0)
+}
+
+private func transferPortalMeasurementScore(position: String, height: String?, wingspan: String?) -> Double {
+    let heightInches = parseMeasurementInches(height)
+    let wingspanInches = parseMeasurementInches(wingspan)
+    let target = transferPortalMeasurementTarget(position)
+    let heightScore = heightInches.map { clamp((Double($0) - Double(target.height - 5)) / 10.0, min: 0, max: 1) } ?? 0.50
+    let wingspanScore = wingspanInches.map { clamp((Double($0) - Double(target.wingspan - 5)) / 11.0, min: 0, max: 1) } ?? 0.50
+    return (heightScore * 0.42 + wingspanScore * 0.58) * 100
+}
+
+private func transferPortalMeasurementTarget(_ position: String) -> (height: Int, wingspan: Int) {
+    switch normalizeHallPosition(position) {
+    case "PG": return (73, 76)
+    case "SG": return (75, 79)
+    case "SF": return (77, 81)
+    case "PF": return (80, 84)
+    case "C": return (82, 86)
+    default: return (77, 81)
+    }
 }
 
 private func transferPortalProductionScore(_ entry: TransferPortalEntry) -> Double {
