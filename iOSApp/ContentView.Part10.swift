@@ -2413,11 +2413,12 @@ struct TransferPortalView: View {
     private func offerControl(_ row: TransferPortalEntry) -> some View {
         let offer = Int(displayedOffer(for: row.id).rounded())
         let isOpen = row.committedTeamId == nil && row.previousTeamId != summary?.userTeamId
+        let maximumOffer = Int(availableOfferRoom(for: row.id).rounded())
 
         return NILOfferAmountControl(
             amount: offer,
             minimum: 0,
-            maximum: Int.max,
+            maximum: maximumOffer,
             style: .boxed,
             onSetAmount: { amount in
                 setOffer(row.id, amount: Double(amount))
@@ -2531,13 +2532,23 @@ struct TransferPortalView: View {
         offerOverrides[entryId] ?? summary?.userOffers[entryId] ?? 0
     }
 
+    private func availableOfferRoom(for entryId: String) -> Double {
+        guard let summary else { return 0 }
+        var room = summary.budget.remaining + (summary.userOffers[entryId] ?? 0)
+        for (overrideId, overrideAmount) in offerOverrides where overrideId != entryId {
+            room -= overrideAmount - (summary.userOffers[overrideId] ?? 0)
+        }
+        return max(0, room)
+    }
+
     private func setOffer(_ entryId: String, amount: Double) {
-        offerOverrides[entryId] = amount
+        let clampedAmount = clamp(amount, min: 0, max: availableOfferRoom(for: entryId))
+        offerOverrides[entryId] = clampedAmount
         offerWriteTasks[entryId]?.cancel()
         offerWriteTasks[entryId] = Task {
             try? await Task.sleep(nanoseconds: 75_000_000)
             guard !Task.isCancelled else { return }
-            onSetOffer(entryId, amount)
+            onSetOffer(entryId, clampedAmount)
         }
     }
 

@@ -1495,6 +1495,107 @@ func manualNILRetentionOffersClampToRemainingBudget() throws {
     #expect(getNILRetentionSummary(league).entries.first { $0.id == "capped-offer" }?.offer == remaining)
 }
 
+@Test("Transfer portal offers clamp to remaining NIL budget")
+func transferPortalOffersClampToRemainingNILBudget() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "portal-offer-cap", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .transferPortal
+        state.playersLeaving = []
+        state.draftPicks = []
+        state.nilRetention = []
+        state.nilRetentionFinalized = true
+        state.transferPortal = []
+        state.transferPortalUserTargets = []
+        state.transferPortalUserOffers = [:]
+    }
+
+    let budget = getTransferPortalSummary(league).budget
+    let remaining = 50_000.0
+    #expect(budget.total > remaining)
+
+    _ = LeagueStore.update(league.handle) { state in
+        guard let userIndex = state.teams.firstIndex(where: { $0.teamId == state.userTeamId }),
+              let previousTeam = state.teams.first(where: { $0.teamId != state.userTeamId })
+        else { return }
+        let userTeam = state.teams[userIndex]
+        var guardPlayer = createPlayer()
+        guardPlayer.bio.name = "Portal Cap Guard"
+        guardPlayer.bio.position = .pg
+        var wingPlayer = createPlayer()
+        wingPlayer.bio.name = "Portal Cap Wing"
+        wingPlayer.bio.position = .sf
+
+        state.nilRetention = [
+            NILNegotiationEntry(
+                id: "retained-budget",
+                teamId: state.userTeamId,
+                teamName: userTeam.teamName,
+                player: nil,
+                playerIndex: 0,
+                playerName: "Retained Budget",
+                position: "PG",
+                year: "SR",
+                overall: 84,
+                potential: 84,
+                intrinsicValue: budget.total - remaining,
+                demand: budget.total - remaining,
+                offer: budget.total - remaining,
+                lastYearAmount: 0,
+                rounds: 1,
+                status: .accepted,
+                responseText: "Accepted.",
+                loyalty: 50,
+                greed: 50,
+                returningDiscount: 0,
+                priority: 1
+            )
+        ]
+        state.transferPortal = [
+            TransferPortalEntry(
+                id: "portal-cap-guard",
+                previousTeamId: previousTeam.teamId,
+                previousTeamName: previousTeam.teamName,
+                playerModel: guardPlayer,
+                playerName: guardPlayer.bio.name,
+                position: guardPlayer.bio.position.rawValue,
+                year: guardPlayer.bio.year.rawValue,
+                overall: 75,
+                potential: 78,
+                askingPrice: 100_000,
+                intrinsicValue: 100_000,
+                reason: "Testing portal budget cap.",
+                loyalty: 50,
+                greed: 50
+            ),
+            TransferPortalEntry(
+                id: "portal-cap-wing",
+                previousTeamId: previousTeam.teamId,
+                previousTeamName: previousTeam.teamName,
+                playerModel: wingPlayer,
+                playerName: wingPlayer.bio.name,
+                position: wingPlayer.bio.position.rawValue,
+                year: wingPlayer.bio.year.rawValue,
+                overall: 74,
+                potential: 79,
+                askingPrice: 100_000,
+                intrinsicValue: 100_000,
+                reason: "Testing portal budget cap.",
+                loyalty: 50,
+                greed: 50
+            )
+        ]
+    }
+
+    _ = setTransferPortalOffer(&league, entryId: "portal-cap-guard", offer: 40_000)
+    let capped = setTransferPortalOffer(&league, entryId: "portal-cap-wing", offer: 40_000)
+
+    #expect(capped.userOffers["portal-cap-guard"] == 40_000)
+    #expect(capped.userOffers["portal-cap-wing"] == 10_000)
+    #expect(capped.budget.remaining == 0)
+}
+
 @Test("Completing transfer portal starts next year and fills walk-ons")
 func transferPortalCompletionStartsNextYearAndFillsWalkOns() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "portal-new-year", totalRegularSeasonGames: 1))
