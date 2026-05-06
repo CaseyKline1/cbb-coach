@@ -143,6 +143,24 @@ func nonConferenceBeforeConferenceOrdering() throws {
     }
 }
 
+@Test("CPU teams receive their conference regular-season games")
+func cpuTeamsReceiveConferenceRegularSeasonGames() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "North Carolina", seed: "cpu-conf-schedule"))
+    autoFillUserNonConferenceOpponents(&league)
+    generateSeasonSchedule(&league)
+
+    let state = try #require(LeagueStore.get(league.handle))
+    var conferenceGamesByTeamId = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, 0) })
+
+    for game in state.schedule where game.type == "regular_season" {
+        guard game.conferenceId != nil else { continue }
+        conferenceGamesByTeamId[game.homeTeamId, default: 0] += 1
+        conferenceGamesByTeamId[game.awayTeamId, default: 0] += 1
+    }
+
+    #expect(state.teams.allSatisfy { conferenceGamesByTeamId[$0.teamId] == $0.targetConferenceGames })
+}
+
 @Test("Advancing user game also simulates CPU-only games on that day")
 func advancingUserGameSimulatesLeagueDay() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "league-day-tests", totalRegularSeasonGames: 3))

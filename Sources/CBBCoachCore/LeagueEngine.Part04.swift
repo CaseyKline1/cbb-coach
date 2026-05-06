@@ -498,15 +498,111 @@ func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
     }
 
     let teamById = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, $0) })
+    var scheduledGamesByTeamId = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, 0) })
+    var scheduledConferenceGamesByTeamId = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.teamId, 0) })
+
+    func remainingGames(for teamId: String) -> Int {
+        guard let team = teamById[teamId] else { return 0 }
+        return max(0, team.targetGames - (scheduledGamesByTeamId[teamId] ?? 0))
+    }
+
+    func remainingConferenceGames(for teamId: String) -> Int {
+        guard let team = teamById[teamId] else { return 0 }
+        return max(0, team.targetConferenceGames - (scheduledConferenceGamesByTeamId[teamId] ?? 0))
+    }
+
+    func conferenceIdForGame(homeTeam: LeagueStore.TeamState, awayTeam: LeagueStore.TeamState) -> String? {
+        homeTeam.conferenceId == awayTeam.conferenceId ? homeTeam.conferenceId : nil
+    }
+
+    for opponentId in userOpponents {
+        guard let opponent = teamById[opponentId], user.conferenceId == opponent.conferenceId else { continue }
+        scheduledConferenceGamesByTeamId[user.teamId, default: 0] += 1
+        scheduledConferenceGamesByTeamId[opponent.teamId, default: 0] += 1
+    }
+
+    func recordScheduledGame(
+        homeTeam: LeagueStore.TeamState,
+        awayTeam: LeagueStore.TeamState,
+        forcedConferenceId: String? = nil,
+        conferenceAlreadyClaimed: Bool = false
+    ) -> String? {
+        let scheduledConferenceId: String?
+        if let forcedConferenceId {
+            scheduledConferenceId = forcedConferenceId
+        } else if conferenceIdForGame(homeTeam: homeTeam, awayTeam: awayTeam) != nil,
+           remainingConferenceGames(for: homeTeam.teamId) > 0,
+           remainingConferenceGames(for: awayTeam.teamId) > 0 {
+            scheduledConferenceId = homeTeam.conferenceId
+        } else {
+            scheduledConferenceId = nil
+        }
+
+        scheduledGamesByTeamId[homeTeam.teamId, default: 0] += 1
+        scheduledGamesByTeamId[awayTeam.teamId, default: 0] += 1
+        if scheduledConferenceId != nil && !conferenceAlreadyClaimed {
+            scheduledConferenceGamesByTeamId[homeTeam.teamId, default: 0] += 1
+            scheduledConferenceGamesByTeamId[awayTeam.teamId, default: 0] += 1
+        }
+        return scheduledConferenceId
+    }
+
+    func takeCPUPair(from availableCPUIds: inout [String]) -> (LeagueStore.TeamState, LeagueStore.TeamState)? {
+        availableCPUIds.sort {
+            let lhsConferenceNeed = remainingConferenceGames(for: $0)
+            let rhsConferenceNeed = remainingConferenceGames(for: $1)
+            if lhsConferenceNeed != rhsConferenceNeed { return lhsConferenceNeed > rhsConferenceNeed }
+            let lhsGamesNeed = remainingGames(for: $0)
+            let rhsGamesNeed = remainingGames(for: $1)
+            if lhsGamesNeed != rhsGamesNeed { return lhsGamesNeed > rhsGamesNeed }
+            return $0 < $1
+        }
+
+        for teamAIndex in availableCPUIds.indices {
+            let teamAId = availableCPUIds[teamAIndex]
+            guard let teamA = teamById[teamAId], remainingConferenceGames(for: teamAId) > 0 else { continue }
+            guard let teamBIndex = availableCPUIds.indices.first(where: { candidateIndex in
+                guard candidateIndex != teamAIndex else { return false }
+                let candidateId = availableCPUIds[candidateIndex]
+                guard let candidate = teamById[candidateId] else { return false }
+                return candidate.conferenceId == teamA.conferenceId && remainingConferenceGames(for: candidateId) > 0
+            }) else {
+                continue
+            }
+            let firstRemoval = max(teamAIndex, teamBIndex)
+            let secondRemoval = min(teamAIndex, teamBIndex)
+            let firstTeamId = availableCPUIds.remove(at: firstRemoval)
+            let secondTeamId = availableCPUIds.remove(at: secondRemoval)
+            guard let firstTeam = teamById[firstTeamId], let secondTeam = teamById[secondTeamId] else { return nil }
+            return (firstTeam, secondTeam)
+        }
+
+        guard let teamAId = availableCPUIds.first else { return nil }
+        availableCPUIds.removeFirst()
+        guard let teamA = teamById[teamAId] else { return nil }
+        let opponentIndex = availableCPUIds.firstIndex { opponentId in
+            guard let opponent = teamById[opponentId] else { return false }
+            return opponent.conferenceId != teamA.conferenceId
+        } ?? availableCPUIds.indices.first
+        guard let opponentIndex else { return nil }
+        let teamBId = availableCPUIds.remove(at: opponentIndex)
+        guard let teamB = teamById[teamBId] else { return nil }
+        return (teamA, teamB)
+    }
 
     for (index, opponentId) in userOpponents.enumerated() {
         guard let opp = teamById[opponentId] else { continue }
         let day = index + 1
         let userHome = random.nextUnit() < 0.52
-        let homeId = userHome ? user.teamId : opp.teamId
-        let awayId = userHome ? opp.teamId : user.teamId
-        let homeName = userHome ? user.teamName : opp.teamName
-        let awayName = userHome ? opp.teamName : user.teamName
+        let homeTeam = userHome ? user : opp
+        let awayTeam = userHome ? opp : user
+        let userConferenceId = conferenceIdForGame(homeTeam: homeTeam, awayTeam: awayTeam)
+        let scheduledConferenceId = recordScheduledGame(
+            homeTeam: homeTeam,
+            awayTeam: awayTeam,
+            forcedConferenceId: userConferenceId,
+            conferenceAlreadyClaimed: userConferenceId != nil
+        )
         state.schedule.append(
             LeagueStore.ScheduledGame(
                 gameId: "g_\(day)_user",
@@ -514,11 +610,11 @@ func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
                 type: "regular_season",
                 siteType: userHome ? "home" : "away",
                 neutralSite: false,
-                homeTeamId: homeId,
-                homeTeamName: homeName,
-                awayTeamId: awayId,
-                awayTeamName: awayName,
-                conferenceId: nil,
+                homeTeamId: homeTeam.teamId,
+                homeTeamName: homeTeam.teamName,
+                awayTeamId: awayTeam.teamId,
+                awayTeamName: awayTeam.teamName,
+                conferenceId: scheduledConferenceId,
                 tournamentRound: nil,
                 tournamentGameIndex: nil,
                 completed: false,
@@ -528,7 +624,7 @@ func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
 
         var availableCPUIds = state.teams
             .map(\.teamId)
-            .filter { $0 != user.teamId && $0 != opp.teamId }
+            .filter { $0 != user.teamId && $0 != opp.teamId && remainingGames(for: $0) > 0 }
 
         if availableCPUIds.count >= 2 {
             var dayRandom = SeededRandom(seed: hashString("schedule:\(state.optionsSeed):day:\(day)"))
@@ -540,22 +636,11 @@ func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
             }
 
             var gameNumber = 1
-            var pairIndex = 0
-            while pairIndex + 1 < availableCPUIds.count {
-                let teamAId = availableCPUIds[pairIndex]
-                let teamBId = availableCPUIds[pairIndex + 1]
-                pairIndex += 2
-
-                guard
-                    let teamA = teamById[teamAId],
-                    let teamB = teamById[teamBId]
-                else {
-                    continue
-                }
-
+            while let (teamA, teamB) = takeCPUPair(from: &availableCPUIds) {
                 let teamAHome = dayRandom.nextUnit() < 0.5
                 let homeTeam = teamAHome ? teamA : teamB
                 let awayTeam = teamAHome ? teamB : teamA
+                let scheduledConferenceId = recordScheduledGame(homeTeam: homeTeam, awayTeam: awayTeam)
 
                 state.schedule.append(
                     LeagueStore.ScheduledGame(
@@ -568,7 +653,7 @@ func generateSeasonScheduleInState(_ state: inout LeagueStore.State) {
                         homeTeamName: homeTeam.teamName,
                         awayTeamId: awayTeam.teamId,
                         awayTeamName: awayTeam.teamName,
-                        conferenceId: nil,
+                        conferenceId: scheduledConferenceId,
                         tournamentRound: nil,
                         tournamentGameIndex: nil,
                         completed: false,
@@ -739,8 +824,7 @@ private func applyScheduledGameOutcomeInState(_ state: inout LeagueStore.State, 
     state.teams[awayIndex].pointsFor += awayScore
     state.teams[awayIndex].pointsAgainst += homeScore
 
-    let isConference = state.teams[homeIndex].conferenceId == state.teams[awayIndex].conferenceId
-    let updatesConferenceStandings = isConference && game.type == "regular_season"
+    let updatesConferenceStandings = game.type == "regular_season" && game.conferenceId != nil
 
     if homeScore > awayScore {
         state.teams[homeIndex].wins += 1
