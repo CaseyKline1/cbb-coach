@@ -2969,6 +2969,25 @@ private func normalizePosition(_ position: String) -> String {
 struct ParsedTeamBoxScore {
     let name: String
     let players: [ParsedPlayerBoxScore]
+    let teamExtras: [String: Int]
+
+    var minutes: Int { teamTotal("minutes") { Int(players.reduce(0) { $0 + $1.minutes }.rounded()) } }
+    var points: Int { teamTotal("points") { players.reduce(0) { $0 + $1.points } } }
+    var fgMade: Int { teamTotal("fgMade") { players.reduce(0) { $0 + $1.fgMade } } }
+    var fgAttempts: Int { teamTotal("fgAttempts") { players.reduce(0) { $0 + $1.fgAttempts } } }
+    var threeMade: Int { teamTotal("threeMade") { players.reduce(0) { $0 + $1.threeMade } } }
+    var threeAttempts: Int { teamTotal("threeAttempts") { players.reduce(0) { $0 + $1.threeAttempts } } }
+    var ftMade: Int { teamTotal("ftMade") { players.reduce(0) { $0 + $1.ftMade } } }
+    var ftAttempts: Int { teamTotal("ftAttempts") { players.reduce(0) { $0 + $1.ftAttempts } } }
+    var rebounds: Int { teamTotal("rebounds") { players.reduce(0) { $0 + $1.rebounds } } }
+    var offensiveRebounds: Int { teamTotal("offensiveRebounds") { players.reduce(0) { $0 + $1.offensiveRebounds } } }
+    var defensiveRebounds: Int { teamTotal("defensiveRebounds") { players.reduce(0) { $0 + $1.defensiveRebounds } } }
+    var assists: Int { teamTotal("assists") { players.reduce(0) { $0 + $1.assists } } }
+    var steals: Int { teamTotal("steals") { players.reduce(0) { $0 + $1.steals } } }
+    var blocks: Int { teamTotal("blocks") { players.reduce(0) { $0 + $1.blocks } } }
+    var turnovers: Int { teamTotal("turnovers") { players.reduce(0) { $0 + $1.turnovers } } }
+    var fouls: Int { teamTotal("fouls") { players.reduce(0) { $0 + $1.fouls } } }
+    var plusMinus: Int? { teamExtras["plusMinus"] }
 
     static func parse(from value: JSONValue?) -> [ParsedTeamBoxScore] {
         guard
@@ -2982,8 +3001,13 @@ struct ParsedTeamBoxScore {
             guard let teamObj = boxValue.objectDictionary else { return nil }
             let teamName = teamObj["name"]?.stringValue ?? "Team"
             let players = teamObj["players"]?.arrayValues?.compactMap(ParsedPlayerBoxScore.init(value:)) ?? []
-            return ParsedTeamBoxScore(name: teamName, players: players)
+            let teamExtras = (teamObj["teamExtras"]?.objectDictionary ?? [:]).mapValues { $0.intValue ?? 0 }
+            return ParsedTeamBoxScore(name: teamName, players: players, teamExtras: teamExtras)
         }
+    }
+
+    private func teamTotal(_ key: String, fallback: () -> Int) -> Int {
+        teamExtras[key] ?? fallback()
     }
 }
 

@@ -373,16 +373,49 @@ func advanceStoredGameToNextPeriod(_ stored: inout NativeGameStateStore.StoredSt
     recoverAllPlayersForHalftime(stored: &stored)
 }
 
+func completedTeamExtras(score: Int, players: [PlayerBoxScore], teamExtras: [String: Int]) -> [String: Int] {
+    var extras = teamExtras
+
+    func addTotal(_ key: String, _ value: Int) {
+        if extras[key] == nil {
+            extras[key] = value
+        }
+    }
+
+    addTotal("minutes", Int(players.reduce(0) { $0 + $1.minutes }.rounded()))
+    addTotal("points", score)
+    addTotal("fgMade", players.reduce(0) { $0 + $1.fgMade })
+    addTotal("fgAttempts", players.reduce(0) { $0 + $1.fgAttempts })
+    addTotal("threeMade", players.reduce(0) { $0 + $1.threeMade })
+    addTotal("threeAttempts", players.reduce(0) { $0 + $1.threeAttempts })
+    addTotal("ftMade", players.reduce(0) { $0 + $1.ftMade })
+    addTotal("ftAttempts", players.reduce(0) { $0 + $1.ftAttempts })
+    addTotal("rebounds", players.reduce(0) { $0 + $1.rebounds })
+    addTotal("offensiveRebounds", players.reduce(0) { $0 + $1.offensiveRebounds })
+    addTotal("defensiveRebounds", players.reduce(0) { $0 + $1.defensiveRebounds })
+    addTotal("assists", players.reduce(0) { $0 + $1.assists })
+    addTotal("steals", players.reduce(0) { $0 + $1.steals })
+    addTotal("blocks", players.reduce(0) { $0 + $1.blocks })
+    addTotal("turnovers", players.reduce(0) { $0 + $1.turnovers })
+    addTotal("fouls", players.reduce(0) { $0 + $1.fouls })
+    if players.allSatisfy({ $0.plusMinus != nil }) {
+        addTotal("plusMinus", players.reduce(0) { $0 + ($1.plusMinus ?? 0) })
+    }
+    return extras
+}
+
 func simulatedGameResult(from final: NativeGameStateStore.StoredState, overtimeNumber: Int) -> SimulatedGameResult {
+    let homePlayers = final.teams[0].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 }
+    let awayPlayers = final.teams[1].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 }
     let homeBox = TeamBoxScore(
         name: final.teams[0].team.name,
-        players: final.teams[0].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 },
-        teamExtras: final.teams[0].teamExtras
+        players: homePlayers,
+        teamExtras: completedTeamExtras(score: final.teams[0].score, players: homePlayers, teamExtras: final.teams[0].teamExtras)
     )
     let awayBox = TeamBoxScore(
         name: final.teams[1].team.name,
-        players: final.teams[1].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 },
-        teamExtras: final.teams[1].teamExtras
+        players: awayPlayers,
+        teamExtras: completedTeamExtras(score: final.teams[1].score, players: awayPlayers, teamExtras: final.teams[1].teamExtras)
     )
     let boxScores = [homeBox, awayBox]
 
@@ -469,15 +502,17 @@ public func simulateGame(
         fatalError("simulateGame failed: missing game state \(state.handle)")
     }
 
+    let homePlayers = final.teams[0].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 }
+    let awayPlayers = final.teams[1].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 }
     let homeBox = TeamBoxScore(
         name: final.teams[0].team.name,
-        players: final.teams[0].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 },
-        teamExtras: final.teams[0].teamExtras
+        players: homePlayers,
+        teamExtras: completedTeamExtras(score: final.teams[0].score, players: homePlayers, teamExtras: final.teams[0].teamExtras)
     )
     let awayBox = TeamBoxScore(
         name: final.teams[1].team.name,
-        players: final.teams[1].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 },
-        teamExtras: final.teams[1].teamExtras
+        players: awayPlayers,
+        teamExtras: completedTeamExtras(score: final.teams[1].score, players: awayPlayers, teamExtras: final.teams[1].teamExtras)
     )
     let boxScores = [homeBox, awayBox]
 

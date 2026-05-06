@@ -242,6 +242,11 @@ private struct ScheduleGameLeader {
     let boxLine: ParsedPlayerBoxScore
 }
 
+private enum BoxScoreTableRow {
+    case player(ParsedPlayerBoxScore)
+    case team(ParsedTeamBoxScore)
+}
+
 struct BoxScoreDetailView: View {
     let game: UserGameSummary
     let userTeamName: String
@@ -299,52 +304,109 @@ struct BoxScoreDetailView: View {
             .init(id: "plusMinus", title: "+/-", width: 40),
             .init(id: "pf", title: "PF", width: 38),
         ]
-        let tableRows = Array(team.players.enumerated()).map {
-            (id: AnyHashable("\($0.offset)-\($0.element.playerName)"), data: $0.element)
+        var tableRows: [(id: AnyHashable, data: BoxScoreTableRow)] = Array(team.players.enumerated()).map {
+            (id: AnyHashable("player-\($0.offset)-\($0.element.playerName)"), data: .player($0.element))
         }
+        tableRows.append((id: AnyHashable("team-\(team.name)"), data: .team(team)))
 
         return GameCard {
             GameSectionHeader(title: team.name)
-            AppTable(columns: columns, rows: tableRows) { player in
+            AppTable(columns: columns, rows: tableRows) { row in
                 HStack(spacing: 0) {
-                    HStack(spacing: 0) {
-                        NavigationLink {
-                            PlayerCardDetailView(
-                                player: resolvedPlayer(teamName: team.name, boxLine: player),
-                                games: games,
-                                teamName: team.name
-                            )
-                        } label: {
-                            Text(player.playerName)
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.plain)
-
-                        Text(" (\(player.position))")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
+                    switch row {
+                    case .player(let player):
+                        playerNameCell(player, teamName: team.name)
+                        boxScoreStatCells(
+                            minutes: Int(player.minutes.rounded()),
+                            points: player.points,
+                            rebounds: player.rebounds,
+                            assists: player.assists,
+                            steals: player.steals,
+                            blocks: player.blocks,
+                            turnovers: player.turnovers,
+                            fg: "\(player.fgMade)-\(player.fgAttempts)",
+                            three: "\(player.threeMade)-\(player.threeAttempts)",
+                            ft: "\(player.ftMade)-\(player.ftAttempts)",
+                            plusMinus: formatPlusMinus(player.plusMinus),
+                            fouls: player.fouls
+                        )
+                    case .team(let team):
+                        AppTableTextCell(text: "TEAM", width: 130, alignment: .leading, font: .caption.monospacedDigit().weight(.semibold))
+                        boxScoreStatCells(
+                            minutes: team.minutes,
+                            points: team.points,
+                            rebounds: team.rebounds,
+                            assists: team.assists,
+                            steals: team.steals,
+                            blocks: team.blocks,
+                            turnovers: team.turnovers,
+                            fg: "\(team.fgMade)-\(team.fgAttempts)",
+                            three: "\(team.threeMade)-\(team.threeAttempts)",
+                            ft: "\(team.ftMade)-\(team.ftAttempts)",
+                            plusMinus: team.plusMinus.map(formatPlusMinus) ?? "-",
+                            fouls: team.fouls,
+                            font: .caption.monospacedDigit().weight(.semibold)
+                        )
                     }
-                    .frame(width: 130, alignment: .leading)
-
-                    AppTableTextCell(text: "\(Int(player.minutes.rounded()))", width: 40, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.points)", width: 38, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.rebounds)", width: 38, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.assists)", width: 38, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.steals)", width: 38, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.blocks)", width: 38, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.turnovers)", width: 38, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.fgMade)-\(player.fgAttempts)", width: 56, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.threeMade)-\(player.threeAttempts)", width: 56, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.ftMade)-\(player.ftAttempts)", width: 56, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: formatPlusMinus(player.plusMinus), width: 40, font: .caption.monospacedDigit())
-                    AppTableTextCell(text: "\(player.fouls)", width: 38, font: .caption.monospacedDigit())
                 }
             }
+        }
+    }
+
+    private func playerNameCell(_ player: ParsedPlayerBoxScore, teamName: String) -> some View {
+        HStack(spacing: 0) {
+            NavigationLink {
+                PlayerCardDetailView(
+                    player: resolvedPlayer(teamName: teamName, boxLine: player),
+                    games: games,
+                    teamName: teamName
+                )
+            } label: {
+                Text(player.playerName)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Text(" (\(player.position))")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+        }
+        .frame(width: 130, alignment: .leading)
+    }
+
+    private func boxScoreStatCells(
+        minutes: Int,
+        points: Int,
+        rebounds: Int,
+        assists: Int,
+        steals: Int,
+        blocks: Int,
+        turnovers: Int,
+        fg: String,
+        three: String,
+        ft: String,
+        plusMinus: String,
+        fouls: Int,
+        font: Font = .caption.monospacedDigit()
+    ) -> some View {
+        Group {
+            AppTableTextCell(text: "\(minutes)", width: 40, font: font)
+            AppTableTextCell(text: "\(points)", width: 38, font: font)
+            AppTableTextCell(text: "\(rebounds)", width: 38, font: font)
+            AppTableTextCell(text: "\(assists)", width: 38, font: font)
+            AppTableTextCell(text: "\(steals)", width: 38, font: font)
+            AppTableTextCell(text: "\(blocks)", width: 38, font: font)
+            AppTableTextCell(text: "\(turnovers)", width: 38, font: font)
+            AppTableTextCell(text: fg, width: 56, font: font)
+            AppTableTextCell(text: three, width: 56, font: font)
+            AppTableTextCell(text: ft, width: 56, font: font)
+            AppTableTextCell(text: plusMinus, width: 40, font: font)
+            AppTableTextCell(text: "\(fouls)", width: 38, font: font)
         }
     }
 

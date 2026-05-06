@@ -51,15 +51,17 @@ public func simulateGameWithQA(homeTeam: Team, awayTeam: Team, random: inout See
         fatalError("simulateGameWithQA failed: missing game state \(state.handle)")
     }
 
+    let homePlayers = final.teams[0].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 }
+    let awayPlayers = final.teams[1].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 }
     let homeBox = TeamBoxScore(
         name: final.teams[0].team.name,
-        players: final.teams[0].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 },
-        teamExtras: final.teams[0].teamExtras
+        players: homePlayers,
+        teamExtras: completedTeamExtras(score: final.teams[0].score, players: homePlayers, teamExtras: final.teams[0].teamExtras)
     )
     let awayBox = TeamBoxScore(
         name: final.teams[1].team.name,
-        players: final.teams[1].boxPlayers.filter { $0.minutes > 0 || $0.points > 0 || $0.fgAttempts > 0 || $0.ftAttempts > 0 },
-        teamExtras: final.teams[1].teamExtras
+        players: awayPlayers,
+        teamExtras: completedTeamExtras(score: final.teams[1].score, players: awayPlayers, teamExtras: final.teams[1].teamExtras)
     )
     let boxScores = [homeBox, awayBox]
     let game = SimulatedGameResult(
