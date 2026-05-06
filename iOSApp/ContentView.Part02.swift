@@ -66,6 +66,8 @@ struct CollegeLeagueHomeView: View {
     @State var playersLeavingSummary: PlayersLeavingSummary?
     @State var draftSummary: DraftSummary?
     @State var nilRetentionSummary: NILRetentionSummary?
+    @State var travelBallCircuitSummary: TransferPortalSummary?
+    @State var highSchoolRecruitingSummary: TransferPortalSummary?
     @State var transferPortalSummary: TransferPortalSummary?
     @State var hallOfFameSummary: SchoolHallOfFameSummary?
     @State var offseasonProgress: LeagueOffseasonProgress?
@@ -224,175 +226,7 @@ struct CollegeLeagueHomeView: View {
             }
             .background(AppTheme.background)
             .navigationDestination(for: LeagueMenuDestination.self) { destination in
-                Group {
-                switch destination {
-                case .seasonRecap:
-                    SeasonRecapView(
-                        games: completedLeagueGames,
-                        schedule: schedule,
-                        userTeamId: summary?.userTeamId,
-                        userTeamName: summary?.userTeamName ?? teamName,
-                        userConferenceId: userConferenceId,
-                        standingsByConference: conferenceStandings,
-                        conferenceNamesById: conferenceNamesById,
-                        bracket: nationalBracket,
-                        nilBudgetSummary: nilBudgetSummary,
-                        playersLeavingSummary: playersLeavingSummary,
-                        draftSummary: draftSummary,
-                        nilRetentionSummary: nilRetentionSummary,
-                        transferPortalSummary: transferPortalSummary,
-                        hallOfFameSummary: hallOfFameSummary,
-                        roster: roster,
-                        teamRostersByName: teamRostersByName,
-                        onAdvanceToOffseasonSchedule: advanceToOffseasonScheduleFromRecap
-                    )
-                case .offseasonSchedule:
-                    OffseasonScheduleView(
-                        progress: offseasonProgress,
-                        nilBudgetSummary: nilBudgetSummary,
-                        playersLeavingSummary: playersLeavingSummary,
-                        draftSummary: draftSummary,
-                        nilRetentionSummary: nilRetentionSummary,
-                        transferPortalSummary: transferPortalSummary,
-                        hallOfFameSummary: hallOfFameSummary,
-                        games: completedLeagueGames,
-                        teamRostersByName: teamRostersByName,
-                        onAdvance: advanceOffseasonScheduleAndNavigate
-                    )
-                case .nilBudgets:
-                    NILBudgetView(
-                        summary: nilBudgetSummary,
-                        onAdvance: advanceOffseasonScheduleAndNavigate
-                    )
-                case .playersLeaving:
-                    PlayersLeavingView(
-                        summary: playersLeavingSummary,
-                        hallOfFameSummary: hallOfFameSummary,
-                        games: completedLeagueGames,
-                        teamRostersByName: teamRostersByName,
-                        onAdvance: advanceOffseasonScheduleAndNavigate
-                    )
-                case .draft:
-                    DraftView(
-                        summary: draftSummary,
-                        games: completedLeagueGames,
-                        onAdvance: advanceOffseasonScheduleAndNavigate
-                    )
-                case .playerRetention:
-                    NILRetentionView(
-                        summary: nilRetentionSummary,
-                        games: completedLeagueGames,
-                        onSetOffer: setNILRetentionOffer,
-                        onSubmitOffer: submitNILRetentionOffer,
-                        onMeetDemand: meetNILRetentionDemand,
-                        onDelegate: delegateNILRetention,
-                        onAdvance: advanceOffseasonScheduleAndNavigate
-                    )
-                case .transferPortal:
-                    TransferPortalView(
-                        summary: transferPortalSummary,
-                        games: completedLeagueGames,
-                        roster: retainedRoster,
-                        userTeamName: summary?.userTeamName ?? teamName,
-                        onSetTargeted: setTransferPortalTargeted,
-                        onSetOffer: setTransferPortalOffer,
-                        onAdvance: advanceOffseasonScheduleAndNavigate
-                    )
-                case .roster:
-                    RosterRatingsView(
-                        roster: roster,
-                        games: completedLeagueGames,
-                        userTeamName: summary?.userTeamName ?? teamName
-                    )
-                case .schedule:
-                    ScheduleListView(
-                        schedule: schedule,
-                        userTeamName: summary?.userTeamName ?? teamName,
-                        games: completedLeagueGames,
-                        roster: roster,
-                        teamRostersByName: teamRostersByName
-                    )
-                case .rotation:
-                    RotationSettingsView(
-                        roster: roster,
-                        slots: rotationSlots,
-                        onSave: { updated in
-                            saveRotation(updated)
-                        }
-                    )
-                case .playbook:
-                    PlaybookView(
-                        playbook: league.flatMap { getUserPlaybook($0) },
-                        onSave: { pace, defense, weights in
-                            savePlaybook(pace: pace, defenseScheme: defense, offenseWeights: weights)
-                        }
-                    )
-                case .playerStats:
-                    PlayerStatsView(
-                        schedule: schedule,
-                        games: completedLeagueGames,
-                        userTeamName: summary?.userTeamName ?? teamName,
-                        roster: roster,
-                        teamRostersByName: teamRostersByName
-                    )
-                case .teamStats:
-                    TeamStatsView(
-                        teamStatsById: teamStatsById,
-                        userTeamId: summary?.userTeamId,
-                        userConferenceId: userConferenceId,
-                        conferenceIdByTeamId: conferenceIdByTeamId,
-                        userRank: rankings?.rankings.first(where: { $0.teamId == summary?.userTeamId })?.rank
-                    )
-                case .statLeaders:
-                    StatLeadersView(
-                        games: completedLeagueGames,
-                        userTeamName: summary?.userTeamName ?? teamName,
-                        roster: roster,
-                        teamRostersByName: teamRostersByName
-                    )
-                case .standings:
-                    ConferenceStandingsView(
-                        standingsByConference: conferenceStandings,
-                        conferenceNamesById: conferenceNamesById,
-                        preferredConferenceId: userConferenceId
-                    )
-                case .rankings:
-                    RankingsView(
-                        rankings: rankings,
-                        userTeamId: summary?.userTeamId
-                    )
-                case .bracket:
-                    NationalBracketView(
-                        bracket: nationalBracket,
-                        userTeamId: summary?.userTeamId
-                    )
-                case .coachingStaff:
-                    CoachingStaffView(
-                        staff: coachingStaff,
-                        onSetAssistantFocus: { index, focus in
-                            saveAssistantFocus(assistantIndex: index, focus: focus)
-                        }
-                    )
-                case .hallOfFame:
-                    SchoolHallOfFameView(
-                        summary: hallOfFameSummary,
-                        games: completedLeagueGames,
-                        userTeamName: summary?.userTeamName ?? teamName
-                    )
-                case .schoolLegacies:
-                    SchoolLegaciesView(summary: league.map { getSchoolLegaciesSummary($0) })
-                case .boxScore(let gameId):
-                    if let game = schedule.first(where: { $0.gameId == gameId }) {
-                        BoxScoreDetailView(
-                            game: game,
-                            userTeamName: summary?.userTeamName ?? teamName,
-                            games: completedLeagueGames,
-                            roster: roster,
-                            teamRostersByName: teamRostersByName
-                        )
-                    }
-                }
-                }
+                destinationView(for: destination)
                 .navigationBarBackButtonHidden(destination.hidesSystemBackButton)
             }
             .navigationDestination(isPresented: $showingSeasonRecap) {
@@ -409,6 +243,7 @@ struct CollegeLeagueHomeView: View {
                     playersLeavingSummary: playersLeavingSummary,
                     draftSummary: draftSummary,
                     nilRetentionSummary: nilRetentionSummary,
+                    highSchoolRecruitingSummary: highSchoolRecruitingSummary,
                     transferPortalSummary: transferPortalSummary,
                     hallOfFameSummary: hallOfFameSummary,
                     roster: roster,
@@ -424,6 +259,7 @@ struct CollegeLeagueHomeView: View {
                     playersLeavingSummary: playersLeavingSummary,
                     draftSummary: draftSummary,
                     nilRetentionSummary: nilRetentionSummary,
+                    highSchoolRecruitingSummary: highSchoolRecruitingSummary,
                     transferPortalSummary: transferPortalSummary,
                     hallOfFameSummary: hallOfFameSummary,
                     games: completedLeagueGames,
@@ -554,11 +390,11 @@ struct CollegeLeagueHomeView: View {
         return max(1, game.day ?? 1)
     }
 
-    private var userConferenceId: String? {
+    var userConferenceId: String? {
         listCareerTeamOptions().first(where: { $0.teamName == teamName })?.conferenceId
     }
 
-    private var conferenceIdByTeamId: [String: String] {
+    var conferenceIdByTeamId: [String: String] {
         var result: [String: String] = [:]
         for rows in conferenceStandings.values {
             for row in rows {

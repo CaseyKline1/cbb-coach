@@ -183,6 +183,8 @@ public enum LeagueOffseasonStage: String, Codable, Equatable, Sendable {
     case playersLeaving
     case draft
     case playerRetention
+    case travelBallCircuit
+    case highSchoolRecruiting
     case transferPortal
     case complete
 }
@@ -972,6 +974,10 @@ struct LeagueStore {
         var schoolHallOfFame: [SchoolHallOfFameEntry]?
         var draftPicks: [DraftPickEntry]?
         var nilRetention: [NILNegotiationEntry]?
+        var highSchoolRecruits: [TransferPortalEntry]?
+        var highSchoolRecruitingWeek: Int?
+        var highSchoolRecruitingUserTargets: [String]?
+        var highSchoolRecruitingUserOffers: [String: Double]?
         var transferPortal: [TransferPortalEntry]?
         var transferPortalWeek: Int?
         var transferPortalUserTargets: [String]?

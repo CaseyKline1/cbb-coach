@@ -143,7 +143,7 @@ public func getNILRetentionSummary(_ league: LeagueState) -> NILRetentionSummary
     guard let summary = LeagueStore.update(league.handle, { state -> NILRetentionSummary in
         guard state.status == "completed",
               let stage = state.offseasonStage,
-              stage == .playerRetention || stage == .transferPortal || stage == .complete
+              stage == .playerRetention || stage == .travelBallCircuit || stage == .highSchoolRecruiting || stage == .transferPortal || stage == .complete
         else {
             return NILRetentionSummary(
                 userTeamId: state.userTeamId,
@@ -355,6 +355,93 @@ public func getTransferPortalSummary(_ league: LeagueState) -> TransferPortalSum
         return TransferPortalSummary(userTeamId: "", entries: [])
     }
     return summary
+}
+
+public func getHighSchoolRecruitingSummary(_ league: LeagueState) -> TransferPortalSummary {
+    guard let summary = LeagueStore.update(league.handle, { state -> TransferPortalSummary in
+        guard state.status == "completed",
+              let stage = state.offseasonStage,
+              stage == .highSchoolRecruiting || stage == .transferPortal || stage == .complete
+        else {
+            return highSchoolRecruitingSummary(from: state)
+        }
+        prepareHighSchoolRecruitingIfNeeded(&state)
+        return highSchoolRecruitingSummary(from: state)
+    }) else {
+        return TransferPortalSummary(userTeamId: "", entries: [])
+    }
+    return summary
+}
+
+public func getTravelBallCircuitSummary(_ league: LeagueState) -> TransferPortalSummary {
+    guard let summary = LeagueStore.update(league.handle, { state -> TransferPortalSummary in
+        guard state.status == "completed",
+              let stage = state.offseasonStage,
+              stage == .travelBallCircuit || stage == .highSchoolRecruiting || stage == .transferPortal || stage == .complete
+        else {
+            return highSchoolRecruitingSummary(from: state)
+        }
+        prepareHighSchoolRecruitingClassIfNeeded(&state)
+        return highSchoolRecruitingSummary(from: state)
+    }) else {
+        return TransferPortalSummary(userTeamId: "", entries: [])
+    }
+    return summary
+}
+
+public func setHighSchoolRecruitingTargeted(_ league: inout LeagueState, entryId: String, targeted: Bool) -> TransferPortalSummary {
+    LeagueStore.update(league.handle) { state -> TransferPortalSummary in
+        prepareHighSchoolRecruitingIfNeeded(&state)
+        let entries = state.highSchoolRecruits ?? []
+        let validEntry = entries.contains { $0.id == entryId && $0.committedTeamId == nil }
+        var targets = state.highSchoolRecruitingUserTargets ?? []
+        if targeted {
+            if validEntry && !targets.contains(entryId) && targets.count < transferPortalMaxUserTargets {
+                targets.append(entryId)
+            }
+        } else {
+            targets.removeAll { $0 == entryId }
+            state.highSchoolRecruitingUserOffers?[entryId] = nil
+        }
+        state.highSchoolRecruitingUserTargets = targets
+        return highSchoolRecruitingSummary(from: state)
+    } ?? TransferPortalSummary(userTeamId: "", entries: [])
+}
+
+public func setHighSchoolRecruitingOffer(_ league: inout LeagueState, entryId: String, offer: Double) -> TransferPortalSummary {
+    LeagueStore.update(league.handle) { state -> TransferPortalSummary in
+        prepareHighSchoolRecruitingIfNeeded(&state)
+        var targets = state.highSchoolRecruitingUserTargets ?? []
+        guard (state.highSchoolRecruits ?? []).contains(where: { $0.id == entryId && $0.committedTeamId == nil }) else {
+            return highSchoolRecruitingSummary(from: state)
+        }
+        if !targets.contains(entryId) && targets.count < transferPortalMaxUserTargets {
+            targets.append(entryId)
+        }
+        state.highSchoolRecruitingUserTargets = targets
+
+        var offers = state.highSchoolRecruitingUserOffers ?? [:]
+        let current = offers[entryId] ?? 0
+        var budget = highSchoolRecruitingBudgetSummary(state)
+        let maximum = max(0, budget.remaining + current)
+        let normalized = roundToNearestThousand(clamp(offer, min: 0, max: maximum))
+        if normalized > 0 {
+            offers[entryId] = normalized
+        } else {
+            offers.removeValue(forKey: entryId)
+        }
+        state.highSchoolRecruitingUserOffers = offers
+        budget = highSchoolRecruitingBudgetSummary(state)
+        return TransferPortalSummary(
+            userTeamId: state.userTeamId,
+            entries: state.highSchoolRecruits ?? [],
+            week: state.highSchoolRecruitingWeek ?? 1,
+            maxWeeks: highSchoolRecruitingWeeks,
+            userTargetIds: state.highSchoolRecruitingUserTargets ?? [],
+            userOffers: state.highSchoolRecruitingUserOffers ?? [:],
+            budget: budget
+        )
+    } ?? TransferPortalSummary(userTeamId: "", entries: [])
 }
 
 public func setTransferPortalTargeted(_ league: inout LeagueState, entryId: String, targeted: Bool) -> TransferPortalSummary {
@@ -798,8 +885,36 @@ private func transferPortalYouthFactor(_ year: String) -> Double {
 }
 
 private let transferPortalRecruitingWeeks = 6
+private let highSchoolRecruitingWeeks = 5
+private let highSchoolRecruitClassSize = 1_400
+private let travelBallRosterSize = 10
+private let travelBallGamesPerTeam = 25
+private let highSchoolPreviousTeamId = "high-school"
+private let highSchoolPreviousTeamName = "High School"
 private let transferPortalMaxUserTargets = 12
 private let transferPortalBlowoutCommitGap = 250.0
+
+private func highSchoolRecruitingSummary(from state: LeagueStore.State) -> TransferPortalSummary {
+    TransferPortalSummary(
+        userTeamId: state.userTeamId,
+        entries: state.highSchoolRecruits ?? [],
+        week: state.highSchoolRecruitingWeek ?? 1,
+        maxWeeks: highSchoolRecruitingWeeks,
+        userTargetIds: state.highSchoolRecruitingUserTargets ?? [],
+        userOffers: state.highSchoolRecruitingUserOffers ?? [:],
+        budget: highSchoolRecruitingBudgetSummary(state)
+    )
+}
+
+private func highSchoolRecruitingBudgetSummary(_ state: LeagueStore.State) -> NILRetentionBudgetSummary {
+    let total = calculateNILBudgetSummary(state).userTeam?.total ?? 0
+    let retained = (state.nilRetention ?? [])
+        .filter { $0.teamId == state.userTeamId && $0.status == .accepted }
+        .reduce(0.0) { $0 + $1.offer }
+    let highSchoolOffers = (state.highSchoolRecruitingUserOffers ?? [:]).reduce(0.0) { $0 + $1.value }
+    let allocated = retained + highSchoolOffers
+    return NILRetentionBudgetSummary(total: total, allocated: allocated, remaining: max(0, total - allocated))
+}
 
 private func transferPortalSummary(from state: LeagueStore.State) -> TransferPortalSummary {
     TransferPortalSummary(
@@ -818,9 +933,434 @@ private func transferPortalBudgetSummary(_ state: LeagueStore.State) -> NILReten
     let retained = (state.nilRetention ?? [])
         .filter { $0.teamId == state.userTeamId && $0.status == .accepted }
         .reduce(0.0) { $0 + $1.offer }
+    let highSchoolCommits = (state.highSchoolRecruits ?? [])
+        .filter { $0.committedTeamId == state.userTeamId }
+        .reduce(0.0) { $0 + ($1.committedOffer ?? $1.askingPrice) }
     let portalOffers = (state.transferPortalUserOffers ?? [:]).reduce(0.0) { $0 + $1.value }
-    let allocated = retained + portalOffers
+    let allocated = retained + highSchoolCommits + portalOffers
     return NILRetentionBudgetSummary(total: total, allocated: allocated, remaining: max(0, total - allocated))
+}
+
+private func prepareHighSchoolRecruitingClassIfNeeded(_ state: inout LeagueStore.State) {
+    if state.highSchoolRecruits == nil {
+        state.highSchoolRecruits = generateHighSchoolRecruitingClass(state)
+    }
+}
+
+private func prepareTravelBallCircuitIfNeeded(_ state: inout LeagueStore.State) {
+    prepareHighSchoolRecruitingClassIfNeeded(&state)
+    guard var recruits = state.highSchoolRecruits, recruits.contains(where: { $0.stats == nil }) else { return }
+    recruits = simulateTravelBallCircuit(recruits: recruits, state: state)
+    state.highSchoolRecruits = rankedTransferPortalEntries(recruits)
+}
+
+private func prepareHighSchoolRecruitingIfNeeded(_ state: inout LeagueStore.State) {
+    prepareTravelBallCircuitIfNeeded(&state)
+    if state.highSchoolRecruitingWeek == nil {
+        state.highSchoolRecruitingWeek = 1
+    }
+    if state.highSchoolRecruitingUserTargets == nil {
+        state.highSchoolRecruitingUserTargets = []
+    }
+    if state.highSchoolRecruitingUserOffers == nil {
+        state.highSchoolRecruitingUserOffers = [:]
+    }
+
+    guard var recruits = state.highSchoolRecruits else { return }
+    let validIds = Set(recruits.map(\.id))
+    state.highSchoolRecruitingUserTargets = (state.highSchoolRecruitingUserTargets ?? []).filter { validIds.contains($0) }
+    state.highSchoolRecruitingUserOffers = (state.highSchoolRecruitingUserOffers ?? [:]).filter { validIds.contains($0.key) }
+
+    for index in recruits.indices where recruits[index].interestByTeamId.isEmpty {
+        recruits[index].interestByTeamId = initialTransferPortalInterest(entry: recruits[index], state: state)
+    }
+    state.highSchoolRecruits = rankedTransferPortalEntries(recruits)
+}
+
+private func generateHighSchoolRecruitingClass(_ state: LeagueStore.State) -> [TransferPortalEntry] {
+    var random = SeededRandom(seed: hashString("\(state.optionsSeed):high-school-class:\(state.currentDay)"))
+    let positions: [PlayerPosition] = [.pg, .sg, .sf, .pf, .c, .cg, .wing, .f, .big]
+    let homes = ["CA", "TX", "FL", "NY", "NC", "IL", "GA", "PA", "OH", "MI", "NJ", "VA", "AZ", "WA", "TN", "IN"]
+    var usedNames = Set(state.teams.flatMap { $0.teamModel.players.map(\.bio.name) })
+    var entries: [TransferPortalEntry] = []
+    entries.reserveCapacity(highSchoolRecruitClassSize)
+
+    for index in 0..<highSchoolRecruitClassSize {
+        let position = positions[index % positions.count]
+        let recruitTierRoll = random.nextUnit()
+        let baseline: Int
+        switch recruitTierRoll {
+        case 0..<0.015:
+            baseline = random.int(73, 82)
+        case 0..<0.08:
+            baseline = random.int(66, 75)
+        case 0..<0.28:
+            baseline = random.int(58, 68)
+        case 0..<0.68:
+            baseline = random.int(49, 60)
+        default:
+            baseline = random.int(40, 52)
+        }
+
+        var player = createPlayer()
+        var name = ""
+        repeat {
+            let first = rosterFirstNames[random.int(0, rosterFirstNames.count - 1)]
+            let last = rosterLastNames[random.int(0, rosterLastNames.count - 1)]
+            name = "\(first) \(last)"
+            if usedNames.contains(name) {
+                name = "\(first) \(last) \(index + 1)"
+            }
+        } while usedNames.contains(name)
+        usedNames.insert(name)
+
+        player.bio.name = name
+        player.bio.position = position
+        player.bio.year = .hs
+        player.bio.home = homes[random.int(0, homes.count - 1)]
+        player.bio.redshirtUsed = false
+        player.bio.nilDollarsLastYear = 0
+        player.bio.potential = clamp(baseline + random.int(8, 24), min: 42, max: 99)
+        player.greed = Double(clamp(48 + random.int(-24, 30), min: 8, max: 96))
+        player.loyalty = Double(clamp(46 + random.int(-24, 26), min: 8, max: 94))
+        applyHighSchoolRecruitRatings(&player, base: baseline, random: &random)
+
+        let height = sampleHeightInches(for: position, random: &random)
+        player.size.height = formatHeight(inches: height)
+        player.size.weight = "\(sampleHighSchoolWeightPounds(for: position, heightInches: height, random: &random))"
+        player.size.wingspan = formatHeight(inches: height + sampleWingspanDelta(for: position, random: &random))
+        player.condition.energy = 100
+
+        let overall = playerOverall(player)
+        let intrinsic = highSchoolRecruitIntrinsicValue(overall: overall, potential: player.bio.potential)
+        let asking = portalAskingPrice(intrinsicValue: intrinsic, greed: player.greed ?? 50, loyalty: player.loyalty ?? 50)
+        let summary = UserRosterPlayerSummary(
+            playerIndex: -1,
+            name: player.bio.name,
+            position: player.bio.position.rawValue,
+            year: player.bio.year.rawValue,
+            home: player.bio.home,
+            height: player.size.height,
+            weight: player.size.weight,
+            wingspan: player.size.wingspan,
+            overall: overall,
+            isStarter: false,
+            attributes: nil
+        )
+
+        entries.append(
+            TransferPortalEntry(
+                id: "hs:\(state.currentDay):\(index):\(player.bio.name)",
+                previousTeamId: highSchoolPreviousTeamId,
+                previousTeamName: highSchoolPreviousTeamName,
+                previousConferenceId: nil,
+                player: summary,
+                playerModel: player,
+                stats: nil,
+                playerName: player.bio.name,
+                position: player.bio.position.rawValue,
+                year: player.bio.year.rawValue,
+                overall: overall,
+                potential: player.bio.potential,
+                askingPrice: asking,
+                intrinsicValue: intrinsic,
+                reason: "Incoming freshman recruit.",
+                loyalty: player.loyalty ?? 50,
+                greed: player.greed ?? 50
+            )
+        )
+    }
+
+    return rankedTransferPortalEntries(entries)
+}
+
+private func applyHighSchoolRecruitRatings(_ player: inout Player, base: Int, random: inout SeededRandom) {
+    func r(_ delta: Int = 0, min lowerBound: Int = 25) -> Int {
+        clamp(base + delta + random.int(-9, 9), min: lowerBound, max: 99)
+    }
+
+    player.athleticism.speed = r(8)
+    player.athleticism.agility = r(7)
+    player.athleticism.burst = r(7)
+    player.athleticism.strength = r(-8)
+    player.athleticism.vertical = r(7)
+    player.athleticism.stamina = r(2)
+    player.athleticism.durability = r(2)
+
+    player.shooting.layups = r(-2)
+    player.shooting.dunks = r(1)
+    player.shooting.closeShot = r(-3)
+    player.shooting.midrangeShot = r(-5)
+    player.shooting.threePointShooting = r(-5)
+    player.shooting.cornerThrees = r(-6)
+    player.shooting.upTopThrees = r(-6)
+    player.shooting.drawFoul = r(-5)
+    player.shooting.freeThrows = r(-4)
+
+    player.postGame.postControl = r(-8)
+    player.postGame.postFadeaways = r(-9)
+    player.postGame.postHooks = r(-9)
+
+    player.skills.ballHandling = r(-4)
+    player.skills.ballSafety = r(-8)
+    player.skills.passingAccuracy = r(-6)
+    player.skills.passingVision = r(-8)
+    player.skills.passingIQ = r(-12)
+    player.skills.shotIQ = r(-12)
+    player.skills.offballOffense = r(-10)
+    player.skills.hands = r(-2)
+    player.skills.hustle = r(4)
+    player.skills.clutch = r(-8)
+
+    player.defense.perimeterDefense = r(-4)
+    player.defense.postDefense = r(-5)
+    player.defense.shotBlocking = r(-2)
+    player.defense.shotContest = r(-4)
+    player.defense.steals = r(-3)
+    player.defense.lateralQuickness = r(5)
+    player.defense.offballDefense = r(-11)
+    player.defense.passPerception = r(-10)
+    player.defense.defensiveControl = r(-12)
+
+    player.rebounding.offensiveRebounding = r(-3)
+    player.rebounding.defensiveRebound = r(-3)
+    player.rebounding.boxouts = r(-8)
+    applyPositionReboundingProfile(&player)
+
+    player.tendencies.post = r(-8)
+    player.tendencies.inside = r(3)
+    player.tendencies.midrange = r(-3)
+    player.tendencies.threePoint = r(-2)
+    player.tendencies.drive = r(5)
+    player.tendencies.pickAndRoll = r(-7)
+    player.tendencies.pickAndPop = r(-7)
+    player.tendencies.shootVsPass = clamp(50 + random.int(-12, 12), min: 25, max: 99)
+}
+
+private func sampleHighSchoolWeightPounds(for position: PlayerPosition, heightInches: Int, random: inout SeededRandom) -> Int {
+    max(145, sampleWeightPounds(for: position, heightInches: heightInches, random: &random) - random.int(8, 22))
+}
+
+private func highSchoolRecruitIntrinsicValue(overall: Int, potential: Int) -> Double {
+    if overall <= 46 { return 0 }
+    let current = clamp((Double(overall) - 44) / 36, min: 0, max: 1)
+    let upside = clamp((Double(potential) - Double(overall)) / 28, min: 0, max: 1.25)
+    let eliteUpside = clamp((Double(potential) - 82) / 14, min: 0, max: 1)
+    let base = 4_000
+        + pow(current, 1.6) * 115_000
+        + current * upside * 150_000
+        + pow(eliteUpside, 2.0) * 520_000
+    return roundToNearestThousand(base)
+}
+
+private func simulateTravelBallCircuit(recruits: [TransferPortalEntry], state: LeagueStore.State) -> [TransferPortalEntry] {
+    var random = SeededRandom(seed: hashString("\(state.optionsSeed):travel-ball:\(state.currentDay)"))
+    let grouped = balancedTravelBallRosters(from: recruits, random: &random)
+    var statsById: [String: TransferPortalPlayerStats] = [:]
+    statsById.reserveCapacity(recruits.count)
+
+    for (teamIndex, roster) in grouped.enumerated() {
+        let stats = simulateTravelBallTeam(roster: roster, teamIndex: teamIndex, state: state)
+        for (id, line) in stats {
+            statsById[id] = line
+        }
+    }
+
+    return recruits.map { entry in
+        var output = entry
+        output.stats = statsById[entry.id]
+        return output
+    }
+}
+
+private func balancedTravelBallRosters(from recruits: [TransferPortalEntry], random: inout SeededRandom) -> [[TransferPortalEntry]] {
+    var pools = Dictionary(grouping: recruits, by: { normalizeHallPosition($0.position) })
+    for key in pools.keys {
+        if var values = pools[key] {
+            shuffleTravelBallRecruits(&values, random: &random)
+            pools[key] = values
+        }
+    }
+
+    let teamCount = max(1, Int(ceil(Double(recruits.count) / Double(travelBallRosterSize))))
+    var rosters = Array(repeating: [TransferPortalEntry](), count: teamCount)
+    let positionPattern = ["PG", "SG", "SF", "PF", "C", "PG", "SG", "SF", "PF", "C"]
+    for slot in 0..<travelBallRosterSize {
+        for teamIndex in 0..<teamCount {
+            let preferred = positionPattern[slot % positionPattern.count]
+            let recruit = popTravelBallRecruit(preferred: preferred, pools: &pools)
+            if let recruit {
+                rosters[teamIndex].append(recruit)
+            }
+        }
+    }
+
+    var leftovers = pools.values.flatMap { $0 }
+    shuffleTravelBallRecruits(&leftovers, random: &random)
+    for recruit in leftovers {
+        if let index = rosters.indices.min(by: { rosters[$0].count < rosters[$1].count }) {
+            rosters[index].append(recruit)
+        }
+    }
+
+    return rosters.filter { !$0.isEmpty }
+}
+
+private func shuffleTravelBallRecruits(_ recruits: inout [TransferPortalEntry], random: inout SeededRandom) {
+    guard recruits.count > 1 else { return }
+    for index in recruits.indices.dropLast() {
+        let swapIndex = random.int(index, recruits.count - 1)
+        if index != swapIndex {
+            recruits.swapAt(index, swapIndex)
+        }
+    }
+}
+
+private func popTravelBallRecruit(preferred: String, pools: inout [String: [TransferPortalEntry]]) -> TransferPortalEntry? {
+    if pools[preferred]?.isEmpty == false {
+        return pools[preferred]?.removeLast()
+    }
+    let fallbackGroups: [String]
+    switch preferred {
+    case "PG":
+        fallbackGroups = ["SG", "SF", "PF", "C"]
+    case "SG":
+        fallbackGroups = ["PG", "SF", "PF", "C"]
+    case "SF":
+        fallbackGroups = ["SG", "PF", "PG", "C"]
+    case "PF":
+        fallbackGroups = ["C", "SF", "SG", "PG"]
+    case "C":
+        fallbackGroups = ["PF", "SF", "SG", "PG"]
+    default:
+        fallbackGroups = ["PG", "SG", "SF", "PF", "C"]
+    }
+    for key in fallbackGroups where pools[key]?.isEmpty == false {
+        return pools[key]?.removeLast()
+    }
+    return nil
+}
+
+private func simulateTravelBallTeam(
+    roster: [TransferPortalEntry],
+    teamIndex: Int,
+    state: LeagueStore.State
+) -> [String: TransferPortalPlayerStats] {
+    guard !roster.isEmpty else { return [:] }
+
+    let playerModels = roster.map { $0.playerModel ?? transferPortalPlayer(from: $0, seed: "\(state.optionsSeed):travel-fallback:\($0.id)") }
+    let overallByIndex = playerModels.map(playerOverall)
+    let minuteWeights = playerModels.enumerated().map { index, player -> Double in
+        let overall = Double(overallByIndex[index])
+        let stamina = Double(player.athleticism.stamina)
+        let positionNeed: Double
+        switch normalizeHallPosition(player.bio.position.rawValue) {
+        case "PG", "C": positionNeed = 1.08
+        case "SG", "SF", "PF": positionNeed = 1.0
+        default: positionNeed = 0.95
+        }
+        return max(0.15, pow(max(25, overall) / 60, 2.15) * (0.84 + stamina / 220) * positionNeed)
+    }
+    let totalWeight = max(0.1, minuteWeights.reduce(0, +))
+    let pace = 68.0 + deterministicNILValueRoll(seed: "\(state.optionsSeed):travel-pace:\(teamIndex)") * 10
+    let teamQuality = Double(overallByIndex.reduce(0, +)) / Double(max(1, overallByIndex.count))
+
+    var output: [String: TransferPortalPlayerStats] = [:]
+    for (index, entry) in roster.enumerated() {
+        let player = playerModels[index]
+        let minutesPerGame = clamp((minuteWeights[index] / totalWeight) * 200, min: 6, max: 34)
+        let minuteFactor = minutesPerGame / 28
+        let scoringSkill = Double(player.shooting.layups + player.shooting.closeShot + player.shooting.midrangeShot + player.shooting.threePointShooting + player.skills.shotIQ) / 5
+        let creationSkill = Double(player.skills.ballHandling + player.skills.passingVision + player.skills.passingIQ) / 3
+        let reboundingSkill = Double(player.rebounding.offensiveRebounding + player.rebounding.defensiveRebound + player.rebounding.boxouts) / 3
+        let defensivePlaymaking = Double(player.defense.steals + player.defense.passPerception + player.defense.shotBlocking) / 3
+        let athleticism = Double(player.athleticism.speed + player.athleticism.burst + player.athleticism.vertical) / 3
+        let usage = clamp(
+            0.72
+                + (scoringSkill - teamQuality) / 55
+                + Double(player.tendencies.shootVsPass - 50) / 180
+                + deterministicNILValueRoll(seed: "\(state.optionsSeed):travel-usage:\(teamIndex):\(entry.id)") * 0.24,
+            min: 0.45,
+            max: 1.45
+        )
+        let paceFactor = pace / 72
+        let pointsPerGame = clamp(
+            minuteFactor * usage * paceFactor * (5.8 + scoringSkill * 0.135 + athleticism * 0.035),
+            min: 0.5,
+            max: 31
+        )
+        let reboundsPerGame = clamp(
+            minuteFactor * (0.65 + reboundingSkill * 0.085 + positionReboundTravelBonus(player.bio.position)),
+            min: 0.2,
+            max: 16
+        )
+        let assistsPerGame = clamp(
+            minuteFactor * (0.25 + creationSkill * 0.055 + positionAssistTravelBonus(player.bio.position)) * (1.18 - usage * 0.16),
+            min: 0.1,
+            max: 9
+        )
+        let stealsPerGame = clamp(minuteFactor * (0.18 + defensivePlaymaking * 0.018 + Double(player.athleticism.agility) * 0.010), min: 0.1, max: 3.8)
+        let blocksPerGame = clamp(minuteFactor * (Double(player.defense.shotBlocking) * 0.016 + positionBlockTravelBonus(player.bio.position)), min: 0, max: 4.2)
+        let turnoversPerGame = clamp(
+            minuteFactor * usage * (1.9 - Double(player.skills.ballSafety + player.skills.passingIQ) / 130),
+            min: 0.3,
+            max: 5.5
+        )
+        let fgPct = clamp(38 + (scoringSkill - 52) * 0.24 + (athleticism - 55) * 0.08 - usage * 2.0, min: 32, max: 66)
+        let threePct = clamp(25 + (Double(player.shooting.threePointShooting) - 48) * 0.22 + Double(player.shooting.freeThrows - 50) * 0.06, min: 18, max: 48)
+        let threeRate = clamp(Double(player.tendencies.threePoint) / 100, min: 0.08, max: 0.58)
+        let efgPct = clamp(fgPct + threeRate * max(0, threePct - 28) * 0.55, min: fgPct, max: 72)
+        let assistTurnoverRatio = assistsPerGame / max(0.1, turnoversPerGame)
+
+        output[entry.id] = TransferPortalPlayerStats(
+            games: travelBallGamesPerTeam,
+            minutesPerGame: minutesPerGame,
+            pointsPerGame: pointsPerGame,
+            reboundsPerGame: reboundsPerGame,
+            assistsPerGame: assistsPerGame,
+            stealsPerGame: stealsPerGame,
+            blocksPerGame: blocksPerGame,
+            turnoversPerGame: turnoversPerGame,
+            fieldGoalPercentage: fgPct,
+            threePointPercentage: threePct,
+            effectiveFieldGoalPercentage: efgPct,
+            assistTurnoverRatio: assistTurnoverRatio
+        )
+    }
+
+    return output
+}
+
+private func positionReboundTravelBonus(_ position: PlayerPosition) -> Double {
+    switch position {
+    case .pg, .cg: return -0.8
+    case .sg: return -0.45
+    case .sf, .wing: return 0.0
+    case .f: return 0.55
+    case .pf: return 1.0
+    case .c, .big: return 1.35
+    }
+}
+
+private func positionAssistTravelBonus(_ position: PlayerPosition) -> Double {
+    switch position {
+    case .pg: return 1.25
+    case .cg: return 0.85
+    case .sg: return 0.45
+    case .sf, .wing: return 0.25
+    case .f, .pf: return 0.05
+    case .c, .big: return -0.05
+    }
+}
+
+private func positionBlockTravelBonus(_ position: PlayerPosition) -> Double {
+    switch position {
+    case .pg, .cg, .sg: return -0.35
+    case .sf, .wing: return -0.08
+    case .f: return 0.18
+    case .pf: return 0.45
+    case .c, .big: return 0.70
+    }
 }
 
 private func prepareTransferPortalRecruitingIfNeeded(_ state: inout LeagueStore.State) {
@@ -855,6 +1395,140 @@ private func initialTransferPortalInterest(entry: TransferPortalEntry, state: Le
         interest[team.teamId] = 28 + rosterNeed + positionNeed + prestige + roll
     }
     return interest
+}
+
+private func runHighSchoolRecruitingWeek(_ state: inout LeagueStore.State) {
+    prepareHighSchoolRecruitingIfNeeded(&state)
+    guard var recruits = state.highSchoolRecruits, !recruits.isEmpty else { return }
+
+    let week = state.highSchoolRecruitingWeek ?? 1
+    let userTargets = state.highSchoolRecruitingUserTargets ?? []
+    let userOffers = state.highSchoolRecruitingUserOffers ?? [:]
+    let totalBudgetByTeam = Dictionary(calculateNILBudgetSummary(state).teams.map { ($0.teamId, $0.total) }, uniquingKeysWith: { first, _ in first })
+    let retentionAcceptedByTeam = Dictionary(grouping: (state.nilRetention ?? []).filter { $0.status == .accepted }, by: { $0.teamId })
+        .mapValues { rows in rows.reduce(0.0) { $0 + $1.offer } }
+    var remainingByTeam: [String: Double] = [:]
+    for team in state.teams {
+        let total = totalBudgetByTeam[team.teamId] ?? 0
+        let retentionSpent = retentionAcceptedByTeam[team.teamId] ?? 0
+        var remaining = max(0, total - retentionSpent)
+        for entry in recruits where entry.committedTeamId == team.teamId {
+            remaining -= entry.committedOffer ?? entry.askingPrice
+        }
+        remainingByTeam[team.teamId] = max(0, remaining)
+    }
+    let cpuPlans = buildCPUTransferPortalPlans(state: state, portal: recruits, budgetByTeam: remainingByTeam)
+    var cpuTeamIdsByEntryId: [String: Set<String>] = [:]
+    for (teamId, entryIds) in cpuPlans {
+        for entryId in entryIds {
+            cpuTeamIdsByEntryId[entryId, default: []].insert(teamId)
+        }
+    }
+    let teamById = Dictionary(state.teams.map { ($0.teamId, $0) }, uniquingKeysWith: { first, _ in first })
+    var commitCountByTeam: [String: Int] = [:]
+    for entry in recruits {
+        if let committedTeamId = entry.committedTeamId {
+            commitCountByTeam[committedTeamId, default: 0] += 1
+        }
+    }
+
+    for index in recruits.indices {
+        guard recruits[index].committedTeamId == nil else { continue }
+        var entry = recruits[index]
+        var activeTeamIds = cpuTeamIdsByEntryId[entry.id] ?? []
+        if userTargets.contains(entry.id) {
+            activeTeamIds.insert(state.userTeamId)
+        }
+        guard !activeTeamIds.isEmpty else {
+            recruits[index] = entry
+            continue
+        }
+
+        for teamId in activeTeamIds {
+            guard let team = teamById[teamId] else { continue }
+            let priorityIndex = (cpuPlans[teamId] ?? []).firstIndex(of: entry.id) ?? userTargets.firstIndex(of: entry.id) ?? 0
+            let userOffer = teamId == state.userTeamId ? userOffers[entry.id, default: 0] : 0
+            let cpuOffer = teamId == state.userTeamId ? 0 : cpuTransferPortalOffer(entry: entry, team: team, budget: remainingByTeam[teamId] ?? 0)
+            let gain = transferPortalWeeklyGain(
+                entry: entry,
+                team: team,
+                priorityIndex: priorityIndex,
+                nilOffer: max(userOffer, cpuOffer),
+                state: state,
+                week: week
+            )
+            entry.interestByTeamId[teamId, default: 0] += gain
+        }
+
+        for teamId in entry.interestByTeamId.keys where !activeTeamIds.contains(teamId) {
+            entry.interestByTeamId[teamId, default: 0] -= 0.8 + deterministicNILValueRoll(seed: "\(state.optionsSeed):hs-decay:\(week):\(entry.id):\(teamId)") * 1.4
+        }
+
+        let orderedTeams = transferPortalOrderedTeams(for: entry, userOffers: userOffers, state: state, budgetByTeam: remainingByTeam)
+        let candidateTeams = entry.finalistTeamIds.isEmpty
+            ? orderedTeams
+            : orderedTeams.filter { entry.finalistTeamIds.contains($0.teamId) }
+
+        func teamOffer(_ teamId: String) -> Double {
+            if teamId == state.userTeamId {
+                return userOffers[entry.id, default: 0]
+            }
+            guard let team = teamById[teamId] else { return 0 }
+            return cpuTransferPortalOffer(entry: entry, team: team, budget: remainingByTeam[teamId] ?? 0)
+        }
+
+        let minimumAcceptableOffer = max(0, entry.askingPrice * 0.25)
+        let affordableTeams = candidateTeams.filter { ranked in
+            let offer = teamOffer(ranked.teamId)
+            return offer >= minimumAcceptableOffer
+                && (remainingByTeam[ranked.teamId] ?? 0) >= offer
+        }
+        let remainingTeams = affordableTeams.isEmpty ? candidateTeams : affordableTeams
+        if let best = remainingTeams.first {
+            let second = remainingTeams.dropFirst().first?.score ?? (best.score - 9)
+            let gap = max(0, best.score - second)
+            if entry.finalistTeamIds.isEmpty,
+               week >= 2,
+               orderedTeams.count > 1,
+               gap < transferPortalBlowoutCommitGap {
+                let finalistCount = min(3, orderedTeams.count)
+                entry.finalistTeamIds = Array(orderedTeams.prefix(finalistCount).map(\.teamId))
+                entry.finalistTeamNames = entry.finalistTeamIds.compactMap { teamById[$0]?.teamName }
+                recruits[index] = entry
+                continue
+            }
+            let chance = clamp(0.05 + (Double(week) / Double(highSchoolRecruitingWeeks)) * 0.24 + gap / 64, min: 0.04, max: 0.82)
+            let roll = deterministicNILValueRoll(seed: "\(state.optionsSeed):hs-commit:\(week):\(entry.id):\(best.teamId)")
+            let finalWeek = week >= highSchoolRecruitingWeeks
+            let bestOffer = teamOffer(best.teamId)
+            let canAfford = bestOffer >= minimumAcceptableOffer
+                && (remainingByTeam[best.teamId] ?? 0) >= bestOffer
+            if (roll < chance || finalWeek),
+               canAfford,
+               transferPortalHasRoom(teamId: best.teamId, state: state, added: commitCountByTeam[best.teamId, default: 0]) {
+                entry.committedTeamId = best.teamId
+                entry.committedTeamName = teamById[best.teamId]?.teamName
+                entry.committedOffer = bestOffer
+                entry.finalistTeamIds = []
+                entry.finalistTeamNames = []
+                commitCountByTeam[best.teamId, default: 0] += 1
+                if best.teamId != state.userTeamId {
+                    remainingByTeam[best.teamId, default: 0] = max(0, (remainingByTeam[best.teamId] ?? 0) - bestOffer)
+                }
+            }
+        }
+
+        recruits[index] = entry
+    }
+
+    state.highSchoolRecruits = rankedTransferPortalEntries(recruits).sorted(by: {
+        if ($0.committedTeamId == nil) != ($1.committedTeamId == nil) { return $0.committedTeamId == nil }
+        if $0.transferRank != $1.transferRank { return $0.transferRank < $1.transferRank }
+        if $0.overall != $1.overall { return $0.overall > $1.overall }
+        if $0.potential != $1.potential { return $0.potential > $1.potential }
+        return $0.playerName < $1.playerName
+    })
+    state.highSchoolRecruitingWeek = week + 1
 }
 
 private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
@@ -1309,6 +1983,7 @@ private func roundToNearestThousand(_ value: Double) -> Double {
 private let offseasonRosterTarget = 13
 
 private func completeTransferPortalAndStartNewYear(_ state: inout LeagueStore.State) {
+    applyHighSchoolRecruitingCommits(&state)
     finalizeNILRetentionAndBuildPortalIfNeeded(&state)
     prepareTransferPortalRecruitingIfNeeded(&state)
     while (state.transferPortalWeek ?? 1) <= transferPortalRecruitingWeeks {
@@ -1316,6 +1991,33 @@ private func completeTransferPortalAndStartNewYear(_ state: inout LeagueStore.St
     }
     applyTransferPortalCommits(&state)
     startNextSeasonAfterOffseason(&state)
+}
+
+private func applyHighSchoolRecruitingCommits(_ state: inout LeagueStore.State) {
+    guard var recruits = state.highSchoolRecruits, !recruits.isEmpty else { return }
+
+    let orderedIndexes = recruits.indices.sorted {
+        if recruits[$0].overall != recruits[$1].overall { return recruits[$0].overall > recruits[$1].overall }
+        if recruits[$0].potential != recruits[$1].potential { return recruits[$0].potential > recruits[$1].potential }
+        return recruits[$0].playerName < recruits[$1].playerName
+    }
+
+    for recruitIndex in orderedIndexes {
+        guard let committedTeamId = recruits[recruitIndex].committedTeamId,
+              let destinationIndex = state.teams.firstIndex(where: { $0.teamId == committedTeamId }),
+              state.teams[destinationIndex].teamModel.players.count < 15,
+              !state.teams[destinationIndex].teamModel.players.contains(where: { $0.bio.name == recruits[recruitIndex].playerName })
+        else { continue }
+
+        var player = transferPortalPlayer(from: recruits[recruitIndex], seed: "\(state.optionsSeed):hs-player:\(recruits[recruitIndex].id)")
+        player.bio.year = .hs
+        player.bio.nilDollarsLastYear = recruits[recruitIndex].committedOffer ?? recruits[recruitIndex].askingPrice
+        state.teams[destinationIndex].teamModel.players.append(player)
+        state.teams[destinationIndex].teamModel.lineup.append(player)
+        recruits[recruitIndex].committedTeamName = state.teams[destinationIndex].teamName
+    }
+
+    state.highSchoolRecruits = recruits
 }
 
 private func applyTransferPortalCommits(_ state: inout LeagueStore.State) {
@@ -1433,6 +2135,10 @@ private func startNextSeasonAfterOffseason(_ state: inout LeagueStore.State) {
     state.schoolHallOfFame = nil
     state.draftPicks = nil
     state.nilRetention = nil
+    state.highSchoolRecruits = nil
+    state.highSchoolRecruitingWeek = nil
+    state.highSchoolRecruitingUserTargets = nil
+    state.highSchoolRecruitingUserOffers = nil
     state.transferPortal = nil
     state.transferPortalWeek = nil
     state.transferPortalUserTargets = nil
@@ -1537,9 +2243,30 @@ public func advanceOffseason(_ league: inout LeagueState) -> LeagueOffseasonProg
             state.offseasonStage = .playerRetention
         case .playerRetention:
             finalizeNILRetentionAndBuildPortalIfNeeded(&state)
-            prepareTransferPortalRecruitingIfNeeded(&state)
-            state.offseasonStage = .transferPortal
+            prepareHighSchoolRecruitingClassIfNeeded(&state)
+            state.offseasonStage = .travelBallCircuit
+        case .travelBallCircuit:
+            prepareTravelBallCircuitIfNeeded(&state)
+            prepareHighSchoolRecruitingIfNeeded(&state)
+            state.offseasonStage = .highSchoolRecruiting
+        case .highSchoolRecruiting:
+            prepareHighSchoolRecruitingIfNeeded(&state)
+            if (state.highSchoolRecruits ?? []).isEmpty || (state.highSchoolRecruitingWeek ?? 1) > highSchoolRecruitingWeeks {
+                applyHighSchoolRecruitingCommits(&state)
+                prepareTransferPortalRecruitingIfNeeded(&state)
+                state.offseasonStage = .transferPortal
+                break
+            }
+            runHighSchoolRecruitingWeek(&state)
+            if (state.highSchoolRecruitingWeek ?? 1) > highSchoolRecruitingWeeks {
+                applyHighSchoolRecruitingCommits(&state)
+                prepareTransferPortalRecruitingIfNeeded(&state)
+                state.offseasonStage = .transferPortal
+                break
+            }
+            state.offseasonStage = .highSchoolRecruiting
         case .transferPortal:
+            applyHighSchoolRecruitingCommits(&state)
             finalizeNILRetentionAndBuildPortalIfNeeded(&state)
             prepareTransferPortalRecruitingIfNeeded(&state)
             if (state.transferPortal ?? []).isEmpty || (state.transferPortalWeek ?? 1) > transferPortalRecruitingWeeks {

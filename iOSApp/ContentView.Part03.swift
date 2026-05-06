@@ -180,6 +180,8 @@ extension CollegeLeagueHomeView {
         playersLeavingSummary = getPlayersLeavingSummary(league)
         draftSummary = getDraftSummary(league)
         nilRetentionSummary = getNILRetentionSummary(league)
+        travelBallCircuitSummary = getTravelBallCircuitSummary(league)
+        highSchoolRecruitingSummary = getHighSchoolRecruitingSummary(league)
         transferPortalSummary = getTransferPortalSummary(league)
         if includeHallOfFame {
             hallOfFameSummary = getSchoolHallOfFameSummary(league)
@@ -330,8 +332,16 @@ extension CollegeLeagueHomeView {
             hallOfFameSummary = getSchoolHallOfFameSummary(league)
         case .playerRetention:
             nilRetentionSummary = getNILRetentionSummary(league)
+        case .travelBallCircuit:
+            nilRetentionSummary = getNILRetentionSummary(league)
+            travelBallCircuitSummary = getTravelBallCircuitSummary(league)
+        case .highSchoolRecruiting:
+            nilRetentionSummary = getNILRetentionSummary(league)
+            travelBallCircuitSummary = getTravelBallCircuitSummary(league)
+            highSchoolRecruitingSummary = getHighSchoolRecruitingSummary(league)
         case .transferPortal:
             nilRetentionSummary = getNILRetentionSummary(league)
+            highSchoolRecruitingSummary = getHighSchoolRecruitingSummary(league)
             transferPortalSummary = getTransferPortalSummary(league)
         case .complete:
             refreshFromLeague(league, includeDeferredData: false)
@@ -450,9 +460,17 @@ extension CollegeLeagueHomeView {
             detail = "Returning-player NIL negotiations are being initialized."
             portalPlayerCount = nil
         case .playerRetention:
-            title = "Setting Up Transfer Portal"
-            detail = "National transfer entries, asking prices, and team interest are being generated."
+            title = "Building Travel Ball Circuit"
+            detail = "Incoming recruits are being placed onto balanced travel rosters."
             portalPlayerCount = nil
+        case .travelBallCircuit:
+            title = "Simulating Travel Ball"
+            detail = "Travel teams are playing 25 games and building recruit stat profiles."
+            portalPlayerCount = nil
+        case .highSchoolRecruiting:
+            title = "Advancing High School Recruiting"
+            detail = "Freshman recruits, finalists, commitments, and the next recruiting week are being resolved."
+            portalPlayerCount = highSchoolRecruitingSummary?.entries.count
         case .transferPortal:
             title = "Advancing Transfer Portal"
             detail = "Offers, finalists, commitments, and the next portal week are being resolved."
@@ -502,6 +520,10 @@ extension CollegeLeagueHomeView {
             return .draft
         case .playerRetention:
             return .playerRetention
+        case .travelBallCircuit:
+            return .travelBallCircuit
+        case .highSchoolRecruiting:
+            return .highSchoolRecruiting
         case .transferPortal:
             return .transferPortal
         case .schedule, .complete:
@@ -517,7 +539,7 @@ extension CollegeLeagueHomeView {
             restored = .offseasonSchedule
         case .complete:
             restored = nil
-        case .seasonRecap, .nilBudgets, .playersLeaving, .draft, .playerRetention, .transferPortal:
+        case .seasonRecap, .nilBudgets, .playersLeaving, .draft, .playerRetention, .travelBallCircuit, .highSchoolRecruiting, .transferPortal:
             restored = destination(forOffseasonStage: stage)
         }
         if let restored {
@@ -539,6 +561,10 @@ extension CollegeLeagueHomeView {
             return "Advanced to draft."
         case .playerRetention:
             return "Advanced to player retention."
+        case .travelBallCircuit:
+            return "Advanced to travel ball circuit."
+        case .highSchoolRecruiting:
+            return "Advanced to high school recruiting."
         case .transferPortal:
             return "Advanced to transfer portal."
         case .complete:
@@ -583,6 +609,201 @@ extension CollegeLeagueHomeView {
         guard var currentLeague = league else { return }
         transferPortalSummary = CBBCoachCore.setTransferPortalOffer(&currentLeague, entryId: entryId, offer: offer)
         league = currentLeague
+    }
+
+    func setHighSchoolRecruitingTargeted(entryId: String, targeted: Bool) {
+        guard var currentLeague = league else { return }
+        highSchoolRecruitingSummary = CBBCoachCore.setHighSchoolRecruitingTargeted(&currentLeague, entryId: entryId, targeted: targeted)
+        league = currentLeague
+    }
+
+    func setHighSchoolRecruitingOffer(entryId: String, offer: Double) {
+        guard var currentLeague = league else { return }
+        highSchoolRecruitingSummary = CBBCoachCore.setHighSchoolRecruitingOffer(&currentLeague, entryId: entryId, offer: offer)
+        league = currentLeague
+    }
+
+    @ViewBuilder
+    func highSchoolRecruitingDestinationView() -> some View {
+        TransferPortalView(
+            title: "High School Recruiting",
+            tableTitle: "High School Recruits",
+            emptyBoardText: "Add high school recruits from the table below to build your board.",
+            advanceButtonText: "Advance Recruiting Week",
+            summary: highSchoolRecruitingSummary,
+            games: completedLeagueGames,
+            roster: retainedRoster,
+            userTeamName: summary?.userTeamName ?? teamName,
+            onSetTargeted: setHighSchoolRecruitingTargeted,
+            onSetOffer: setHighSchoolRecruitingOffer,
+            onAdvance: advanceOffseasonScheduleAndNavigate
+        )
+    }
+
+    @ViewBuilder
+    func transferPortalDestinationView() -> some View {
+        TransferPortalView(
+            summary: transferPortalSummary,
+            games: completedLeagueGames,
+            roster: retainedRoster,
+            userTeamName: summary?.userTeamName ?? teamName,
+            onSetTargeted: setTransferPortalTargeted,
+            onSetOffer: setTransferPortalOffer,
+            onAdvance: advanceOffseasonScheduleAndNavigate
+        )
+    }
+
+    func destinationView(for destination: LeagueMenuDestination) -> AnyView {
+        switch destination {
+        case .seasonRecap:
+            return AnyView(SeasonRecapView(
+                games: completedLeagueGames,
+                schedule: schedule,
+                userTeamId: summary?.userTeamId,
+                userTeamName: summary?.userTeamName ?? teamName,
+                userConferenceId: userConferenceId,
+                standingsByConference: conferenceStandings,
+                conferenceNamesById: conferenceNamesById,
+                bracket: nationalBracket,
+                nilBudgetSummary: nilBudgetSummary,
+                playersLeavingSummary: playersLeavingSummary,
+                draftSummary: draftSummary,
+                nilRetentionSummary: nilRetentionSummary,
+                highSchoolRecruitingSummary: highSchoolRecruitingSummary,
+                transferPortalSummary: transferPortalSummary,
+                hallOfFameSummary: hallOfFameSummary,
+                roster: roster,
+                teamRostersByName: teamRostersByName,
+                onAdvanceToOffseasonSchedule: advanceToOffseasonScheduleFromRecap
+            ))
+        case .offseasonSchedule:
+            return AnyView(OffseasonScheduleView(
+                progress: offseasonProgress,
+                nilBudgetSummary: nilBudgetSummary,
+                playersLeavingSummary: playersLeavingSummary,
+                draftSummary: draftSummary,
+                nilRetentionSummary: nilRetentionSummary,
+                highSchoolRecruitingSummary: highSchoolRecruitingSummary,
+                transferPortalSummary: transferPortalSummary,
+                hallOfFameSummary: hallOfFameSummary,
+                games: completedLeagueGames,
+                teamRostersByName: teamRostersByName,
+                onAdvance: advanceOffseasonScheduleAndNavigate
+            ))
+        case .nilBudgets:
+            return AnyView(NILBudgetView(summary: nilBudgetSummary, onAdvance: advanceOffseasonScheduleAndNavigate))
+        case .playersLeaving:
+            return AnyView(PlayersLeavingView(
+                summary: playersLeavingSummary,
+                hallOfFameSummary: hallOfFameSummary,
+                games: completedLeagueGames,
+                teamRostersByName: teamRostersByName,
+                onAdvance: advanceOffseasonScheduleAndNavigate
+            ))
+        case .draft:
+            return AnyView(DraftView(summary: draftSummary, games: completedLeagueGames, onAdvance: advanceOffseasonScheduleAndNavigate))
+        case .playerRetention:
+            return AnyView(NILRetentionView(
+                summary: nilRetentionSummary,
+                games: completedLeagueGames,
+                onSetOffer: setNILRetentionOffer,
+                onSubmitOffer: submitNILRetentionOffer,
+                onMeetDemand: meetNILRetentionDemand,
+                onDelegate: delegateNILRetention,
+                onAdvance: advanceOffseasonScheduleAndNavigate
+            ))
+        case .travelBallCircuit:
+            return AnyView(TravelBallCircuitView(
+                summary: travelBallCircuitSummary,
+                onAdvance: advanceOffseasonScheduleAndNavigate
+            ))
+        case .highSchoolRecruiting:
+            return AnyView(highSchoolRecruitingDestinationView())
+        case .transferPortal:
+            return AnyView(transferPortalDestinationView())
+        case .roster:
+            return AnyView(RosterRatingsView(roster: roster, games: completedLeagueGames, userTeamName: summary?.userTeamName ?? teamName))
+        case .schedule:
+            return AnyView(ScheduleListView(
+                schedule: schedule,
+                userTeamName: summary?.userTeamName ?? teamName,
+                games: completedLeagueGames,
+                roster: roster,
+                teamRostersByName: teamRostersByName
+            ))
+        case .rotation:
+            return AnyView(RotationSettingsView(
+                roster: roster,
+                slots: rotationSlots,
+                onSave: { updated in saveRotation(updated) }
+            ))
+        case .playbook:
+            return AnyView(PlaybookView(
+                playbook: league.flatMap { getUserPlaybook($0) },
+                onSave: { pace, defense, weights in
+                    savePlaybook(pace: pace, defenseScheme: defense, offenseWeights: weights)
+                }
+            ))
+        case .playerStats:
+            return AnyView(PlayerStatsView(
+                schedule: schedule,
+                games: completedLeagueGames,
+                userTeamName: summary?.userTeamName ?? teamName,
+                roster: roster,
+                teamRostersByName: teamRostersByName
+            ))
+        case .teamStats:
+            return AnyView(TeamStatsView(
+                teamStatsById: teamStatsById,
+                userTeamId: summary?.userTeamId,
+                userConferenceId: userConferenceId,
+                conferenceIdByTeamId: conferenceIdByTeamId,
+                userRank: rankings?.rankings.first(where: { $0.teamId == summary?.userTeamId })?.rank
+            ))
+        case .statLeaders:
+            return AnyView(StatLeadersView(
+                games: completedLeagueGames,
+                userTeamName: summary?.userTeamName ?? teamName,
+                roster: roster,
+                teamRostersByName: teamRostersByName
+            ))
+        case .standings:
+            return AnyView(ConferenceStandingsView(
+                standingsByConference: conferenceStandings,
+                conferenceNamesById: conferenceNamesById,
+                preferredConferenceId: userConferenceId
+            ))
+        case .rankings:
+            return AnyView(RankingsView(rankings: rankings, userTeamId: summary?.userTeamId))
+        case .bracket:
+            return AnyView(NationalBracketView(bracket: nationalBracket, userTeamId: summary?.userTeamId))
+        case .coachingStaff:
+            return AnyView(CoachingStaffView(
+                staff: coachingStaff,
+                onSetAssistantFocus: { index, focus in
+                    saveAssistantFocus(assistantIndex: index, focus: focus)
+                }
+            ))
+        case .hallOfFame:
+            return AnyView(SchoolHallOfFameView(
+                summary: hallOfFameSummary,
+                games: completedLeagueGames,
+                userTeamName: summary?.userTeamName ?? teamName
+            ))
+        case .schoolLegacies:
+            return AnyView(SchoolLegaciesView(summary: league.map { getSchoolLegaciesSummary($0) }))
+        case .boxScore(let gameId):
+            if let game = schedule.first(where: { $0.gameId == gameId }) {
+                return AnyView(BoxScoreDetailView(
+                    game: game,
+                    userTeamName: summary?.userTeamName ?? teamName,
+                    games: completedLeagueGames,
+                    roster: roster,
+                    teamRostersByName: teamRostersByName
+                ))
+            }
+            return AnyView(EmptyView())
+        }
     }
 }
 
@@ -685,6 +906,8 @@ enum LeagueMenuDestination: Hashable {
     case playersLeaving
     case draft
     case playerRetention
+    case travelBallCircuit
+    case highSchoolRecruiting
     case transferPortal
     case bracket
     case roster
@@ -703,7 +926,7 @@ enum LeagueMenuDestination: Hashable {
 
     var isOffseasonWorkflowDestination: Bool {
         switch self {
-        case .seasonRecap, .offseasonSchedule, .nilBudgets, .playersLeaving, .draft, .playerRetention, .transferPortal:
+        case .seasonRecap, .offseasonSchedule, .nilBudgets, .playersLeaving, .draft, .playerRetention, .travelBallCircuit, .highSchoolRecruiting, .transferPortal:
             return true
         case .bracket, .roster, .schedule, .rotation, .playbook, .playerStats, .teamStats, .statLeaders, .standings, .rankings, .coachingStaff, .hallOfFame, .schoolLegacies, .boxScore:
             return false

@@ -1827,6 +1827,13 @@ func d1SizedTransferPortalAdvancesToWeekTwo() throws {
 
     _ = delegateNILRetentionToAssistants(&league)
     _ = advanceOffseason(&league)
+    #expect(getOffseasonProgress(league)?.stage == .travelBallCircuit)
+    _ = advanceOffseason(&league)
+    #expect(getOffseasonProgress(league)?.stage == .highSchoolRecruiting)
+
+    while getOffseasonProgress(league)?.stage == .highSchoolRecruiting {
+        _ = advanceOffseason(&league)
+    }
 
     let weekOne = getTransferPortalSummary(league)
     #expect(weekOne.week == 1)
@@ -1837,6 +1844,56 @@ func d1SizedTransferPortalAdvancesToWeekTwo() throws {
 
     #expect(progress?.stage == .transferPortal)
     #expect(weekTwo.week == 2)
+}
+
+@Test("High school recruiting class is freshman sized and underdeveloped")
+func highSchoolRecruitingClassIsFreshmanSizedAndUnderdeveloped() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "hs-class-shape", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .highSchoolRecruiting
+    }
+
+    let summary = getHighSchoolRecruitingSummary(league)
+    #expect(summary.entries.count == 1_400)
+    #expect(summary.entries.allSatisfy { $0.year == PlayerYear.hs.rawValue })
+    #expect(summary.entries.allSatisfy { $0.stats?.games == 25 })
+
+    let models = summary.entries.compactMap(\.playerModel)
+    let averageOverall = Double(summary.entries.map(\.overall).reduce(0, +)) / Double(max(1, summary.entries.count))
+    let averageAthleticism = Double(models.map { $0.athleticism.speed + $0.athleticism.agility + $0.athleticism.burst + $0.athleticism.vertical }.reduce(0, +)) / Double(max(1, models.count * 4))
+    let averageStrength = Double(models.map(\.athleticism.strength).reduce(0, +)) / Double(max(1, models.count))
+    let averageIQ = Double(models.map { $0.skills.passingIQ + $0.skills.shotIQ + $0.defense.defensiveControl + $0.defense.offballDefense }.reduce(0, +)) / Double(max(1, models.count * 4))
+
+    #expect(averageOverall < 62)
+    #expect(averageAthleticism > averageIQ + 8)
+    #expect(averageStrength < averageAthleticism - 8)
+}
+
+@Test("Travel ball circuit adds production before recruiting rankings")
+func travelBallCircuitAddsProductionBeforeRecruitingRankings() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "travel-ball-stats", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .playerRetention
+    }
+
+    _ = advanceOffseason(&league)
+    #expect(getOffseasonProgress(league)?.stage == .travelBallCircuit)
+
+    let preTravel = getTravelBallCircuitSummary(league)
+    #expect(preTravel.entries.count == 1_400)
+    #expect(preTravel.entries.allSatisfy { $0.stats == nil })
+
+    _ = advanceOffseason(&league)
+    let recruiting = getHighSchoolRecruitingSummary(league)
+    #expect(getOffseasonProgress(league)?.stage == .highSchoolRecruiting)
+    #expect(recruiting.entries.count == 1_400)
+    #expect(recruiting.entries.allSatisfy { $0.stats?.games == 25 })
+    #expect(recruiting.entries.contains { ($0.stats?.pointsPerGame ?? 0) >= 15 })
+    #expect(recruiting.entries.contains { $0.transferRank > 0 })
 }
 
 @Test("School legacy archive nudges prestige upward slowly for major success and draft picks")

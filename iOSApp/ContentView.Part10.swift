@@ -228,6 +228,7 @@ struct SeasonRecapView: View {
     let playersLeavingSummary: PlayersLeavingSummary?
     let draftSummary: DraftSummary?
     let nilRetentionSummary: NILRetentionSummary?
+    let highSchoolRecruitingSummary: TransferPortalSummary?
     let transferPortalSummary: TransferPortalSummary?
     let hallOfFameSummary: SchoolHallOfFameSummary?
     let roster: [UserRosterPlayerSummary]
@@ -257,6 +258,7 @@ struct SeasonRecapView: View {
         playersLeavingSummary: PlayersLeavingSummary?,
         draftSummary: DraftSummary?,
         nilRetentionSummary: NILRetentionSummary?,
+        highSchoolRecruitingSummary: TransferPortalSummary?,
         transferPortalSummary: TransferPortalSummary?,
         hallOfFameSummary: SchoolHallOfFameSummary?,
         roster: [UserRosterPlayerSummary],
@@ -275,6 +277,7 @@ struct SeasonRecapView: View {
         self.playersLeavingSummary = playersLeavingSummary
         self.draftSummary = draftSummary
         self.nilRetentionSummary = nilRetentionSummary
+        self.highSchoolRecruitingSummary = highSchoolRecruitingSummary
         self.transferPortalSummary = transferPortalSummary
         self.hallOfFameSummary = hallOfFameSummary
         self.roster = roster
@@ -702,6 +705,18 @@ struct OffseasonSchedulePhase: Identifiable, Hashable {
             stage: .playerRetention
         ),
         OffseasonSchedulePhase(
+            id: "travel-ball-circuit",
+            title: "Travel Ball Circuit",
+            detail: "Incoming recruits play 25 travel games before rankings lock in.",
+            stage: .travelBallCircuit
+        ),
+        OffseasonSchedulePhase(
+            id: "high-school-recruiting",
+            title: "High School Recruiting",
+            detail: "Recruit incoming freshmen before the transfer market opens.",
+            stage: .highSchoolRecruiting
+        ),
+        OffseasonSchedulePhase(
             id: "transfer-portal",
             title: "Transfer Portal",
             detail: "Unsigned players and transfer departures enter the national market.",
@@ -716,6 +731,7 @@ struct OffseasonScheduleView: View {
     let playersLeavingSummary: PlayersLeavingSummary?
     let draftSummary: DraftSummary?
     let nilRetentionSummary: NILRetentionSummary?
+    let highSchoolRecruitingSummary: TransferPortalSummary?
     let transferPortalSummary: TransferPortalSummary?
     let hallOfFameSummary: SchoolHallOfFameSummary?
     let games: [LeagueGameSummary]
@@ -741,6 +757,10 @@ struct OffseasonScheduleView: View {
         case .draft:
             return "Advance to Player Retention"
         case .playerRetention:
+            return "Advance to Travel Ball Circuit"
+        case .travelBallCircuit:
+            return "Advance to High School Recruiting"
+        case .highSchoolRecruiting:
             return "Advance to Transfer Portal"
         case .transferPortal:
             return "Complete Offseason Schedule"
@@ -1745,7 +1765,7 @@ struct NILRetentionView: View {
                 Button {
                     onAdvance()
                 } label: {
-                    Text("Advance to Transfer Portal")
+                    Text("Advance to Travel Ball Circuit")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GameButtonStyle(variant: .primary))
@@ -1938,6 +1958,102 @@ struct NILRetentionView: View {
     }
 }
 
+struct TravelBallCircuitView: View {
+    let summary: TransferPortalSummary?
+    let onAdvance: () -> Void
+
+    private var entries: [TransferPortalEntry] {
+        summary?.entries ?? []
+    }
+
+    private var teamsText: String {
+        "\(Int(ceil(Double(entries.count) / 10.0)))"
+    }
+
+    private var statLeaders: [TransferPortalEntry] {
+        Array(entries.sorted {
+            let lhs = $0.stats?.pointsPerGame ?? -1
+            let rhs = $1.stats?.pointsPerGame ?? -1
+            if lhs != rhs { return lhs > rhs }
+            return $0.playerName < $1.playerName
+        }.prefix(8))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GameCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        GameSectionHeader(title: "Travel Ball Circuit")
+                        HStack(spacing: 8) {
+                            travelTile(title: "RECRUITS", value: "\(entries.count)")
+                            travelTile(title: "TEAMS", value: teamsText)
+                            travelTile(title: "GAMES", value: "25")
+                        }
+                    }
+                }
+
+                GameCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        GameSectionHeader(title: "Scoring Leaders")
+                        if statLeaders.isEmpty {
+                            Text("Travel ball results are not available yet.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(statLeaders) { recruit in
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(recruit.playerName)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(AppTheme.ink)
+                                        Text("\(recruit.position) · OVR \(recruit.overall) · POT \(recruit.potential)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text(String(format: "%.1f PPG", recruit.stats?.pointsPerGame ?? 0))
+                                        .font(.caption.monospacedDigit().weight(.bold))
+                                        .foregroundStyle(AppTheme.accent)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button {
+                    onAdvance()
+                } label: {
+                    Text("Start High School Recruiting")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GameButtonStyle(variant: .primary))
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Travel Ball")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func travelTile(title: String, value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.black))
+                .foregroundStyle(AppTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
 struct TransferPortalView: View {
     private let maxUserTargets = 12
     private let boardStatusWidth: CGFloat = 136
@@ -1994,6 +2110,10 @@ struct TransferPortalView: View {
         }
     }
 
+    var title: String = "Transfer Portal"
+    var tableTitle: String = "Portal Players"
+    var emptyBoardText: String = "Add portal players from the table below to build your board."
+    var advanceButtonText: String? = nil
     let summary: TransferPortalSummary?
     let games: [LeagueGameSummary]
     let roster: [UserRosterPlayerSummary]
@@ -2162,7 +2282,7 @@ struct TransferPortalView: View {
                 GameCard {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            GameSectionHeader(title: "Transfer Portal")
+                            GameSectionHeader(title: title)
                             Spacer(minLength: 8)
                             NavigationLink {
                                 TransferPortalRosterView(
@@ -2195,7 +2315,7 @@ struct TransferPortalView: View {
                     flushOfferOverrides()
                     onAdvance()
                 } label: {
-                    Text((summary?.week ?? 1) > (summary?.maxWeeks ?? 6) ? "Complete Offseason Schedule" : "Advance Portal Week")
+                    Text((summary?.week ?? 1) > (summary?.maxWeeks ?? 6) ? "Complete Offseason Schedule" : (advanceButtonText ?? "Advance Portal Week"))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GameButtonStyle(variant: .primary))
@@ -2203,7 +2323,7 @@ struct TransferPortalView: View {
             .padding(16)
         }
         .background(AppTheme.background)
-        .navigationTitle("Transfer Portal")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear {
             flushOfferOverrides()
@@ -2219,7 +2339,7 @@ struct TransferPortalView: View {
                     .foregroundStyle(.secondary)
 
                 if sortedBoardRows.isEmpty {
-                    Text("Add portal players from the table below to build your board.")
+                    Text(emptyBoardText)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
@@ -2250,7 +2370,7 @@ struct TransferPortalView: View {
     private var portalTableSection: some View {
         GameCard {
             VStack(alignment: .leading, spacing: 10) {
-                GameSectionHeader(title: "Portal Players")
+                GameSectionHeader(title: tableTitle)
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
                         searchField
