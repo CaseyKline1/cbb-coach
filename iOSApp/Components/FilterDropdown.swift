@@ -209,8 +209,10 @@ struct FilterDropdown<Option: Hashable>: View {
                         .foregroundStyle(AppTheme.ink.opacity(0.72))
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
+            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isSelected ? Color(UIColor.secondarySystemBackground) : Color.clear)
