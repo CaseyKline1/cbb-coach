@@ -83,6 +83,16 @@ func currentSeasonSchoolLegacyStats(_ state: LeagueStore.State) -> [String: Scho
 }
 
 func archiveCompletedSeasonLegacies(_ state: inout LeagueStore.State) {
+    if state.playersLeaving == nil {
+        state.playersLeaving = calculatePlayersLeaving(state)
+    }
+    if state.draftPicks == nil {
+        state.draftPicks = calculateDraftPicks(state)
+    }
+    if state.schoolHallOfFame == nil {
+        state.schoolHallOfFame = calculateSchoolHallOfFame(state)
+    }
+
     let seasonStats = currentSeasonSchoolLegacyStats(state)
     var archive = state.schoolLegacyByTeamId ?? [:]
     for (teamId, stats) in seasonStats {
@@ -90,6 +100,104 @@ func archiveCompletedSeasonLegacies(_ state: inout LeagueStore.State) {
     }
     state.schoolLegacyByTeamId = archive
     state.schoolLegacySeasonsTracked = (state.schoolLegacySeasonsTracked ?? 0) + 1
+    updatePrestigeFromSchoolLegacies(&state, seasonStats: seasonStats)
+}
+
+private func updatePrestigeFromSchoolLegacies(
+    _ state: inout LeagueStore.State,
+    seasonStats: [String: SchoolLegacyStats]
+) {
+    let seasonsTracked = max(1, state.schoolLegacySeasonsTracked ?? 1)
+    let currentPrestigeByConference = Dictionary(grouping: state.teams, by: \.conferenceId)
+        .mapValues { teams in
+            teams.reduce(0) { $0 + clamp($1.prestige, min: 0, max: 1) } / Double(max(1, teams.count))
+        }
+    let nationalAveragePrestige = max(
+        0.01,
+        state.teams.reduce(0) { $0 + clamp($1.prestige, min: 0, max: 1) } / Double(max(1, state.teams.count))
+    )
+
+    for index in state.teams.indices {
+        let team = state.teams[index]
+        let archivedStats = state.schoolLegacyByTeamId?[team.teamId] ?? SchoolLegacyStats()
+        let currentSeasonStats = seasonStats[team.teamId] ?? SchoolLegacyStats()
+        let conferenceAveragePrestige = currentPrestigeByConference[team.conferenceId] ?? nationalAveragePrestige
+        let conferenceCurve = clamp(
+            0.76 + (conferenceAveragePrestige / nationalAveragePrestige) * 0.24,
+            min: 0.78,
+            max: 1.18
+        )
+        let historicalBaseline = prestigeForTeam(teamId: team.teamId, conferenceId: team.conferenceId)
+        let fullLegacyTarget = prestigeTarget(
+            for: archivedStats,
+            seasonsTracked: seasonsTracked,
+            conferenceCurve: conferenceCurve,
+            historicalBaseline: historicalBaseline
+        )
+        let seasonMomentum = prestigeTarget(
+            for: currentSeasonStats,
+            seasonsTracked: 1,
+            conferenceCurve: conferenceCurve,
+            historicalBaseline: historicalBaseline
+        )
+        let baselineWeight = 0.38 + clamp(team.prestige - 0.72, min: 0, max: 0.22)
+        let performanceTarget = fullLegacyTarget * 0.72 + seasonMomentum * 0.28
+        let target = historicalBaseline * baselineWeight + performanceTarget * (1 - baselineWeight)
+        let riseRate = 0.055 + clamp((0.62 - team.prestige) * 0.055, min: 0, max: 0.024)
+        let fallRate = 0.034 + clamp((team.prestige - 0.82) * 0.09, min: 0, max: 0.026)
+        let adjustmentRate = target >= team.prestige ? riseRate : fallRate
+        let nextPrestige = team.prestige + (target - team.prestige) * adjustmentRate
+        state.teams[index].prestige = clamp(nextPrestige, min: 0.16, max: 0.985)
+    }
+}
+
+private func prestigeTarget(
+    for stats: SchoolLegacyStats,
+    seasonsTracked: Int,
+    conferenceCurve: Double,
+    historicalBaseline: Double
+) -> Double {
+    let seasons = Double(max(1, seasonsTracked))
+    let games = max(1, stats.wins + stats.losses)
+    let conferenceGames = max(1, stats.conferenceWins + stats.conferenceLosses)
+    let winPct = Double(stats.wins) / Double(games)
+    let conferenceWinPct = Double(stats.conferenceWins) / Double(conferenceGames)
+
+    let regularSeasonScore = (winPct - 0.50) * 0.42
+    let conferenceScore = ((conferenceWinPct - 0.50) * 0.22
+        + perSeason(stats.conferenceTournamentTitles, seasons) * 0.16) * conferenceCurve
+    let nationalScore = perSeason(stats.nationalTournamentAppearances, seasons) * 0.07
+        + perSeason(stats.nationalTournamentWins, seasons) * 0.055
+        + perSeason(stats.finalFourAppearances, seasons) * 0.30
+        + perSeason(stats.nationalTitles, seasons) * 0.52
+    let playerDevelopmentScore = perSeason(stats.totalDraftPicks, seasons) * 0.030
+        + perSeason(stats.firstRoundDraftPicks, seasons) * 0.055
+        + perSeason(stats.hallOfFamers, seasons) * 0.030
+    let awardScore = perSeason(stats.nationalPlayersOfYear, seasons) * 0.050
+        + perSeason(stats.freshmenOfYear, seasons) * 0.028
+        + perSeason(stats.allAmericanFirstTeam, seasons) * 0.035
+        + perSeason(stats.allAmericanSecondTeam, seasons) * 0.024
+        + perSeason(stats.allAmericanThirdTeam, seasons) * 0.018
+        + perSeason(stats.allConferenceFirstTeam, seasons) * 0.010 * conferenceCurve
+        + perSeason(stats.allConferenceSecondTeam, seasons) * 0.006 * conferenceCurve
+
+    let elitePostseasonLift = stats.nationalTitles > 0
+        ? 0.08
+        : (stats.finalFourAppearances > 0 ? 0.035 : 0)
+    let target = 0.46
+        + (historicalBaseline - 0.50) * 0.28
+        + regularSeasonScore
+        + conferenceScore
+        + nationalScore
+        + playerDevelopmentScore
+        + awardScore
+        + elitePostseasonLift
+
+    return clamp(target, min: 0.18, max: 0.985)
+}
+
+private func perSeason(_ value: Int, _ seasons: Double) -> Double {
+    Double(value) / max(1, seasons)
 }
 
 public func getSchoolLegaciesSummary(_ league: LeagueState) -> SchoolLegaciesSummary {

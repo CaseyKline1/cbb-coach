@@ -1776,6 +1776,98 @@ func d1SizedTransferPortalAdvancesToWeekTwo() throws {
     #expect(weekTwo.week == 2)
 }
 
+@Test("School legacy archive nudges prestige upward slowly for major success and draft picks")
+func schoolLegacyArchiveRaisesPrestigeSlowlyForBreakoutPrograms() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "prestige-breakout", totalRegularSeasonGames: 1))
+    let before = try #require(LeagueStore.get(league.handle))
+    let lowPrestigeTeam = try #require(before.teams.min { $0.prestige < $1.prestige })
+
+    _ = LeagueStore.update(league.handle) { state in
+        let index = state.teams.firstIndex { $0.teamId == lowPrestigeTeam.teamId }!
+        state.teams[index].prestige = 0.28
+        state.teams[index].wins = 30
+        state.teams[index].losses = 5
+        state.teams[index].conferenceWins = 16
+        state.teams[index].conferenceLosses = 2
+        state.playersLeaving = []
+        state.schoolHallOfFame = []
+        state.draftPicks = [
+            testDraftPick(team: state.teams[index], slot: 12, name: "Lottery Legacy"),
+            testDraftPick(team: state.teams[index], slot: 38, name: "Second Round Legacy")
+        ]
+        state.schoolLegacyByTeamId = [
+            lowPrestigeTeam.teamId: SchoolLegacyStats(
+                wins: 28,
+                losses: 7,
+                conferenceWins: 15,
+                conferenceLosses: 3,
+                conferenceTournamentTitles: 1,
+                nationalTournamentAppearances: 1,
+                nationalTournamentWins: 4,
+                finalFourAppearances: 1,
+                allAmericanFirstTeam: 1,
+                firstRoundDraftPicks: 1,
+                totalDraftPicks: 2
+            )
+        ]
+        state.schoolLegacySeasonsTracked = 1
+        archiveCompletedSeasonLegacies(&state)
+    }
+
+    let after = try #require(LeagueStore.get(league.handle))
+    let updated = try #require(after.teams.first { $0.teamId == lowPrestigeTeam.teamId })
+    #expect(updated.prestige > 0.28)
+    #expect(updated.prestige - 0.28 < 0.05)
+}
+
+@Test("School legacy archive applies regression pressure to blue blood prestige")
+func schoolLegacyArchiveRegressesElitePrestigeAfterPoorSeason() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "prestige-regression", totalRegularSeasonGames: 1))
+
+    _ = LeagueStore.update(league.handle) { state in
+        let index = state.teams.firstIndex { $0.teamName == "Duke" }!
+        state.teams[index].prestige = 0.96
+        state.teams[index].wins = 12
+        state.teams[index].losses = 20
+        state.teams[index].conferenceWins = 4
+        state.teams[index].conferenceLosses = 14
+        state.playersLeaving = []
+        state.schoolHallOfFame = []
+        state.draftPicks = []
+        state.schoolLegacyByTeamId = [
+            state.teams[index].teamId: SchoolLegacyStats(
+                wins: 12,
+                losses: 20,
+                conferenceWins: 4,
+                conferenceLosses: 14
+            )
+        ]
+        state.schoolLegacySeasonsTracked = 1
+        archiveCompletedSeasonLegacies(&state)
+    }
+
+    let after = try #require(LeagueStore.get(league.handle))
+    let duke = try #require(after.teams.first { $0.teamName == "Duke" })
+    #expect(duke.prestige < 0.96)
+    #expect(0.96 - duke.prestige < 0.05)
+}
+
+@Test("Creating a new league resets prestige to historical starting values")
+func creatingNewLeagueResetsPrestigeValues() throws {
+    let league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "prestige-reset", totalRegularSeasonGames: 1))
+    _ = LeagueStore.update(league.handle) { state in
+        let index = state.teams.firstIndex { $0.teamName == "Duke" }!
+        state.teams[index].prestige = 0.25
+    }
+
+    let freshLeague = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "prestige-reset", totalRegularSeasonGames: 1))
+    let freshState = try #require(LeagueStore.get(freshLeague.handle))
+    let duke = try #require(freshState.teams.first { $0.teamName == "Duke" })
+
+    #expect(abs(duke.prestige - prestigeForTeam(teamId: duke.teamId, conferenceId: duke.conferenceId)) < 0.0001)
+    #expect(duke.prestige > 0.25)
+}
+
 private func makePlayerElite(_ player: inout Player) {
     player.skills.shotIQ = 95
     player.skills.ballHandling = 95
@@ -1812,4 +1904,27 @@ private func deterministicTestRoll(seed: String) -> Double {
 private func average(_ values: [Double]) -> Double {
     guard !values.isEmpty else { return 0 }
     return values.reduce(0, +) / Double(values.count)
+}
+
+private func testDraftPick(team: LeagueStore.TeamState, slot: Int, name: String) -> DraftPickEntry {
+    DraftPickEntry(
+        id: "\(team.teamId):\(name)",
+        slot: slot,
+        teamId: team.teamId,
+        teamName: team.teamName,
+        player: UserRosterPlayerSummary(
+            playerIndex: slot,
+            name: name,
+            position: "SG",
+            year: "So",
+            home: nil,
+            height: "6'5\"",
+            weight: "205",
+            wingspan: "6'9\"",
+            overall: 88,
+            isStarter: true,
+            attributes: ["potential": 92]
+        ),
+        draftScore: 92
+    )
 }
