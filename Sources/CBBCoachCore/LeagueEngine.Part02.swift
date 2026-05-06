@@ -493,7 +493,7 @@ public func setUserRotation(_ league: inout LeagueState, slots: [UserRotationSlo
         updatedTeam.rotation = TeamRotation(minuteTargets: targets, slotPlayerNames: slotPlayerNames)
 
         let lineupIndexes = slots
-            .sorted { $0.minutes > $1.minutes }
+            .sorted { $0.slot < $1.slot }
             .compactMap(\.playerIndex)
             .filter { $0 >= 0 && $0 < updatedTeam.players.count }
 

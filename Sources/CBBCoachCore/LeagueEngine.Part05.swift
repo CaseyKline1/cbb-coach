@@ -628,7 +628,82 @@ func rotationStarterIndices(for team: Team, roster: [Player]) -> [Int] {
             if starterIndices.count == min(5, roster.count) { break }
         }
     }
-    return starterIndices
+    return orderedStarterIndicesBySlot(starterIndices, roster: roster)
+}
+
+private func orderedStarterIndicesBySlot(_ starterIndices: [Int], roster: [Player]) -> [Int] {
+    guard starterIndices.count > 1 else { return starterIndices }
+
+    let slotPositions: [PlayerPosition] = [.pg, .sg, .sf, .pf, .c]
+    var remaining = starterIndices.filter { $0 >= 0 && $0 < roster.count }
+    var ordered: [Int] = []
+    ordered.reserveCapacity(remaining.count)
+
+    for slotPosition in slotPositions.prefix(min(slotPositions.count, remaining.count)) {
+        guard let best = remaining.max(by: { lhs, rhs in
+            let leftScore = starterPositionFitScore(roster[lhs].bio.position, slot: slotPosition)
+            let rightScore = starterPositionFitScore(roster[rhs].bio.position, slot: slotPosition)
+            if leftScore != rightScore { return leftScore < rightScore }
+            return playerOverall(roster[lhs]) < playerOverall(roster[rhs])
+        }) else {
+            continue
+        }
+        ordered.append(best)
+        remaining.removeAll { $0 == best }
+    }
+
+    ordered.append(contentsOf: remaining)
+    return ordered
+}
+
+private func starterPositionFitScore(_ position: PlayerPosition, slot: PlayerPosition) -> Int {
+    if position == slot { return 100 }
+
+    switch slot {
+    case .pg:
+        switch position {
+        case .cg: return 88
+        case .sg: return 70
+        case .wing: return 46
+        default: return 10
+        }
+    case .sg:
+        switch position {
+        case .cg: return 90
+        case .wing: return 82
+        case .pg: return 76
+        case .sf: return 64
+        default: return 18
+        }
+    case .sf:
+        switch position {
+        case .wing: return 92
+        case .f: return 84
+        case .sg: return 70
+        case .pf: return 68
+        case .big: return 46
+        default: return 20
+        }
+    case .pf:
+        switch position {
+        case .f: return 92
+        case .big: return 86
+        case .c: return 78
+        case .sf: return 72
+        case .wing: return 60
+        default: return 20
+        }
+    case .c:
+        switch position {
+        case .big: return 94
+        case .pf: return 84
+        case .f: return 66
+        case .sf: return 42
+        default: return 18
+        }
+    case .cg, .wing, .f, .big:
+        return position == slot ? 100 : 0
+    }
 }
 
 func balancedMinutes(overalls: [Double], target: Double, softMin: Double, softMax: Double) -> [Double] {

@@ -650,6 +650,51 @@ func savedUserRotationOrderSurvivesReopening() throws {
     #expect(reopened[6].minutes == 30)
 }
 
+@Test("Saved rotation starters follow slots instead of highest minutes")
+func savedRotationStartersFollowSlotsInsteadOfHighestMinutes() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "Duke", seed: "saved-rotation-starter-slots", totalRegularSeasonGames: 1))
+    let original = getUserRotation(league)
+    #expect(original.count >= 7)
+
+    var edited = original.enumerated().map { index, slot in
+        UserRotationSlot(slot: index + 1, playerIndex: slot.playerIndex, position: slot.position, minutes: slot.minutes)
+    }
+    edited[0].minutes = 12
+    edited[6].minutes = 35
+
+    _ = setUserRotation(&league, slots: edited)
+    let reopened = getUserRotation(league)
+
+    #expect(reopened.prefix(5).map(\.playerIndex) == edited.prefix(5).map(\.playerIndex))
+    #expect(reopened[0].minutes == 12)
+    #expect(reopened[6].minutes == 35)
+}
+
+@Test("Default starter slots are ordered by position fit")
+func defaultStarterSlotsAreOrderedByPositionFit() {
+    var random = SeededRandom(seed: 6262)
+    let positions: [PlayerPosition] = [.c, .pf, .sg, .pg, .sf, .cg, .wing]
+    let players = positions.enumerated().map { index, position in
+        var player = createPlayer()
+        player.bio.name = "Fit P\(index + 1)"
+        player.bio.position = position
+        let rating = 70 + index
+        player.skills.shotIQ = rating
+        player.skills.ballHandling = rating
+        player.shooting.closeShot = rating
+        player.defense.perimeterDefense = rating
+        player.rebounding.defensiveRebound = rating
+        return player
+    }
+
+    var options = CreateTeamOptions(name: "Fit U", players: players)
+    options.lineup = Array(players.prefix(5))
+    let team = createTeam(options: options, random: &random)
+    let slots = defaultRotationSlots(for: team)
+
+    #expect(slots.prefix(5).compactMap(\.playerIndex) == [3, 2, 4, 1, 0])
+}
+
 @Test("Fatigue keeps high-usage scorers out of unrealistic average ranges")
 func fatigueSuppressesExtremeScorerAverages() {
     func makePlayer(
