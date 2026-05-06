@@ -581,7 +581,14 @@ extension CollegeLeagueHomeView {
 
     func submitNILRetentionOffer(negotiationId: String) {
         guard var currentLeague = league else { return }
-        _ = CBBCoachCore.submitNILRetentionOffer(&currentLeague, negotiationId: negotiationId)
+        var latest = CBBCoachCore.submitNILRetentionOffer(&currentLeague, negotiationId: negotiationId)
+        var standFirmRounds = 1
+        while latest?.status == .open,
+              latest?.responseText.hasPrefix("Countered") == true,
+              standFirmRounds < 4 {
+            latest = CBBCoachCore.submitNILRetentionOffer(&currentLeague, negotiationId: negotiationId)
+            standFirmRounds += 1
+        }
         league = currentLeague
         nilRetentionSummary = getNILRetentionSummary(currentLeague)
     }
