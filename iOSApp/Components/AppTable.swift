@@ -15,6 +15,7 @@ struct AppTableSortState<ID: Hashable> {
 struct AppTableStyle {
     var headerVerticalPadding: CGFloat = 3
     var rowVerticalPadding: CGFloat = 2
+    var horizontalPadding: CGFloat = 10
     var minimumRowHeight: CGFloat = 20
     var cornerRadius: CGFloat = 12
     var borderColor: Color = AppTheme.cardBorder
@@ -77,6 +78,7 @@ struct AppTable<RowData, ColumnID: Hashable, RowContent: View>: View {
                     }
                     .frame(maxHeight: maxBodyHeight)
                 }
+                .padding(.horizontal, style.horizontalPadding)
             }
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -84,6 +86,7 @@ struct AppTable<RowData, ColumnID: Hashable, RowContent: View>: View {
                     headerRow
                     rowViews
                 }
+                .padding(.horizontal, style.horizontalPadding)
             }
         }
     }
