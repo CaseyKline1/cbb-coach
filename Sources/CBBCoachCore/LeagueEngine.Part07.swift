@@ -1037,15 +1037,16 @@ private func nilIntrinsicValue(
     let eliteTier = clamp((Double(overall) - 88) / 8, min: 0, max: 1)
     let nationalStarTier = clamp((Double(overall) - 92) / 6, min: 0, max: 1)
     let elitePremium = 1.0
-        + pow(highMajorStarterTier, 2.4) * 0.12
-        + pow(eliteTier, 2.0) * 0.45
-        + pow(nationalStarTier, 2.15) * 0.95
+        + pow(highMajorStarterTier, 1.9) * 0.18
+        + pow(eliteTier, 1.85) * 0.58
+        + pow(nationalStarTier, 1.95) * 1.20
     let base = 18_000
         + pow(quality, 1.75) * 420_000
         + pow(max(quality, production), 3.05) * 940_000
         + production * 330_000
         + upside * quality * 170_000
-    let market = base * (0.70 + prestige * 0.42) * (0.72 + budgetSignal * 0.34) * positionMultiplier * elitePremium
+    let qualityShare = 0.62 + 0.38 * quality
+    let market = base * (0.70 + prestige * 0.42 * qualityShare) * (0.72 + budgetSignal * 0.34 * qualityShare) * positionMultiplier * elitePremium
     return max(3_000, roundToNearestThousand(market))
 }
 
@@ -1136,9 +1137,9 @@ private func transferIntrinsicFallback(_ departure: PlayerLeavingEntry) -> Doubl
         + pow(quality, 3.1) * 1_020_000
         + upside * quality * 210_000
     let premium = 1.0
-        + pow(highMajorStarterTier, 2.4) * 0.10
-        + pow(eliteTier, 2.0) * 0.50
-        + pow(nationalStarTier, 2.15) * 1.00
+        + pow(highMajorStarterTier, 1.9) * 0.16
+        + pow(eliteTier, 1.85) * 0.62
+        + pow(nationalStarTier, 1.95) * 1.25
     return roundToNearestThousand(max(base * premium, lastYear * 0.85))
 }
 
