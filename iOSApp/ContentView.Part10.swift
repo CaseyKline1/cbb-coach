@@ -2375,6 +2375,8 @@ struct TransferPortalView: View {
         let isTargeted = targetIds.contains(row.id)
         let isUserDeparture = row.previousTeamId == summary?.userTeamId
         let canRecruit = !isUserDeparture && row.committedTeamId == nil
+        let canRemove = isTargeted && !isUserDeparture && row.committedTeamId != summary?.userTeamId
+        let canToggle = isTargeted ? canRemove : canRecruit
         let isBoardFull = !isTargeted && (summary?.userTargetIds.count ?? 0) >= maxUserTargets
 
         return Button {
@@ -2386,13 +2388,13 @@ struct TransferPortalView: View {
                 .frame(width: 42)
         }
         .buttonStyle(.plain)
-        .disabled(!canRecruit || isBoardFull)
-        .opacity(canRecruit ? 1 : 0.35)
+        .disabled(!canToggle || isBoardFull)
+        .opacity(canToggle ? 1 : 0.35)
         .accessibilityLabel(isTargeted ? "Remove from recruiting board" : "Add to recruiting board")
     }
 
     private func boardActions(_ row: TransferPortalEntry) -> some View {
-        let isOpen = row.committedTeamId == nil && row.previousTeamId != summary?.userTeamId
+        let canRemove = row.previousTeamId != summary?.userTeamId && row.committedTeamId != summary?.userTeamId
 
         return HStack(spacing: 0) {
             Button {
@@ -2403,8 +2405,8 @@ struct TransferPortalView: View {
                     .frame(width: 38)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(isOpen ? AppTheme.accent : .secondary.opacity(0.45))
-            .disabled(!isOpen)
+            .foregroundStyle(canRemove ? AppTheme.accent : .secondary.opacity(0.45))
+            .disabled(!canRemove)
             .accessibilityLabel("Remove from recruiting board")
         }
         .frame(width: 38)

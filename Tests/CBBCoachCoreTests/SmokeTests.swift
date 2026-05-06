@@ -1596,6 +1596,54 @@ func transferPortalOffersClampToRemainingNILBudget() throws {
     #expect(capped.budget.remaining == 0)
 }
 
+@Test("Committed transfer portal targets can be removed from user board")
+func committedTransferPortalTargetsCanBeRemovedFromUserBoard() throws {
+    var league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "portal-remove-committed", totalRegularSeasonGames: 1))
+    var portalPlayer = createPlayer()
+    portalPlayer.bio.name = "Committed Away Guard"
+    portalPlayer.bio.position = .pg
+
+    _ = LeagueStore.update(league.handle) { state in
+        state.status = "completed"
+        state.offseasonStage = .transferPortal
+        state.playersLeaving = []
+        state.draftPicks = []
+        state.nilRetention = []
+        state.nilRetentionFinalized = true
+        guard let previousTeam = state.teams.first(where: { $0.teamId != state.userTeamId }),
+              let committedTeam = state.teams.first(where: { $0.teamId != state.userTeamId && $0.teamId != previousTeam.teamId })
+        else { return }
+        state.transferPortal = [
+            TransferPortalEntry(
+                id: "committed-away",
+                previousTeamId: previousTeam.teamId,
+                previousTeamName: previousTeam.teamName,
+                committedTeamId: committedTeam.teamId,
+                committedTeamName: committedTeam.teamName,
+                committedOffer: 100_000,
+                playerModel: portalPlayer,
+                playerName: portalPlayer.bio.name,
+                position: portalPlayer.bio.position.rawValue,
+                year: portalPlayer.bio.year.rawValue,
+                overall: 76,
+                potential: 80,
+                askingPrice: 100_000,
+                intrinsicValue: 100_000,
+                reason: "Testing committed target removal.",
+                loyalty: 50,
+                greed: 50
+            )
+        ]
+        state.transferPortalUserTargets = ["committed-away"]
+        state.transferPortalUserOffers = ["committed-away": 75_000]
+    }
+
+    let summary = setTransferPortalTargeted(&league, entryId: "committed-away", targeted: false)
+
+    #expect(!summary.userTargetIds.contains("committed-away"))
+    #expect(summary.userOffers["committed-away"] == nil)
+}
+
 @Test("Completing transfer portal starts next year and fills walk-ons")
 func transferPortalCompletionStartsNextYearAndFillsWalkOns() throws {
     var league = try createD1League(options: CreateLeagueOptions(userTeamName: "UConn", seed: "portal-new-year", totalRegularSeasonGames: 1))
