@@ -225,6 +225,7 @@ extension CollegeLeagueHomeView {
             guard var stats = teamStats[teamId] else { continue }
             stats.adjustedOffensiveEfficiency = rating.adjustedOffensiveEfficiency
             stats.adjustedDefensiveEfficiency = rating.adjustedDefensiveEfficiency
+            stats.netRating = rating.netRating
             teamStats[teamId] = stats
         }
         return DeferredLeagueRefreshData(

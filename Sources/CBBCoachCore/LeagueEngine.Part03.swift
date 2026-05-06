@@ -585,15 +585,18 @@ func calculateRankings(_ state: LeagueStore.State, topN: Int) -> LeagueRankings 
         let efficiencyRating = efficiencyRatingsByTeamId[team.teamId]
         let adjustedOffensiveEfficiency = efficiencyRating?.adjustedOffensiveEfficiency ?? 0
         let adjustedDefensiveEfficiency = efficiencyRating?.adjustedDefensiveEfficiency ?? 0
+        let netRating = adjustedOffensiveEfficiency - adjustedDefensiveEfficiency
         let pythagoreanExpectation = efficiencyRating?.pythagoreanExpectation ?? winRate
+        let netRatingScore = clamp((netRating + 30) / 60, min: 0, max: 1)
 
         let preseasonScore = playerSkill * 0.45 + coachQuality * 0.25 + team.prestige * 0.2 + team.lastYearResult * 0.1
-        let rawInSeasonScore = scheduleAdjustedWinRate * 0.25
-            + qualityWinRate * 0.2
+        let rawInSeasonScore = scheduleAdjustedWinRate * 0.22
+            + qualityWinRate * 0.14
             + clamp((pointDiffPerGame + 20) / 40, min: 0, max: 1) * 0.04
             + pythagoreanExpectation * 0.04
-            + strengthOfSchedule * 0.36
+            + strengthOfSchedule * 0.22
             + qualityWinShare * 0.11
+            + netRatingScore * 0.23
         let inSeasonScore = clamp(rawInSeasonScore - lowSchedulePenalty * 0.16, min: 0, max: 1)
         let composite = preseasonScore * preseasonWeight + inSeasonScore * inSeasonWeight
 
@@ -615,6 +618,7 @@ func calculateRankings(_ state: LeagueStore.State, topN: Int) -> LeagueRankings 
             coachQuality: coachQuality,
             adjustedOffensiveEfficiency: adjustedOffensiveEfficiency,
             adjustedDefensiveEfficiency: adjustedDefensiveEfficiency,
+            netRating: netRating,
             preseasonScore: preseasonScore,
             inSeasonScore: inSeasonScore,
             compositeScore: composite
@@ -682,6 +686,7 @@ private func calculateTeamEfficiencyRatings(_ state: LeagueStore.State) -> [Team
                 rawDefensiveEfficiency: 0,
                 adjustedOffensiveEfficiency: 0,
                 adjustedDefensiveEfficiency: 0,
+                netRating: 0,
                 pythagoreanExpectation: team.lastYearResult
             )
         }
@@ -740,6 +745,7 @@ private func calculateTeamEfficiencyRatings(_ state: LeagueStore.State) -> [Team
             rawDefensiveEfficiency: rawDefense,
             adjustedOffensiveEfficiency: adjustedOffense,
             adjustedDefensiveEfficiency: adjustedDefense,
+            netRating: adjustedOffense - adjustedDefense,
             pythagoreanExpectation: pythagoreanExpectation(
                 adjustedOffensiveEfficiency: adjustedOffense,
                 adjustedDefensiveEfficiency: adjustedDefense,

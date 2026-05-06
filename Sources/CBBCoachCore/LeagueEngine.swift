@@ -237,6 +237,7 @@ public struct LeagueRankingTeam: Codable, Equatable, Sendable, Identifiable {
     public var coachQuality: Double
     public var adjustedOffensiveEfficiency: Double
     public var adjustedDefensiveEfficiency: Double
+    public var netRating: Double
     public var preseasonScore: Double
     public var inSeasonScore: Double
     public var compositeScore: Double
@@ -253,6 +254,7 @@ public struct TeamEfficiencyRating: Codable, Equatable, Sendable, Identifiable {
     public var rawDefensiveEfficiency: Double
     public var adjustedOffensiveEfficiency: Double
     public var adjustedDefensiveEfficiency: Double
+    public var netRating: Double
     public var pythagoreanExpectation: Double
 
     public var id: String { teamId }
