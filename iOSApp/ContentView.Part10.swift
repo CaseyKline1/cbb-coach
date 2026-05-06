@@ -2066,6 +2066,11 @@ struct TransferPortalView: View {
         case player, position, overall, points, ask, offer, interest, finalists, status, actions
     }
 
+    private enum RecruitStatMode: String, CaseIterable, Hashable {
+        case perGame = "PG"
+        case per40 = "P40"
+    }
+
     private enum PortalStatusFilter: String, CaseIterable, Hashable {
         case all = "All"
         case available = "Available"
@@ -2133,6 +2138,7 @@ struct TransferPortalView: View {
     @State private var boardIsAscending = false
     @State private var offerOverrides: [String: Double] = [:]
     @State private var offerWriteTasks: [String: Task<Void, Never>] = [:]
+    @State private var statMode: RecruitStatMode = .perGame
 
     private var rows: [TransferPortalEntry] { summary?.entries ?? [] }
 
@@ -2237,12 +2243,12 @@ struct TransferPortalView: View {
             .init(id: .level, title: "LEVEL", width: 78),
             .init(id: .overall, title: "OVR", width: 42),
             .init(id: .potential, title: "POT", width: 42),
-            .init(id: .points, title: "PTS", width: 46),
-            .init(id: .rebounds, title: "REB", width: 46),
-            .init(id: .assists, title: "AST", width: 46),
-            .init(id: .steals, title: "STL", width: 46),
-            .init(id: .blocks, title: "BLK", width: 46),
-            .init(id: .turnovers, title: "TO", width: 46),
+            .init(id: .points, title: statColumnTitle("PTS"), width: 50),
+            .init(id: .rebounds, title: statColumnTitle("REB"), width: 50),
+            .init(id: .assists, title: statColumnTitle("AST"), width: 50),
+            .init(id: .steals, title: statColumnTitle("STL"), width: 50),
+            .init(id: .blocks, title: statColumnTitle("BLK"), width: 50),
+            .init(id: .turnovers, title: statColumnTitle("TO"), width: 50),
             .init(id: .assistTurnover, title: "A:TO", width: 54),
             .init(id: .fieldGoal, title: "FG%", width: 56),
             .init(id: .threePoint, title: "3PT%", width: 58),
@@ -2258,7 +2264,7 @@ struct TransferPortalView: View {
             .init(id: .player, title: "PLAYER", width: 136, alignment: .leading),
             .init(id: .position, title: "POS", width: 42),
             .init(id: .overall, title: "OVR", width: 42),
-            .init(id: .points, title: "PTS", width: 46),
+            .init(id: .points, title: statColumnTitle("PTS"), width: 50),
             .init(id: .ask, title: "ASK", width: 72),
             .init(id: .offer, title: "OFFER", width: 140),
             .init(id: .interest, title: "INT", width: 46),
@@ -2353,7 +2359,7 @@ struct TransferPortalView: View {
                             playerLink(row, width: 136)
                             AppTableTextCell(text: row.position, width: 42)
                             AppTableTextCell(text: "\(row.overall)", width: 42)
-                            AppTableTextCell(text: statText(row.stats?.pointsPerGame), width: 46)
+                            AppTableTextCell(text: statText(countingStat(row.stats, \.pointsPerGame)), width: 50)
                             AppTableTextCell(text: moneyText(row.askingPrice), width: 72)
                             offerControl(row)
                             AppTableTextCell(text: interestText(row), width: 46)
@@ -2372,6 +2378,13 @@ struct TransferPortalView: View {
             VStack(alignment: .leading, spacing: 10) {
                 GameSectionHeader(title: tableTitle)
                 VStack(spacing: 8) {
+                    Picker("Stats", selection: $statMode) {
+                        ForEach(RecruitStatMode.allCases, id: \.self) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
                     HStack(spacing: 8) {
                         searchField
                         FilterDropdown(
@@ -2430,12 +2443,12 @@ struct TransferPortalView: View {
                             AppTableTextCell(text: levelText(row), width: 78)
                             AppTableTextCell(text: "\(row.overall)", width: 42)
                             AppTableTextCell(text: "\(row.potential)", width: 42)
-                            AppTableTextCell(text: statText(row.stats?.pointsPerGame), width: 46)
-                            AppTableTextCell(text: statText(row.stats?.reboundsPerGame), width: 46)
-                            AppTableTextCell(text: statText(row.stats?.assistsPerGame), width: 46)
-                            AppTableTextCell(text: statText(row.stats?.stealsPerGame), width: 46)
-                            AppTableTextCell(text: statText(row.stats?.blocksPerGame), width: 46)
-                            AppTableTextCell(text: statText(row.stats?.turnoversPerGame), width: 46)
+                            AppTableTextCell(text: statText(countingStat(row.stats, \.pointsPerGame)), width: 50)
+                            AppTableTextCell(text: statText(countingStat(row.stats, \.reboundsPerGame)), width: 50)
+                            AppTableTextCell(text: statText(countingStat(row.stats, \.assistsPerGame)), width: 50)
+                            AppTableTextCell(text: statText(countingStat(row.stats, \.stealsPerGame)), width: 50)
+                            AppTableTextCell(text: statText(countingStat(row.stats, \.blocksPerGame)), width: 50)
+                            AppTableTextCell(text: statText(countingStat(row.stats, \.turnoversPerGame)), width: 50)
                             AppTableTextCell(text: statText(row.stats?.assistTurnoverRatio), width: 54)
                             AppTableTextCell(text: percentText(row.stats?.fieldGoalPercentage), width: 56)
                             AppTableTextCell(text: percentText(row.stats?.threePointPercentage), width: 58)
@@ -2601,17 +2614,17 @@ struct TransferPortalView: View {
         case .potential:
             return numericCompare(lhs: lhs.potential, rhs: rhs.potential)
         case .points:
-            return numericCompare(lhs: lhs.stats?.pointsPerGame ?? -1, rhs: rhs.stats?.pointsPerGame ?? -1)
+            return numericCompare(lhs: countingStat(lhs.stats, \.pointsPerGame) ?? -1, rhs: countingStat(rhs.stats, \.pointsPerGame) ?? -1)
         case .rebounds:
-            return numericCompare(lhs: lhs.stats?.reboundsPerGame ?? -1, rhs: rhs.stats?.reboundsPerGame ?? -1)
+            return numericCompare(lhs: countingStat(lhs.stats, \.reboundsPerGame) ?? -1, rhs: countingStat(rhs.stats, \.reboundsPerGame) ?? -1)
         case .assists:
-            return numericCompare(lhs: lhs.stats?.assistsPerGame ?? -1, rhs: rhs.stats?.assistsPerGame ?? -1)
+            return numericCompare(lhs: countingStat(lhs.stats, \.assistsPerGame) ?? -1, rhs: countingStat(rhs.stats, \.assistsPerGame) ?? -1)
         case .steals:
-            return numericCompare(lhs: lhs.stats?.stealsPerGame ?? -1, rhs: rhs.stats?.stealsPerGame ?? -1)
+            return numericCompare(lhs: countingStat(lhs.stats, \.stealsPerGame) ?? -1, rhs: countingStat(rhs.stats, \.stealsPerGame) ?? -1)
         case .blocks:
-            return numericCompare(lhs: lhs.stats?.blocksPerGame ?? -1, rhs: rhs.stats?.blocksPerGame ?? -1)
+            return numericCompare(lhs: countingStat(lhs.stats, \.blocksPerGame) ?? -1, rhs: countingStat(rhs.stats, \.blocksPerGame) ?? -1)
         case .turnovers:
-            return numericCompare(lhs: lhs.stats?.turnoversPerGame ?? -1, rhs: rhs.stats?.turnoversPerGame ?? -1)
+            return numericCompare(lhs: countingStat(lhs.stats, \.turnoversPerGame) ?? -1, rhs: countingStat(rhs.stats, \.turnoversPerGame) ?? -1)
         case .assistTurnover:
             return numericCompare(lhs: lhs.stats?.assistTurnoverRatio ?? -1, rhs: rhs.stats?.assistTurnoverRatio ?? -1)
         case .fieldGoal:
@@ -2638,7 +2651,7 @@ struct TransferPortalView: View {
         case .overall:
             return numericCompare(lhs: lhs.overall, rhs: rhs.overall)
         case .points:
-            return numericCompare(lhs: lhs.stats?.pointsPerGame ?? -1, rhs: rhs.stats?.pointsPerGame ?? -1)
+            return numericCompare(lhs: countingStat(lhs.stats, \.pointsPerGame) ?? -1, rhs: countingStat(rhs.stats, \.pointsPerGame) ?? -1)
         case .ask:
             return numericCompare(lhs: lhs.askingPrice, rhs: rhs.askingPrice)
         case .offer:
@@ -2750,6 +2763,31 @@ struct TransferPortalView: View {
 
     private func previousConferenceLevel(_ row: TransferPortalEntry) -> TransferPortalConferenceLevel {
         transferPortalConferenceLevel(for: row.previousConferenceId ?? inferredConferenceId(from: row.previousTeamId))
+    }
+
+    private func statColumnTitle(_ base: String) -> String {
+        guard statMode == .per40 else { return base }
+        switch base {
+        case "PTS": return "P40"
+        case "REB": return "R40"
+        case "AST": return "A40"
+        case "STL": return "S40"
+        case "BLK": return "B40"
+        case "TO": return "T40"
+        default: return base
+        }
+    }
+
+    private func countingStat(_ stats: TransferPortalPlayerStats?, _ keyPath: KeyPath<TransferPortalPlayerStats, Double>) -> Double? {
+        guard let stats else { return nil }
+        let value = stats[keyPath: keyPath]
+        switch statMode {
+        case .perGame:
+            return value
+        case .per40:
+            guard stats.minutesPerGame > 0 else { return nil }
+            return value / stats.minutesPerGame * 40
+        }
     }
 
     private func statText(_ value: Double?) -> String {
