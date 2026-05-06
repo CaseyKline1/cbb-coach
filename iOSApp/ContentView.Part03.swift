@@ -509,6 +509,22 @@ extension CollegeLeagueHomeView {
         }
     }
 
+    func restoreOffseasonNavigationIfNeeded() {
+        guard navigationPath.isEmpty, let stage = offseasonProgress?.stage else { return }
+        let restored: LeagueMenuDestination?
+        switch stage {
+        case .schedule:
+            restored = .offseasonSchedule
+        case .complete:
+            restored = nil
+        case .seasonRecap, .nilBudgets, .playersLeaving, .draft, .playerRetention, .transferPortal:
+            restored = destination(forOffseasonStage: stage)
+        }
+        if let restored {
+            navigationPath.append(restored)
+        }
+    }
+
     private func offseasonStatusText(for stage: LeagueOffseasonStage) -> String {
         switch stage {
         case .schedule:

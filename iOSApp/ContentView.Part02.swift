@@ -438,6 +438,7 @@ struct CollegeLeagueHomeView: View {
                         league = restored
                         refreshFromLeague(restored)
                         statusText = ""
+                        restoreOffseasonNavigationIfNeeded()
                     } else {
                         createLeague()
                     }
