@@ -3250,6 +3250,245 @@ extension Double {
     }
 }
 
+struct SchoolLegaciesView: View {
+    let summary: SchoolLegaciesSummary?
+
+    private enum Sort: String {
+        case school, conference, record, winPct, nationalTitles, confTitles
+        case tournyApps, tournyWins, finalFours
+        case npoy, foy
+        case aaFirst, aaSecond, aaThird
+        case allConfFirst, allConfSecond
+        case hof, firstRoundPicks, totalPicks
+    }
+
+    @State private var sort: Sort = .nationalTitles
+    @State private var ascending: Bool = false
+
+    private struct Column {
+        let id: Sort
+        let title: String
+        let width: CGFloat
+        var alignment: Alignment = .center
+    }
+
+    private var columns: [Column] {
+        [
+            .init(id: .school, title: "School", width: 150, alignment: .leading),
+            .init(id: .conference, title: "Conf", width: 70, alignment: .leading),
+            .init(id: .record, title: "Record", width: 86),
+            .init(id: .winPct, title: "Win%", width: 60),
+            .init(id: .nationalTitles, title: "Natty", width: 56),
+            .init(id: .confTitles, title: "Conf C", width: 64),
+            .init(id: .tournyApps, title: "NT App", width: 62),
+            .init(id: .tournyWins, title: "NT W", width: 54),
+            .init(id: .finalFours, title: "F4", width: 42),
+            .init(id: .npoy, title: "NPOY", width: 56),
+            .init(id: .foy, title: "FOY", width: 50),
+            .init(id: .aaFirst, title: "AA 1st", width: 60),
+            .init(id: .aaSecond, title: "AA 2nd", width: 62),
+            .init(id: .aaThird, title: "AA 3rd", width: 60),
+            .init(id: .allConfFirst, title: "Conf 1st", width: 68),
+            .init(id: .allConfSecond, title: "Conf 2nd", width: 70),
+            .init(id: .hof, title: "HoF", width: 50),
+            .init(id: .firstRoundPicks, title: "1st Rd", width: 60),
+            .init(id: .totalPicks, title: "Drafted", width: 66),
+        ]
+    }
+
+    var body: some View {
+        ZStack {
+            AppTheme.background.ignoresSafeArea()
+
+            if let summary, !summary.entries.isEmpty {
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if summary.seasonsTracked == 0 {
+                            Text("Showing the current season. Totals accumulate as you finish offseasons.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 4)
+                        } else {
+                            Text("\(summary.seasonsTracked) season\(summary.seasonsTracked == 1 ? "" : "s") archived plus the current season.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 4)
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: true) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                headerRow
+                                ForEach(sortedEntries) { entry in
+                                    rowView(entry, isUserTeam: entry.teamId == summary.userTeamId)
+                                    Divider().opacity(0.35)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 10)
+                            .background(AppTheme.cardBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(AppTheme.cardBorder, lineWidth: 1)
+                            )
+                        }
+                    }
+                    .padding(16)
+                }
+            } else {
+                VStack(spacing: 8) {
+                    Text("School Legacies")
+                        .font(.title2.weight(.black))
+                    Text("Program totals will appear once teams are loaded.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("School Legacies")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 6) {
+            ForEach(columns, id: \.id) { column in
+                headerButton(column)
+            }
+        }
+    }
+
+    private func headerButton(_ column: Column) -> some View {
+        Button {
+            if sort == column.id {
+                ascending.toggle()
+            } else {
+                sort = column.id
+                ascending = (column.id == .school || column.id == .conference)
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(column.title)
+                if sort == column.id {
+                    Image(systemName: ascending ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                }
+            }
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(sort == column.id ? AppTheme.accent : .secondary)
+            .frame(width: column.width, alignment: column.alignment)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func rowView(_ entry: SchoolLegacyEntry, isUserTeam: Bool) -> some View {
+        let stats = entry.stats
+        let nameColor: Color = isUserTeam ? AppTheme.accent : AppTheme.ink
+        let nameFont: Font = isUserTeam ? .caption.weight(.bold) : .caption.weight(.semibold)
+        return HStack(spacing: 6) {
+            Text(entry.teamName)
+                .font(nameFont)
+                .foregroundStyle(nameColor)
+                .lineLimit(1)
+                .frame(width: 150, alignment: .leading)
+            Text(entry.conferenceName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: 70, alignment: .leading)
+            cell("\(stats.wins)-\(stats.losses)", width: 86)
+            cell(percentText(entry.winPct), width: 60)
+            cell("\(stats.nationalTitles)", width: 56)
+            cell("\(stats.conferenceTournamentTitles)", width: 64)
+            cell("\(stats.nationalTournamentAppearances)", width: 62)
+            cell("\(stats.nationalTournamentWins)", width: 54)
+            cell("\(stats.finalFourAppearances)", width: 42)
+            cell("\(stats.nationalPlayersOfYear)", width: 56)
+            cell("\(stats.freshmenOfYear)", width: 50)
+            cell("\(stats.allAmericanFirstTeam)", width: 60)
+            cell("\(stats.allAmericanSecondTeam)", width: 62)
+            cell("\(stats.allAmericanThirdTeam)", width: 60)
+            cell("\(stats.allConferenceFirstTeam)", width: 68)
+            cell("\(stats.allConferenceSecondTeam)", width: 70)
+            cell("\(stats.hallOfFamers)", width: 50)
+            cell("\(stats.firstRoundDraftPicks)", width: 60)
+            cell("\(stats.totalDraftPicks)", width: 66)
+        }
+    }
+
+    private func cell(_ text: String, width: CGFloat) -> some View {
+        Text(text)
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(AppTheme.ink)
+            .frame(width: width, alignment: .center)
+    }
+
+    private func percentText(_ value: Double) -> String {
+        String(format: "%.1f%%", value * 100)
+    }
+
+    private var sortedEntries: [SchoolLegacyEntry] {
+        guard let summary else { return [] }
+        return summary.entries.sorted { lhs, rhs in
+            let comparison = compare(lhs, rhs)
+            if comparison == .orderedSame {
+                let nameOrder = lhs.teamName.localizedCaseInsensitiveCompare(rhs.teamName)
+                if nameOrder == .orderedSame {
+                    return lhs.teamId < rhs.teamId
+                }
+                return nameOrder == .orderedAscending
+            }
+            return ascending ? comparison == .orderedAscending : comparison == .orderedDescending
+        }
+    }
+
+    private func compare(_ lhs: SchoolLegacyEntry, _ rhs: SchoolLegacyEntry) -> ComparisonResult {
+        switch sort {
+        case .school:
+            return lhs.teamName.localizedCaseInsensitiveCompare(rhs.teamName)
+        case .conference:
+            let confOrder = lhs.conferenceName.localizedCaseInsensitiveCompare(rhs.conferenceName)
+            return confOrder == .orderedSame
+                ? lhs.teamName.localizedCaseInsensitiveCompare(rhs.teamName)
+                : confOrder
+        case .record:
+            if lhs.stats.wins != rhs.stats.wins {
+                return lhs.stats.wins < rhs.stats.wins ? .orderedAscending : .orderedDescending
+            }
+            if lhs.stats.losses != rhs.stats.losses {
+                return lhs.stats.losses > rhs.stats.losses ? .orderedAscending : .orderedDescending
+            }
+            return .orderedSame
+        case .winPct:
+            return compareDouble(lhs.winPct, rhs.winPct)
+        case .nationalTitles: return compareInt(lhs.stats.nationalTitles, rhs.stats.nationalTitles)
+        case .confTitles: return compareInt(lhs.stats.conferenceTournamentTitles, rhs.stats.conferenceTournamentTitles)
+        case .tournyApps: return compareInt(lhs.stats.nationalTournamentAppearances, rhs.stats.nationalTournamentAppearances)
+        case .tournyWins: return compareInt(lhs.stats.nationalTournamentWins, rhs.stats.nationalTournamentWins)
+        case .finalFours: return compareInt(lhs.stats.finalFourAppearances, rhs.stats.finalFourAppearances)
+        case .npoy: return compareInt(lhs.stats.nationalPlayersOfYear, rhs.stats.nationalPlayersOfYear)
+        case .foy: return compareInt(lhs.stats.freshmenOfYear, rhs.stats.freshmenOfYear)
+        case .aaFirst: return compareInt(lhs.stats.allAmericanFirstTeam, rhs.stats.allAmericanFirstTeam)
+        case .aaSecond: return compareInt(lhs.stats.allAmericanSecondTeam, rhs.stats.allAmericanSecondTeam)
+        case .aaThird: return compareInt(lhs.stats.allAmericanThirdTeam, rhs.stats.allAmericanThirdTeam)
+        case .allConfFirst: return compareInt(lhs.stats.allConferenceFirstTeam, rhs.stats.allConferenceFirstTeam)
+        case .allConfSecond: return compareInt(lhs.stats.allConferenceSecondTeam, rhs.stats.allConferenceSecondTeam)
+        case .hof: return compareInt(lhs.stats.hallOfFamers, rhs.stats.hallOfFamers)
+        case .firstRoundPicks: return compareInt(lhs.stats.firstRoundDraftPicks, rhs.stats.firstRoundDraftPicks)
+        case .totalPicks: return compareInt(lhs.stats.totalDraftPicks, rhs.stats.totalDraftPicks)
+        }
+    }
+
+    private func compareInt(_ a: Int, _ b: Int) -> ComparisonResult {
+        if a == b { return .orderedSame }
+        return a < b ? .orderedAscending : .orderedDescending
+    }
+
+    private func compareDouble(_ a: Double, _ b: Double) -> ComparisonResult {
+        if a == b { return .orderedSame }
+        return a < b ? .orderedAscending : .orderedDescending
+    }
+}
+
 #Preview {
     ContentView()
 }

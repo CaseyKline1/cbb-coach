@@ -1284,6 +1284,7 @@ private func transferPortalPlayer(from entry: TransferPortalEntry, seed: String)
 }
 
 private func startNextSeasonAfterOffseason(_ state: inout LeagueStore.State) {
+    archiveCompletedSeasonLegacies(&state)
     for teamIndex in state.teams.indices {
         let completedGames = max(1, state.teams[teamIndex].wins + state.teams[teamIndex].losses)
         state.teams[teamIndex].lastYearResult = clamp(Double(state.teams[teamIndex].wins) / Double(completedGames), min: 0, max: 1)

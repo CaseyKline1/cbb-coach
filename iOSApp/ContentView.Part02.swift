@@ -206,6 +206,11 @@ struct CollegeLeagueHomeView: View {
                                 MenuRow(title: "Hall of Fame")
                             }
                             .buttonStyle(.plain)
+
+                            NavigationLink(value: LeagueMenuDestination.schoolLegacies) {
+                                MenuRow(title: "School Legacies")
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
@@ -374,6 +379,8 @@ struct CollegeLeagueHomeView: View {
                         games: completedLeagueGames,
                         userTeamName: summary?.userTeamName ?? teamName
                     )
+                case .schoolLegacies:
+                    SchoolLegaciesView(summary: league.map { getSchoolLegaciesSummary($0) })
                 case .boxScore(let gameId):
                     if let game = schedule.first(where: { $0.gameId == gameId }) {
                         BoxScoreDetailView(

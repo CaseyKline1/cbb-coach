@@ -396,6 +396,114 @@ public struct SchoolHallOfFameSummary: Codable, Equatable, Sendable {
     }
 }
 
+public struct SchoolLegacyStats: Codable, Equatable, Sendable {
+    public var wins: Int
+    public var losses: Int
+    public var conferenceWins: Int
+    public var conferenceLosses: Int
+    public var conferenceTournamentTitles: Int
+    public var nationalTitles: Int
+    public var nationalTournamentAppearances: Int
+    public var nationalTournamentWins: Int
+    public var finalFourAppearances: Int
+    public var nationalPlayersOfYear: Int
+    public var freshmenOfYear: Int
+    public var allAmericanFirstTeam: Int
+    public var allAmericanSecondTeam: Int
+    public var allAmericanThirdTeam: Int
+    public var allConferenceFirstTeam: Int
+    public var allConferenceSecondTeam: Int
+    public var hallOfFamers: Int
+    public var firstRoundDraftPicks: Int
+    public var totalDraftPicks: Int
+
+    public init(
+        wins: Int = 0,
+        losses: Int = 0,
+        conferenceWins: Int = 0,
+        conferenceLosses: Int = 0,
+        conferenceTournamentTitles: Int = 0,
+        nationalTitles: Int = 0,
+        nationalTournamentAppearances: Int = 0,
+        nationalTournamentWins: Int = 0,
+        finalFourAppearances: Int = 0,
+        nationalPlayersOfYear: Int = 0,
+        freshmenOfYear: Int = 0,
+        allAmericanFirstTeam: Int = 0,
+        allAmericanSecondTeam: Int = 0,
+        allAmericanThirdTeam: Int = 0,
+        allConferenceFirstTeam: Int = 0,
+        allConferenceSecondTeam: Int = 0,
+        hallOfFamers: Int = 0,
+        firstRoundDraftPicks: Int = 0,
+        totalDraftPicks: Int = 0
+    ) {
+        self.wins = wins
+        self.losses = losses
+        self.conferenceWins = conferenceWins
+        self.conferenceLosses = conferenceLosses
+        self.conferenceTournamentTitles = conferenceTournamentTitles
+        self.nationalTitles = nationalTitles
+        self.nationalTournamentAppearances = nationalTournamentAppearances
+        self.nationalTournamentWins = nationalTournamentWins
+        self.finalFourAppearances = finalFourAppearances
+        self.nationalPlayersOfYear = nationalPlayersOfYear
+        self.freshmenOfYear = freshmenOfYear
+        self.allAmericanFirstTeam = allAmericanFirstTeam
+        self.allAmericanSecondTeam = allAmericanSecondTeam
+        self.allAmericanThirdTeam = allAmericanThirdTeam
+        self.allConferenceFirstTeam = allConferenceFirstTeam
+        self.allConferenceSecondTeam = allConferenceSecondTeam
+        self.hallOfFamers = hallOfFamers
+        self.firstRoundDraftPicks = firstRoundDraftPicks
+        self.totalDraftPicks = totalDraftPicks
+    }
+
+    public static func + (lhs: SchoolLegacyStats, rhs: SchoolLegacyStats) -> SchoolLegacyStats {
+        SchoolLegacyStats(
+            wins: lhs.wins + rhs.wins,
+            losses: lhs.losses + rhs.losses,
+            conferenceWins: lhs.conferenceWins + rhs.conferenceWins,
+            conferenceLosses: lhs.conferenceLosses + rhs.conferenceLosses,
+            conferenceTournamentTitles: lhs.conferenceTournamentTitles + rhs.conferenceTournamentTitles,
+            nationalTitles: lhs.nationalTitles + rhs.nationalTitles,
+            nationalTournamentAppearances: lhs.nationalTournamentAppearances + rhs.nationalTournamentAppearances,
+            nationalTournamentWins: lhs.nationalTournamentWins + rhs.nationalTournamentWins,
+            finalFourAppearances: lhs.finalFourAppearances + rhs.finalFourAppearances,
+            nationalPlayersOfYear: lhs.nationalPlayersOfYear + rhs.nationalPlayersOfYear,
+            freshmenOfYear: lhs.freshmenOfYear + rhs.freshmenOfYear,
+            allAmericanFirstTeam: lhs.allAmericanFirstTeam + rhs.allAmericanFirstTeam,
+            allAmericanSecondTeam: lhs.allAmericanSecondTeam + rhs.allAmericanSecondTeam,
+            allAmericanThirdTeam: lhs.allAmericanThirdTeam + rhs.allAmericanThirdTeam,
+            allConferenceFirstTeam: lhs.allConferenceFirstTeam + rhs.allConferenceFirstTeam,
+            allConferenceSecondTeam: lhs.allConferenceSecondTeam + rhs.allConferenceSecondTeam,
+            hallOfFamers: lhs.hallOfFamers + rhs.hallOfFamers,
+            firstRoundDraftPicks: lhs.firstRoundDraftPicks + rhs.firstRoundDraftPicks,
+            totalDraftPicks: lhs.totalDraftPicks + rhs.totalDraftPicks
+        )
+    }
+}
+
+public struct SchoolLegacyEntry: Codable, Equatable, Sendable, Identifiable {
+    public var id: String { teamId }
+    public var teamId: String
+    public var teamName: String
+    public var conferenceId: String
+    public var conferenceName: String
+    public var stats: SchoolLegacyStats
+
+    public var totalGames: Int { stats.wins + stats.losses }
+    public var winPct: Double {
+        totalGames > 0 ? Double(stats.wins) / Double(totalGames) : 0
+    }
+}
+
+public struct SchoolLegaciesSummary: Codable, Equatable, Sendable {
+    public var userTeamId: String
+    public var seasonsTracked: Int
+    public var entries: [SchoolLegacyEntry]
+}
+
 public struct DraftPickEntry: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var slot: Int
@@ -863,6 +971,8 @@ struct LeagueStore {
         var transferPortalUserTargets: [String]?
         var transferPortalUserOffers: [String: Double]?
         var nilRetentionFinalized: Bool?
+        var schoolLegacyByTeamId: [String: SchoolLegacyStats]?
+        var schoolLegacySeasonsTracked: Int?
     }
 
     static let lock = NSLock()

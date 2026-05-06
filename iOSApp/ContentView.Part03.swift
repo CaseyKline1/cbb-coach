@@ -681,13 +681,14 @@ enum LeagueMenuDestination: Hashable {
     case rankings
     case coachingStaff
     case hallOfFame
+    case schoolLegacies
     case boxScore(String)
 
     var isOffseasonWorkflowDestination: Bool {
         switch self {
         case .seasonRecap, .offseasonSchedule, .nilBudgets, .playersLeaving, .draft, .playerRetention, .transferPortal:
             return true
-        case .bracket, .roster, .schedule, .rotation, .playbook, .playerStats, .teamStats, .statLeaders, .standings, .rankings, .coachingStaff, .hallOfFame, .boxScore:
+        case .bracket, .roster, .schedule, .rotation, .playbook, .playerStats, .teamStats, .statLeaders, .standings, .rankings, .coachingStaff, .hallOfFame, .schoolLegacies, .boxScore:
             return false
         }
     }
