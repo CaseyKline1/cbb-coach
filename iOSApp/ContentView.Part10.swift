@@ -1943,7 +1943,7 @@ struct TransferPortalView: View {
     private let boardStatusWidth: CGFloat = 136
 
     private enum PortalTableColumn: String, Hashable {
-        case target, player, position, year, previous, level, overall, potential, points, rebounds, assists, steals, blocks, turnovers, assistTurnover, fieldGoal, threePoint, effectiveFieldGoal, minutes, ask, status
+        case rank, target, player, position, year, previous, level, overall, potential, points, rebounds, assists, steals, blocks, turnovers, assistTurnover, fieldGoal, threePoint, effectiveFieldGoal, minutes, ask, status
     }
 
     private enum BoardTableColumn: String, Hashable {
@@ -2007,8 +2007,8 @@ struct TransferPortalView: View {
     @State private var statusFilter: PortalStatusFilter = .available
     @State private var levelFilter: PortalLevelFilter = .all
     @State private var interestRankFilter: InterestRankFilter = .all
-    @State private var sortColumn: PortalTableColumn = .overall
-    @State private var isAscending = false
+    @State private var sortColumn: PortalTableColumn = .rank
+    @State private var isAscending = true
     @State private var boardSortColumn: BoardTableColumn = .overall
     @State private var boardIsAscending = false
     @State private var offerOverrides: [String: Double] = [:]
@@ -2108,6 +2108,7 @@ struct TransferPortalView: View {
 
     private var portalColumns: [AppTableColumn<PortalTableColumn>] {
         [
+            .init(id: .rank, title: "RK", width: 42),
             .init(id: .target, title: "BD", width: 42),
             .init(id: .player, title: "PLAYER", width: 136, alignment: .leading),
             .init(id: .position, title: "POS", width: 42),
@@ -2300,6 +2301,7 @@ struct TransferPortalView: View {
                         maxBodyHeight: 430
                     ) { row in
                         HStack(spacing: 0) {
+                            AppTableTextCell(text: rankText(row.transferRank), width: 42)
                             targetButton(row)
                             playerLink(row, width: 136)
                             AppTableTextCell(text: row.position, width: 42)
@@ -2445,7 +2447,7 @@ struct TransferPortalView: View {
             isAscending.toggle()
         } else {
             sortColumn = id
-            isAscending = id == .player || id == .position || id == .year || id == .previous || id == .level || id == .status
+            isAscending = id == .rank || id == .player || id == .position || id == .year || id == .previous || id == .level || id == .status
         }
     }
 
@@ -2460,6 +2462,8 @@ struct TransferPortalView: View {
 
     private func comparePortal(lhs: TransferPortalEntry, rhs: TransferPortalEntry, column: PortalTableColumn) -> ComparisonResult {
         switch column {
+        case .rank:
+            return numericCompare(lhs: lhs.transferRank == 0 ? Int.max : lhs.transferRank, rhs: rhs.transferRank == 0 ? Int.max : rhs.transferRank)
         case .target:
             return numericCompare(lhs: targetIds.contains(lhs.id) ? 1 : 0, rhs: targetIds.contains(rhs.id) ? 1 : 0)
         case .player:
@@ -2631,6 +2635,10 @@ struct TransferPortalView: View {
     private func statText(_ value: Double?) -> String {
         guard let value else { return "-" }
         return String(format: "%.1f", value)
+    }
+
+    private func rankText(_ value: Int) -> String {
+        value > 0 ? "\(value)" : "-"
     }
 
     private func percentText(_ value: Double?) -> String {

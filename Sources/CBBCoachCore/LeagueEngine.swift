@@ -675,6 +675,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     public var playerName: String
     public var position: String
     public var year: String
+    public var transferRank: Int
     public var overall: Int
     public var potential: Int
     public var askingPrice: Double
@@ -700,6 +701,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
         playerName: String,
         position: String,
         year: String,
+        transferRank: Int = 0,
         overall: Int,
         potential: Int,
         askingPrice: Double,
@@ -724,6 +726,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
         self.playerName = playerName
         self.position = position
         self.year = year
+        self.transferRank = transferRank
         self.overall = overall
         self.potential = potential
         self.askingPrice = askingPrice
@@ -736,7 +739,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, previousTeamId, previousTeamName, previousConferenceId, committedTeamId, committedTeamName, committedOffer
         case finalistTeamIds, finalistTeamNames, interestByTeamId
-        case player, playerModel, stats, playerName, position, year, overall, potential
+        case player, playerModel, stats, playerName, position, year, transferRank, overall, potential
         case askingPrice, intrinsicValue, reason, loyalty, greed
     }
 
@@ -759,6 +762,7 @@ public struct TransferPortalEntry: Codable, Equatable, Sendable, Identifiable {
             playerName: try container.decode(String.self, forKey: .playerName),
             position: try container.decode(String.self, forKey: .position),
             year: try container.decode(String.self, forKey: .year),
+            transferRank: try container.decodeIfPresent(Int.self, forKey: .transferRank) ?? 0,
             overall: try container.decode(Int.self, forKey: .overall),
             potential: try container.decode(Int.self, forKey: .potential),
             askingPrice: try container.decode(Double.self, forKey: .askingPrice),

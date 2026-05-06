@@ -649,11 +649,7 @@ private func finalizeNILRetentionAndBuildPortalIfNeeded(_ state: inout LeagueSto
         state.teams[teamIndex].teamModel.lineup.removeAll { !remainingNames.contains($0.bio.name) }
     }
 
-    state.transferPortal = portal.sorted {
-        if $0.overall != $1.overall { return $0.overall > $1.overall }
-        if $0.askingPrice != $1.askingPrice { return $0.askingPrice > $1.askingPrice }
-        return $0.playerName < $1.playerName
-    }
+    state.transferPortal = rankedTransferPortalEntries(portal)
     state.nilRetentionFinalized = true
 }
 
@@ -672,6 +668,105 @@ private func transferPortalStats(from stats: HallCandidateStat) -> TransferPorta
         effectiveFieldGoalPercentage: stats.effectiveFieldGoalPercentage,
         assistTurnoverRatio: stats.assistTurnoverRatio
     )
+}
+
+private func rankedTransferPortalEntries(_ entries: [TransferPortalEntry]) -> [TransferPortalEntry] {
+    let scored = entries.map { entry in
+        (entry: entry, score: transferPortalRecruitScore(entry))
+    }
+    let ordered = scored.sorted {
+        if $0.score != $1.score { return $0.score > $1.score }
+        if $0.entry.overall != $1.entry.overall { return $0.entry.overall > $1.entry.overall }
+        if $0.entry.potential != $1.entry.potential { return $0.entry.potential > $1.entry.potential }
+        if $0.entry.askingPrice != $1.entry.askingPrice { return $0.entry.askingPrice > $1.entry.askingPrice }
+        return $0.entry.playerName < $1.entry.playerName
+    }
+    var rankById: [String: Int] = [:]
+    for (index, row) in ordered.enumerated() {
+        rankById[row.entry.id] = index + 1
+    }
+    return entries.map { entry in
+        var ranked = entry
+        ranked.transferRank = rankById[entry.id] ?? 0
+        return ranked
+    }
+}
+
+private func transferPortalRecruitScore(_ entry: TransferPortalEntry) -> Double {
+    let youth = transferPortalYouthFactor(entry.year)
+    let overallWeight = 0.46 - youth * 0.06
+    let potentialWeight = 0.14 + youth * 0.18
+    let statsWeight = 0.40 - youth * 0.02
+    let upside = max(0, Double(entry.potential - entry.overall))
+    let potentialScore = Double(entry.potential) + upside * (0.20 + youth * 0.35)
+    let youthBonus = youth * 5.0
+    return Double(entry.overall) * overallWeight
+        + potentialScore * potentialWeight
+        + transferPortalProductionScore(entry) * statsWeight
+        + youthBonus
+}
+
+private func transferPortalProductionScore(_ entry: TransferPortalEntry) -> Double {
+    guard let stats = entry.stats, stats.games > 0 else {
+        return Double(entry.overall) * 0.62
+    }
+
+    let levelMultiplier = transferPortalCompetitionMultiplier(for: entry.previousConferenceId)
+    let minutes = max(1, stats.minutesPerGame)
+    let perGameValue = stats.pointsPerGame
+        + stats.reboundsPerGame * 1.15
+        + stats.assistsPerGame * 1.35
+        + stats.stealsPerGame * 2.4
+        + stats.blocksPerGame * 2.2
+        + stats.effectiveFieldGoalPercentage * 0.10
+        + min(stats.assistTurnoverRatio, 4.0) * 1.4
+        - stats.turnoversPerGame * 0.95
+    let per40Value = (perGameValue / minutes) * 40
+    let rawTotalValue = (
+        stats.pointsPerGame
+            + stats.reboundsPerGame
+            + stats.assistsPerGame
+            + stats.stealsPerGame
+            + stats.blocksPerGame
+    ) * Double(stats.games)
+    let volumeReliability = clamp(Double(stats.games) / 32, min: 0.20, max: 1.10)
+    let minutesRole = clamp(stats.minutesPerGame / 30, min: 0.25, max: 1.05)
+    let efficiency = clamp((stats.effectiveFieldGoalPercentage - 42) / 18, min: -0.25, max: 1.15) * 8
+        + clamp((stats.fieldGoalPercentage - 40) / 18, min: -0.20, max: 0.70) * 3
+        + clamp((stats.threePointPercentage - 30) / 12, min: -0.15, max: 0.85) * 2
+    let blendedProduction = perGameValue * 2.0
+        + per40Value * 0.55
+        + min(rawTotalValue / 18, 32)
+        + efficiency
+        + minutesRole * 7
+        + volumeReliability * 7
+    return clamp(blendedProduction * levelMultiplier, min: 30, max: 105)
+}
+
+private func transferPortalCompetitionMultiplier(for conferenceId: String?) -> Double {
+    switch transferPortalConferenceLevel(for: conferenceId) {
+    case .highMajor:
+        return 1.10
+    case .midMajor:
+        return 1.00
+    case .lowMajor:
+        return 0.88
+    }
+}
+
+private func transferPortalYouthFactor(_ year: String) -> Double {
+    switch PlayerYear(rawValue: year) {
+    case .hs, .fr:
+        return 1.0
+    case .so:
+        return 0.72
+    case .jr:
+        return 0.36
+    case .sr:
+        return 0.0
+    case .graduated, .none:
+        return 0.18
+    }
 }
 
 private let transferPortalRecruitingWeeks = 6
@@ -719,7 +814,7 @@ private func prepareTransferPortalRecruitingIfNeeded(_ state: inout LeagueStore.
     for index in portal.indices where portal[index].interestByTeamId.isEmpty {
         portal[index].interestByTeamId = initialTransferPortalInterest(entry: portal[index], state: state)
     }
-    state.transferPortal = portal
+    state.transferPortal = rankedTransferPortalEntries(portal)
 }
 
 private func initialTransferPortalInterest(entry: TransferPortalEntry, state: LeagueStore.State) -> [String: Double] {
@@ -860,12 +955,13 @@ private func runTransferPortalRecruitingWeek(_ state: inout LeagueStore.State) {
         portal[index] = entry
     }
 
-    state.transferPortal = portal.sorted {
+    state.transferPortal = rankedTransferPortalEntries(portal).sorted(by: {
         if ($0.committedTeamId == nil) != ($1.committedTeamId == nil) { return $0.committedTeamId == nil }
+        if $0.transferRank != $1.transferRank { return $0.transferRank < $1.transferRank }
         if $0.overall != $1.overall { return $0.overall > $1.overall }
         if $0.askingPrice != $1.askingPrice { return $0.askingPrice > $1.askingPrice }
         return $0.playerName < $1.playerName
-    }
+    })
     state.transferPortalWeek = week + 1
 }
 
